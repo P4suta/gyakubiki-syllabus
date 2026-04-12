@@ -1,0 +1,19 @@
+name: gyakubiki-syllabus
+
+services:
+  # ビューアー: http://localhost:3000 でブラウザからアクセス
+  web:
+    build:
+      context: .
+      target: web
+    ports:
+      - "3000:80"
+
+  # データ変換CLI
+  # 使い方: docker compose run cli convert /data/page1.json -o /data/data.json
+  cli:
+    build:
+      context: .
+      target: cli
+    volumes:
+      - ./:/data

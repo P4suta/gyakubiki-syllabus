@@ -1,0 +1,27 @@
+# Go
+bin/
+
+# Frontend
+web/node_modules/
+web/dist/
+web/.svelte-kit/
+
+# Data files
+data.json
+raw.json
+web/public/test-data.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Bun
+bun.lock
+
+# Coverage
+*.out
