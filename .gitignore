@@ -7,8 +7,6 @@ web/dist/
 web/.svelte-kit/
 
 # Data files
-data.json
-raw.json
 web/public/test-data.json
 
 # OS
@@ -20,8 +18,7 @@ Thumbs.db
 .vscode/
 *.swp
 
-# Bun
-bun.lock
+# Bun (lockfile is committed for reproducibility)
 
 # Coverage
 *.out
