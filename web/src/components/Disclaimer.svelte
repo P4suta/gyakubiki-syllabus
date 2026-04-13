@@ -1,25 +1,5 @@
 <script lang="ts">
-const STORAGE_KEY = 'disclaimer-accepted'
 let accepted = $state(false)
-
-function checkAccepted(): boolean {
-	try {
-		return localStorage.getItem(STORAGE_KEY) === '1'
-	} catch {
-		return false
-	}
-}
-
-function accept() {
-	try {
-		localStorage.setItem(STORAGE_KEY, '1')
-	} catch {
-		// localStorage unavailable
-	}
-	accepted = true
-}
-
-accepted = checkAccepted()
 </script>
 
 {#if !accepted}
@@ -44,7 +24,7 @@ accepted = checkAccepted()
 		</div>
 
 		<button
-			onclick={accept}
+			onclick={() => { accepted = true }}
 			class="w-full py-2.5 px-4 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors cursor-pointer"
 		>
 			上記を確認の上、利用する
