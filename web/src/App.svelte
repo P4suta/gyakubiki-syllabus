@@ -62,7 +62,7 @@ onMount(async () => {
 	</div>
 {:else if data}
 	<Disclaimer />
-	<div class="min-h-screen bg-gray-50 font-sans flex flex-col">
+	<div class="h-screen bg-gray-50 font-sans flex flex-col overflow-hidden">
 		<FilterBar
 			semesters={data.semesters}
 			departments={data.departments}
