@@ -49,6 +49,7 @@ type Course struct {
 	TaishoNenji      *string `json:"taishoNenji,omitempty"`
 	KamokuBunrui     *string `json:"kamokuBunrui,omitempty"`
 	KamokuBunya      *string `json:"kamokuBunya,omitempty"`
+	SearchText       string  `json:"searchText"`
 }
 
 // ProcessedData is the top-level output schema.

@@ -20,6 +20,7 @@ export interface Course {
 	taishoNenji?: string
 	kamokuBunrui?: string
 	kamokuBunya?: string
+	searchText?: string
 }
 
 export interface ProcessedData {

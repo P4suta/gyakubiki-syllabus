@@ -79,6 +79,21 @@ func TestConvert(t *testing.T) {
 		t.Fatalf("departments len = %d, want 2", len(result.Data.Departments))
 	}
 
+	// SearchText should be pre-computed
+	if c1.SearchText == "" {
+		t.Error("courses[0].SearchText should not be empty")
+	}
+	// Should contain course name, instructor, code, department (lowercased)
+	if !strings.Contains(c1.SearchText, "基礎数学") {
+		t.Errorf("SearchText should contain course name: %q", c1.SearchText)
+	}
+	if !strings.Contains(c1.SearchText, "山田 太郎") {
+		t.Errorf("SearchText should contain instructor: %q", c1.SearchText)
+	}
+	if !strings.Contains(c1.SearchText, "001") {
+		t.Errorf("SearchText should contain course code: %q", c1.SearchText)
+	}
+
 	// No warnings expected for valid data
 	if len(result.Warnings) != 0 {
 		t.Errorf("unexpected warnings: %v", result.Warnings)
@@ -299,6 +314,63 @@ func TestConvertTrimsStringFields(t *testing.T) {
 	// Department list should also be trimmed
 	if len(result.Data.Departments) != 1 || result.Data.Departments[0] != "理工学部" {
 		t.Errorf("Departments not trimmed: %v", result.Data.Departments)
+	}
+}
+
+func TestBuildSearchTextNormalization(t *testing.T) {
+	raw := []model.RawCourse{
+		{
+			KogiCd:         "ABC",
+			KogiNm:         "English Communication",
+			Fukudai:        ptr("副題\u3000テスト"), // full-width space
+			TantoKyoin:     "Smith\u3000John",      // full-width space
+			Jikanwari:      "1学期: 月曜日１時限",
+			SekininBushoNm: "共通教育",
+		},
+	}
+
+	result := Convert(raw)
+	c := result.Data.Courses[0]
+
+	// Should be lowercased
+	if strings.Contains(c.SearchText, "English") {
+		t.Errorf("SearchText should be lowercased: %q", c.SearchText)
+	}
+	if !strings.Contains(c.SearchText, "english communication") {
+		t.Errorf("SearchText should contain lowercased course name: %q", c.SearchText)
+	}
+
+	// Full-width spaces should be normalized to half-width
+	if strings.Contains(c.SearchText, "\u3000") {
+		t.Errorf("SearchText should not contain full-width spaces: %q", c.SearchText)
+	}
+
+	// Should contain fukudai content
+	if !strings.Contains(c.SearchText, "副題 テスト") {
+		t.Errorf("SearchText should contain normalized fukudai: %q", c.SearchText)
+	}
+}
+
+func TestBuildSearchTextWithoutFukudai(t *testing.T) {
+	raw := []model.RawCourse{
+		{
+			KogiCd:         "001",
+			KogiNm:         "テスト",
+			TantoKyoin:     "教員",
+			Jikanwari:      "1学期: 月曜日１時限",
+			SekininBushoNm: "理工学部",
+		},
+	}
+
+	result := Convert(raw)
+	c := result.Data.Courses[0]
+
+	// Should not crash and should contain available fields
+	if !strings.Contains(c.SearchText, "テスト") {
+		t.Errorf("SearchText should contain course name: %q", c.SearchText)
+	}
+	if !strings.Contains(c.SearchText, "教員") {
+		t.Errorf("SearchText should contain instructor: %q", c.SearchText)
 	}
 }
 

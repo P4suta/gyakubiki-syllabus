@@ -3,18 +3,26 @@ import CourseModal from './components/CourseModal.svelte'
 import FileLoader from './components/FileLoader.svelte'
 import FilterBar from './components/FilterBar.svelte'
 import Timetable from './components/Timetable.svelte'
-import { filterCourses } from './lib/filters'
+import { CourseIndex } from './lib/course-index'
 import { buildGrid, countUnique } from './lib/grid'
 import type { Course, ProcessedData } from './types/course'
 
-let data: ProcessedData | null = $state(null)
+let data = $state<ProcessedData | null>(null)
 let semester = $state('all')
 let department = $state('all')
 let searchText = $state('')
+let debouncedSearch = $state('')
 let selectedCourse: Course | null = $state(null)
 
+$effect(() => {
+	const value = searchText
+	const timer = setTimeout(() => { debouncedSearch = value }, 180)
+	return () => clearTimeout(timer)
+})
+
+let index = $derived(data ? new CourseIndex(data.courses) : null)
 let filteredCourses = $derived(
-	data ? filterCourses(data.courses, semester, department, searchText) : [],
+	index ? index.filter(semester, department, debouncedSearch) : [],
 )
 let grid = $derived(buildGrid(filteredCourses, semester))
 let displayCount = $derived(countUnique(grid))

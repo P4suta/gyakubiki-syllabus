@@ -22,6 +22,18 @@ var semesterOrder = map[string]int{
 	"後期":     8,
 }
 
+// buildSearchText creates a pre-normalized search haystack for a course.
+// This mirrors the frontend normalize() logic: full-width space → half-width, lowercase.
+func buildSearchText(c model.Course) string {
+	parts := []string{c.KogiNm}
+	if c.Fukudai != nil {
+		parts = append(parts, *c.Fukudai)
+	}
+	parts = append(parts, c.TantoKyoin, c.KogiCd, c.SekininBushoNm)
+	joined := strings.Join(parts, " ")
+	return strings.ToLower(strings.ReplaceAll(joined, "\u3000", " "))
+}
+
 // ConvertResult holds the processed data and any warnings encountered during conversion.
 type ConvertResult struct {
 	Data     model.ProcessedData
@@ -85,7 +97,7 @@ func Convert(raw []model.RawCourse) ConvertResult {
 		}
 
 		seen[r.KogiCd] = len(courses)
-		courses = append(courses, model.Course{
+		c := model.Course{
 			KogiCd:           strings.TrimSpace(r.KogiCd),
 			KogiNm:           strings.TrimSpace(r.KogiNm),
 			Fukudai:          trimPtr(r.Fukudai),
@@ -101,7 +113,9 @@ func Convert(raw []model.RawCourse) ConvertResult {
 			TaishoNenji:      trimPtr(r.TaishoNenji),
 			KamokuBunrui:     trimPtr(r.KamokuBunrui),
 			KamokuBunya:      trimPtr(r.KamokuBunya),
-		})
+		}
+		c.SearchText = buildSearchText(c)
+		courses = append(courses, c)
 	}
 
 	return ConvertResult{
