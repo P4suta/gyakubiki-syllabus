@@ -1,12 +1,14 @@
 # Go
 bin/
+*.exe
 
 # Frontend
 web/node_modules/
 web/dist/
 web/.svelte-kit/
 
-# Data files
+# Data files (CIで生成)
+data.json
 web/public/data.json
 web/public/test-data.json
 

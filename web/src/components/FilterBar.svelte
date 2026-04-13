@@ -7,7 +7,6 @@ interface Props {
 	searchText: string
 	displayCount: number
 	totalCount: number
-	onChangeData: () => void
 }
 
 let {
@@ -18,7 +17,6 @@ let {
 	searchText = $bindable(),
 	displayCount,
 	totalCount,
-	onChangeData,
 }: Props = $props()
 </script>
 
@@ -68,12 +66,5 @@ let {
 		<span class="text-xs text-gray-400 ml-auto">
 			{displayCount}科目表示中 / 全{totalCount}件
 		</span>
-
-		<button
-			class="px-3 py-1 text-[11px] border border-gray-300 rounded-md bg-white text-gray-500 hover:bg-gray-50 cursor-pointer"
-			onclick={onChangeData}
-		>
-			データ変更
-		</button>
 	</div>
 </div>

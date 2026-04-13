@@ -1,12 +1,16 @@
 <script lang="ts">
+import { onMount } from 'svelte'
 import CourseModal from './components/CourseModal.svelte'
-import FileLoader from './components/FileLoader.svelte'
+import Disclaimer from './components/Disclaimer.svelte'
 import FilterBar from './components/FilterBar.svelte'
 import Timetable from './components/Timetable.svelte'
 import { CourseIndex } from './lib/course-index'
 import { buildGrid, countUnique } from './lib/grid'
+import { loadData } from './lib/load-data'
 import type { Course, ProcessedData } from './types/course'
 
+let loading = $state(true)
+let error = $state<string | null>(null)
 let data = $state<ProcessedData | null>(null)
 let semester = $state('all')
 let department = $state('all')
@@ -27,21 +31,37 @@ let filteredCourses = $derived(
 let grid = $derived(buildGrid(filteredCourses, semester))
 let displayCount = $derived(countUnique(grid))
 
-function handleDataLoaded(processed: ProcessedData) {
-	console.log('[App] handleDataLoaded called, courses:', processed.courses.length)
-	data = processed
-	console.log('[App] data set, semesters:', processed.semesters)
-	if (processed.semesters.length > 0) {
-		semester = processed.semesters[0]
-		console.log('[App] semester set to:', semester)
+onMount(async () => {
+	try {
+		const processed = await loadData()
+		data = processed
+		if (processed.semesters.length > 0) {
+			semester = processed.semesters[0]
+		}
+	} catch (e) {
+		error = e instanceof Error ? e.message : 'データの読み込みに失敗しました'
+	} finally {
+		loading = false
 	}
-}
+})
 </script>
 
-{#if !data}
-	<FileLoader onload={handleDataLoaded} />
-{:else}
-	<div class="min-h-screen bg-gray-50 font-sans">
+{#if loading}
+	<div class="min-h-screen bg-gray-50 flex items-center justify-center">
+		<div class="text-center">
+			<div class="inline-block h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-r-transparent mb-4"></div>
+			<p class="text-sm text-gray-500">データを読み込み中...</p>
+		</div>
+	</div>
+{:else if error}
+	<div class="min-h-screen bg-gray-50 flex items-center justify-center">
+		<div class="bg-white border border-red-200 rounded-lg p-6 max-w-md text-center">
+			<p class="text-red-600 font-medium mb-2">読み込みエラー</p>
+			<p class="text-sm text-gray-600 whitespace-pre-line">{error}</p>
+		</div>
+	</div>
+{:else if data}
+	<div class="min-h-screen bg-gray-50 font-sans flex flex-col">
 		<FilterBar
 			semesters={data.semesters}
 			departments={data.departments}
@@ -50,9 +70,9 @@ function handleDataLoaded(processed: ProcessedData) {
 			bind:searchText
 			{displayCount}
 			totalCount={data.courses.length}
-			onChangeData={() => { data = null }}
 		/>
 		<Timetable {grid} onselect={(c) => { selectedCourse = c }} />
+		<Disclaimer />
 	</div>
 	{#if selectedCourse}
 		<CourseModal course={selectedCourse} onclose={() => { selectedCourse = null }} />
