@@ -61,6 +61,7 @@ onMount(async () => {
 		</div>
 	</div>
 {:else if data}
+	<Disclaimer />
 	<div class="min-h-screen bg-gray-50 font-sans flex flex-col">
 		<FilterBar
 			semesters={data.semesters}
@@ -72,7 +73,6 @@ onMount(async () => {
 			totalCount={data.courses.length}
 		/>
 		<Timetable {grid} onselect={(c) => { selectedCourse = c }} />
-		<Disclaimer />
 	</div>
 	{#if selectedCourse}
 		<CourseModal course={selectedCourse} onclose={() => { selectedCourse = null }} />
