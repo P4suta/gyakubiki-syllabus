@@ -20,7 +20,7 @@ let {
 }: Props = $props()
 </script>
 
-<div class="bg-white border-b border-gray-200 px-5 py-3 sticky top-0 z-50">
+<div class="bg-white border-b border-gray-200 px-5 py-3">
 	<div class="flex items-center gap-4 flex-wrap">
 		<h1 class="text-base font-bold text-gray-900 whitespace-nowrap">時間割</h1>
 
