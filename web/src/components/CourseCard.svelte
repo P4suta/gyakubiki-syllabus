@@ -12,15 +12,14 @@ let color = $derived(getColor(course.cd))
 </script>
 
 <button
-	class="w-full text-left rounded-lg p-2 mb-1 cursor-pointer transition-all duration-300 ease-spring hover:-translate-y-px hover:shadow-card-hover active:scale-[0.97] active:shadow-none"
-	style="background: {color.bg};"
+	class="w-full text-left rounded p-1.5 mb-0.5 cursor-pointer transition-transform hover:scale-[1.02] hover:shadow-md border-l-3"
+	style="background: {color.bg}; border-left-color: {color.border};"
 	{onclick}
 >
-	<div class="h-0.5 rounded-full mb-1.5 -mx-0.5" style="background: {color.border};"></div>
-	<div class="font-semibold text-caption leading-tight tracking-tight mb-0.5 line-clamp-2 text-apple-text">
+	<div class="font-semibold text-micro leading-snug mb-0.5 line-clamp-2 text-apple-text">
 		{course.nm}
 	</div>
-	<div class="text-micro text-apple-text/50 tracking-tight">
+	<div class="text-fine text-apple-text/50">
 		{course.prof?.split(',')[0]?.trim() ?? ''}
 	</div>
 </button>

@@ -92,9 +92,20 @@ let {
 			<input
 				type="text"
 				bind:value={searchText}
-				placeholder="科目名・教員名・コード..."
-				class="bg-overlay-subtle rounded-lg pl-8 pr-3 py-1.5 text-caption text-apple-text outline-none w-52 placeholder:text-apple-text/30 transition-all duration-200 focus:bg-surface-primary focus:ring-2 focus:ring-apple-blue/30 focus:shadow-sm"
+				placeholder="科目名・教員名で検索"
+				class="bg-overlay-subtle rounded-lg pl-8 pr-8 py-1.5 text-caption text-apple-text outline-none w-64 placeholder:text-apple-text/30 transition-all duration-200 focus:bg-surface-primary focus:ring-2 focus:ring-apple-blue/30 focus:shadow-sm"
 			/>
+			{#if searchText}
+				<button
+					class="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 rounded-full bg-apple-text/20 flex items-center justify-center hover:bg-apple-text/30 transition-colors cursor-pointer"
+					onclick={() => { searchText = '' }}
+					aria-label="検索をクリア"
+				>
+					<svg class="w-2.5 h-2.5 text-surface-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
+						<path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+					</svg>
+				</button>
+			{/if}
 		</div>
 
 		<span class="text-caption text-apple-text/40 ml-auto tabular-nums tracking-tight">

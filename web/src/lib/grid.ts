@@ -1,7 +1,9 @@
 import type { CourseV2, Dictionaries } from '../types/course'
 
-export const DAYS = ['月', '火', '水', '木', '金', '土'] as const
-export const DAY_INDICES = [0, 1, 2, 3, 4, 5] as const // indices matching DAYS
+const WEEKDAYS = ['月', '火', '水', '木', '金'] as const
+export const DAYS: readonly string[] = __HAS_SATURDAY__
+	? [...WEEKDAYS, '土']
+	: [...WEEKDAYS]
 export const PERIODS = [1, 2, 3, 4, 5, 6] as const
 
 export type GridKey = `${string}-${number}`

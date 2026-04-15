@@ -343,7 +343,8 @@ All design values are centralized as Tailwind CSS 4 theme tokens. Components use
 
 | Token | Value | Line Height | Utility | Usage |
 |-------|-------|-------------|---------|-------|
-| `--font-size-micro` | `11px` | `1.4` | `text-micro` | Professor names, file size labels |
+| `--font-size-fine` | `10px` | `1.4` | `text-fine` | Professor names in course cards |
+| `--font-size-micro` | `11px` | `1.4` | `text-micro` | Course card titles, file size labels |
 | `--font-size-caption` | `13px` | `1.4` | `text-caption` | Filters, grid headers, field labels, card titles |
 | `--font-size-sub` | `14px` | `1.4` | `text-sub` | Modal subtitles |
 | `--font-size-body` | `15px` | `1.5` | `text-body` | Body text, loading, error descriptions |

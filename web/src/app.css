@@ -25,6 +25,9 @@
   --color-glass-bg: rgb(251 251 253 / 0.72);
 
   /* ===== Font Sizes (with associated line-heights) ===== */
+  --font-size-fine: 10px;
+  --font-size-fine--line-height: 1.4;
+
   --font-size-micro: 11px;
   --font-size-micro--line-height: 1.4;
 

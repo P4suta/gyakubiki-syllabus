@@ -10,10 +10,13 @@ interface Props {
 }
 
 let { grid, onselect }: Props = $props()
+
+const gridCols = `56px repeat(${DAYS.length}, 1fr)`
+const minWidth = `${DAYS.length * 120 + 56}px`
 </script>
 
 <div class="overflow-auto flex-1 bg-surface-page">
-	<div class="grid grid-cols-[56px_repeat(6,1fr)] gap-[2px] min-w-[700px] bg-surface-page">
+	<div class="grid gap-[2px] bg-surface-page" style="grid-template-columns: {gridCols}; min-width: {minWidth};">
 		<!-- Corner cell -->
 		<div class="sticky top-0 left-0 z-30 bg-surface-page"></div>
 
