@@ -4,6 +4,7 @@ import CourseModal from './components/CourseModal.svelte'
 import Disclaimer from './components/Disclaimer.svelte'
 import FilterBar from './components/FilterBar.svelte'
 import Timetable from './components/Timetable.svelte'
+import { initDeptColors } from './lib/colors'
 import { CourseIndex } from './lib/course-index'
 import { buildGrid, countUnique } from './lib/grid'
 import { loadData } from './lib/load-data'
@@ -35,6 +36,7 @@ let displayCount = $derived(countUnique(grid))
 onMount(async () => {
 	try {
 		const processed = await loadData()
+		initDeptColors(processed.dicts.departments)
 		data = processed
 		if (processed.dicts.semesters.length > 0) {
 			semester = processed.dicts.semesters[0]
