@@ -34,20 +34,25 @@ function handleKeydown(e: KeyboardEvent) {
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
-	class="fixed inset-0 bg-overlay-backdrop backdrop-blur-[6px] flex items-center justify-center z-[200] p-5"
+	class="fixed inset-0 bg-overlay-backdrop backdrop-blur-[6px] flex items-end sm:items-center justify-center sm:p-5 z-[200]"
 	onclick={onclose}
 	onkeydown={(e) => { if (e.key === 'Escape') onclose() }}
 	transition:fade={{ duration: 200 }}
 >
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div
-		class="bg-surface-primary rounded-2xl max-w-lg w-full max-h-[80vh] overflow-hidden shadow-modal"
+		class="bg-surface-primary w-full sm:max-w-lg rounded-t-2xl sm:rounded-2xl max-h-[90dvh] sm:max-h-[80vh] overflow-hidden shadow-modal"
 		onclick={(e) => e.stopPropagation()}
 		onkeydown={() => {}}
 		transition:fly={{ y: 20, duration: 300, opacity: 0 }}
 	>
+		<!-- Drag handle (mobile) -->
+		<div class="flex justify-center pt-2 pb-0 sm:hidden">
+			<div class="w-9 h-1 rounded-full bg-overlay-strong"></div>
+		</div>
+
 		<!-- Header -->
-		<div class="px-7 pt-7 pb-4">
+		<div class="px-4 pt-4 pb-3 sm:px-7 sm:pt-7 sm:pb-4">
 			<div class="flex justify-between items-start gap-3">
 				<div class="min-w-0">
 					<h2 class="text-xl font-bold text-apple-text leading-snug tracking-tight">
@@ -58,7 +63,7 @@ function handleKeydown(e: KeyboardEvent) {
 					{/if}
 				</div>
 				<button
-					class="shrink-0 w-8 h-8 rounded-full bg-overlay-light flex items-center justify-center hover:bg-overlay-strong transition-colors duration-200 cursor-pointer"
+					class="shrink-0 w-10 h-10 sm:w-8 sm:h-8 rounded-full bg-overlay-light flex items-center justify-center active:bg-overlay-strong sm:hover:bg-overlay-strong transition-colors duration-200 cursor-pointer"
 					onclick={onclose}
 					aria-label="閉じる"
 				>
@@ -70,12 +75,12 @@ function handleKeydown(e: KeyboardEvent) {
 		</div>
 
 		<!-- Details -->
-		<div class="px-7 pb-7 overflow-auto max-h-[calc(80vh-120px)]">
+		<div class="px-4 pb-6 sm:px-7 sm:pb-7 overflow-auto max-h-[calc(90dvh-120px)] sm:max-h-[calc(80vh-120px)]">
 			{#each fields as [label, value]}
 				{#if value}
-					<div class="flex py-3 border-b border-overlay-subtle last:border-0 gap-3">
-						<span class="text-caption text-apple-text/40 min-w-28 shrink-0">{label}</span>
-						<span class="text-body text-apple-text leading-relaxed tracking-tight">{value}</span>
+					<div class="py-3 border-b border-overlay-subtle last:border-0">
+						<span class="text-micro sm:text-caption text-apple-text/40 block sm:inline sm:min-w-28 sm:shrink-0 mb-0.5 sm:mb-0">{label}</span>
+						<span class="text-body text-apple-text leading-relaxed tracking-tight block sm:inline">{value}</span>
 					</div>
 				{/if}
 			{/each}
