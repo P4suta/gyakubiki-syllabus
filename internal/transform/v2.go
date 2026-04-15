@@ -86,6 +86,9 @@ func ConvertV2(raw []model.RawCourse) ConvertV2Result {
 			deptSet[dept] = struct{}{}
 		}
 		campus := strings.TrimSpace(r.KochiNm)
+		if campus == "" {
+			campus = "その他"
+		}
 		campusSet[campus] = struct{}{}
 		kubun := strings.TrimSpace(r.KogiKubunNm)
 		if kubun != "" {
@@ -175,6 +178,9 @@ func ConvertV2(raw []model.RawCourse) ConvertV2Result {
 		r := raw[rawIdxMap[courses[i].KogiCd]]
 		dept := strings.TrimSpace(r.SekininBushoNm)
 		campus := strings.TrimSpace(r.KochiNm)
+		if campus == "" {
+			campus = "その他"
+		}
 		kubunStr := strings.TrimSpace(r.KogiKubunNm)
 		kaikojikiStr := strings.TrimSpace(r.KogiKaikojikiNm)
 

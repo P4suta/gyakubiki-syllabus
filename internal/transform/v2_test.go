@@ -469,7 +469,7 @@ func TestConvertV2UnknownCampusSortedLast(t *testing.T) {
 	}
 }
 
-func TestConvertV2EmptyCampus(t *testing.T) {
+func TestConvertV2EmptyCampusMappedToSonota(t *testing.T) {
 	raw := []model.RawCourse{
 		{KogiCd: "001", KogiNm: "A", KochiNm: ""},
 		{KogiCd: "002", KogiNm: "B", KochiNm: "朝倉キャンパス"},
@@ -477,9 +477,15 @@ func TestConvertV2EmptyCampus(t *testing.T) {
 
 	result := ConvertV2(raw)
 
-	// Empty campus should still work (mapped to "" in dicts)
 	if len(result.Data.Courses) != 2 {
 		t.Fatalf("courses len = %d, want 2", len(result.Data.Courses))
+	}
+
+	// Empty campus should be mapped to "その他"
+	c := result.Data.Courses[0]
+	campusName := result.Data.Dicts.Campuses[c.Campus]
+	if campusName != "その他" {
+		t.Errorf("empty campus should map to その他, got %q", campusName)
 	}
 }
 
