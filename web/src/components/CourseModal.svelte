@@ -1,4 +1,5 @@
 <script lang="ts">
+import { fade, fly } from 'svelte/transition'
 import type { CourseV2, Dictionaries } from '../types/course'
 
 interface Props {
@@ -33,40 +34,51 @@ function handleKeydown(e: KeyboardEvent) {
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
-	class="fixed inset-0 bg-black/40 flex items-center justify-center z-[200] p-5"
+	class="fixed inset-0 bg-overlay-backdrop backdrop-blur-[6px] flex items-center justify-center z-[200] p-5"
 	onclick={onclose}
 	onkeydown={(e) => { if (e.key === 'Escape') onclose() }}
+	transition:fade={{ duration: 200 }}
 >
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div
-		class="bg-white rounded-2xl p-7 max-w-lg w-full max-h-[80vh] overflow-auto shadow-2xl"
+		class="bg-surface-primary rounded-2xl max-w-lg w-full max-h-[80vh] overflow-hidden shadow-modal"
 		onclick={(e) => e.stopPropagation()}
 		onkeydown={() => {}}
+		transition:fly={{ y: 20, duration: 300, opacity: 0 }}
 	>
-		<div class="flex justify-between items-start mb-4">
-			<div>
-				<h2 class="text-lg font-bold text-gray-900 leading-snug">
-					{course.nm}
-				</h2>
-				{#if course.sub}
-					<p class="text-sm text-gray-500 mt-1">{course.sub}</p>
-				{/if}
+		<!-- Header -->
+		<div class="px-7 pt-7 pb-4">
+			<div class="flex justify-between items-start gap-3">
+				<div class="min-w-0">
+					<h2 class="text-xl font-bold text-apple-text leading-snug tracking-tight">
+						{course.nm}
+					</h2>
+					{#if course.sub}
+						<p class="text-sub text-apple-text/50 mt-1 tracking-tight">{course.sub}</p>
+					{/if}
+				</div>
+				<button
+					class="shrink-0 w-8 h-8 rounded-full bg-overlay-light flex items-center justify-center hover:bg-overlay-strong transition-colors duration-200 cursor-pointer"
+					onclick={onclose}
+					aria-label="閉じる"
+				>
+					<svg class="w-3.5 h-3.5 text-apple-text/60" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+						<path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+					</svg>
+				</button>
 			</div>
-			<button
-				class="text-gray-400 hover:text-gray-600 text-xl px-1 bg-transparent border-none cursor-pointer"
-				onclick={onclose}
-			>
-				&times;
-			</button>
 		</div>
 
-		{#each fields as [label, value]}
-			{#if value}
-				<div class="flex py-2 border-b border-gray-100 gap-3">
-					<span class="text-xs text-gray-400 min-w-28 shrink-0">{label}</span>
-					<span class="text-sm text-gray-700 leading-relaxed">{value}</span>
-				</div>
-			{/if}
-		{/each}
+		<!-- Details -->
+		<div class="px-7 pb-7 overflow-auto max-h-[calc(80vh-120px)]">
+			{#each fields as [label, value]}
+				{#if value}
+					<div class="flex py-3 border-b border-overlay-subtle last:border-0 gap-3">
+						<span class="text-caption text-apple-text/40 min-w-28 shrink-0">{label}</span>
+						<span class="text-body text-apple-text leading-relaxed tracking-tight">{value}</span>
+					</div>
+				{/if}
+			{/each}
+		</div>
 	</div>
 </div>

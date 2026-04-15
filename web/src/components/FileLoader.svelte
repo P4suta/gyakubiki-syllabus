@@ -75,20 +75,20 @@ function handleFileSelect(e: Event) {
 }
 </script>
 
-<div class="min-h-screen bg-gray-50 font-sans flex items-center justify-center p-6">
+<div class="min-h-screen bg-surface-page font-sans flex items-center justify-center p-6">
 	<div class="max-w-xl w-full">
-		<h1 class="text-3xl font-bold text-gray-900 mb-2 tracking-tight">
+		<h1 class="text-xl font-bold text-apple-text mb-2 tracking-tight">
 			逆引きシラバス
 		</h1>
-		<p class="text-sm text-gray-500 mb-8 leading-relaxed">
+		<p class="text-body text-apple-text/50 mb-8 leading-relaxed tracking-tight">
 			高知大学 時間割ビューアー。変換済みのdata.jsonを読み込むと、曜日x時限の一覧で確認できます。
 		</p>
 
-		<div class="bg-white rounded-xl p-7 shadow-sm mb-6">
-			<h2 class="text-sm font-semibold text-gray-700 mb-4">使い方</h2>
-			<div class="text-xs text-gray-600 leading-7 space-y-1">
+		<div class="bg-surface-primary rounded-xl p-7 shadow-card mb-6">
+			<h2 class="text-caption font-semibold text-apple-text/70 mb-4">使い方</h2>
+			<div class="text-caption text-apple-text/60 leading-7 space-y-1">
 				<p>1. ブラウザのDevToolsでKULASのAPIレスポンスJSONを保存</p>
-				<p>2. <code class="bg-gray-100 px-1.5 py-0.5 rounded text-xs">syllabus-cli convert raw.json -o data.json</code> で変換</p>
+				<p>2. <code class="bg-overlay-subtle px-1.5 py-0.5 rounded text-caption">syllabus-cli convert raw.json -o data.json</code> で変換</p>
 				<p>3. 下のエリアにdata.jsonをドラッグ&ドロップ</p>
 			</div>
 		</div>
@@ -96,7 +96,7 @@ function handleFileSelect(e: Event) {
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div
 			class="border-2 border-dashed rounded-xl p-12 text-center transition-colors cursor-pointer
-				{dragging ? 'border-blue-500 bg-blue-50' : 'border-gray-300 hover:border-gray-400'}"
+				{dragging ? 'border-apple-blue bg-apple-blue/10' : 'border-overlay-light hover:border-overlay-strong'}"
 			ondragover={(e) => { e.preventDefault(); dragging = true }}
 			ondragleave={() => { dragging = false }}
 			ondrop={handleDrop}
@@ -105,13 +105,13 @@ function handleFileSelect(e: Event) {
 			role="button"
 			tabindex="0"
 		>
-			<div class="text-gray-400 text-4xl mb-3">
+			<div class="text-apple-text/40 text-4xl mb-3">
 				{dragging ? '&#x1F4E5;' : '&#x1F4C1;'}
 			</div>
-			<p class="text-sm text-gray-600 font-medium">
+			<p class="text-body text-apple-text/60 font-medium">
 				data.jsonをここにドロップ
 			</p>
-			<p class="text-xs text-gray-400 mt-1">
+			<p class="text-caption text-apple-text/40 mt-1">
 				またはクリックしてファイルを選択
 			</p>
 			<input
@@ -125,10 +125,10 @@ function handleFileSelect(e: Event) {
 
 		{#if error}
 			<div class="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg">
-				<p class="text-red-700 text-xs font-medium mb-1">読み込みエラー</p>
-				<p class="text-red-600 text-xs whitespace-pre-line">{error}</p>
+				<p class="text-red-700 text-caption font-medium mb-1">読み込みエラー</p>
+				<p class="text-red-600 text-caption whitespace-pre-line">{error}</p>
 				{#if fileName}
-					<p class="text-red-400 text-[10px] mt-2">ファイル: {fileName}</p>
+					<p class="text-red-400 text-micro mt-2">ファイル: {fileName}</p>
 				{/if}
 			</div>
 		{/if}

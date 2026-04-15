@@ -48,22 +48,22 @@ onMount(async () => {
 </script>
 
 {#if loading}
-	<div class="min-h-screen bg-gray-50 flex items-center justify-center">
+	<div class="min-h-screen bg-surface-page flex items-center justify-center">
 		<div class="text-center">
-			<div class="inline-block h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-r-transparent mb-4"></div>
-			<p class="text-sm text-gray-500">データを読み込み中...</p>
+			<div class="inline-block w-5 h-5 border-2 border-apple-text/20 border-t-apple-text rounded-full mb-4 animate-spinner"></div>
+			<p class="text-body text-apple-text/60 tracking-tight">データを読み込み中...</p>
 		</div>
 	</div>
 {:else if error}
-	<div class="min-h-screen bg-gray-50 flex items-center justify-center">
-		<div class="bg-white border border-red-200 rounded-lg p-6 max-w-md text-center">
-			<p class="text-red-600 font-medium mb-2">読み込みエラー</p>
-			<p class="text-sm text-gray-600 whitespace-pre-line">{error}</p>
+	<div class="min-h-screen bg-surface-page flex items-center justify-center">
+		<div class="bg-surface-primary rounded-xl p-8 max-w-md text-center shadow-card">
+			<p class="text-cta text-apple-text font-semibold mb-2 tracking-tight">読み込みエラー</p>
+			<p class="text-body text-apple-text/60 whitespace-pre-line leading-relaxed tracking-tight">{error}</p>
 		</div>
 	</div>
 {:else if data}
 	<Disclaimer />
-	<div class="h-screen bg-gray-50 font-sans flex flex-col overflow-hidden">
+	<div class="h-screen bg-surface-page font-sans flex flex-col overflow-hidden animate-fade-in">
 		<FilterBar
 			semesters={data.dicts.semesters}
 			departments={data.dicts.departments}

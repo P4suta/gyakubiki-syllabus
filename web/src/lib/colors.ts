@@ -5,16 +5,16 @@ export interface CourseColor {
 }
 
 const COLORS: CourseColor[] = [
-	{ bg: '#dbeafe', border: '#3b82f6', text: '#1e3a5f' },
-	{ bg: '#dcfce7', border: '#22c55e', text: '#14532d' },
-	{ bg: '#fef9c3', border: '#eab308', text: '#713f12' },
-	{ bg: '#fce7f3', border: '#ec4899', text: '#831843' },
-	{ bg: '#e0e7ff', border: '#6366f1', text: '#312e81' },
-	{ bg: '#ffedd5', border: '#f97316', text: '#7c2d12' },
-	{ bg: '#f3e8ff', border: '#a855f7', text: '#581c87' },
-	{ bg: '#ccfbf1', border: '#14b8a6', text: '#134e4a' },
-	{ bg: '#fee2e2', border: '#ef4444', text: '#7f1d1d' },
-	{ bg: '#e2e8f0', border: '#64748b', text: '#1e293b' },
+	{ bg: '#e8f0fe', border: '#4285f4', text: '#1d1d1f' },
+	{ bg: '#e6f4ea', border: '#34a853', text: '#1d1d1f' },
+	{ bg: '#fef7e0', border: '#f9ab00', text: '#1d1d1f' },
+	{ bg: '#fce8ef', border: '#e8607a', text: '#1d1d1f' },
+	{ bg: '#eae6ff', border: '#7c6cdb', text: '#1d1d1f' },
+	{ bg: '#fde8d8', border: '#e8844a', text: '#1d1d1f' },
+	{ bg: '#f3e8ff', border: '#9b72cf', text: '#1d1d1f' },
+	{ bg: '#e0f5f0', border: '#40b5a0', text: '#1d1d1f' },
+	{ bg: '#fde7e7', border: '#dc6060', text: '#1d1d1f' },
+	{ bg: '#eceef1', border: '#7c8590', text: '#1d1d1f' },
 ]
 
 export function getColor(kogiCd: string): CourseColor {

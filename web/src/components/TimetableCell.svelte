@@ -4,16 +4,13 @@ import CourseCard from './CourseCard.svelte'
 
 interface Props {
 	courses: CourseV2[]
-	isSaturday: boolean
 	onselect: (course: CourseV2) => void
 }
 
-let { courses, isSaturday, onselect }: Props = $props()
+let { courses, onselect }: Props = $props()
 </script>
 
-<div
-	class="min-h-20 p-1 rounded border border-gray-100 {isSaturday ? 'bg-amber-50' : 'bg-white'}"
->
+<div class="bg-white rounded-lg min-h-24 p-1.5">
 	{#each courses as course (course.cd)}
 		<CourseCard {course} onclick={() => onselect(course)} />
 	{/each}

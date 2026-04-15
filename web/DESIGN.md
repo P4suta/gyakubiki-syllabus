@@ -305,3 +305,84 @@ The color story is starkly binary. Product sections alternate between pure black
 6. Products always appear on solid color fields — never on gradients, textures, or lifestyle backgrounds in hero modules
 7. Shadow is rare and always soft: `3px 5px 30px 0.22 opacity` or nothing at all
 8. Pill CTAs use 980px radius — this creates the signature Apple rounded-rectangle-that-looks-like-a-capsule shape
+
+## 10. Tailwind CSS 4 Design Tokens (`app.css` `@theme`)
+
+All design values are centralized as Tailwind CSS 4 theme tokens. Components use semantic utility classes — **never hardcode hex colors, pixel font sizes, or shadow values**.
+
+### Color Tokens
+
+| Token | Value | Utility Classes | Usage |
+|-------|-------|-----------------|-------|
+| `--color-apple-text` | `#1d1d1f` | `text-apple-text`, `border-apple-text` | Primary text, supports `/opacity` modifier |
+| `--color-apple-blue` | `#0071e3` | `bg-apple-blue`, `text-apple-blue`, `ring-apple-blue` | All interactive accents (CTAs, links, focus rings) |
+| `--color-apple-blue-hover` | `#0077ed` | `hover:bg-apple-blue-hover` | Blue button hover state |
+| `--color-surface-primary` | `#ffffff` | `bg-surface-primary` | Card/panel backgrounds |
+| `--color-surface-page` | `#f5f5f7` | `bg-surface-page` | Page background, supports `/opacity` |
+| `--color-overlay-subtle` | `rgb(0 0 0 / 0.04)` | `bg-overlay-subtle`, `border-overlay-subtle` | Borders, input backgrounds |
+| `--color-overlay-muted` | `rgb(0 0 0 / 0.05)` | `bg-overlay-muted` | Segmented control background |
+| `--color-overlay-light` | `rgb(0 0 0 / 0.06)` | `border-overlay-light`, `bg-overlay-light` | Nav border, close button bg |
+| `--color-overlay-medium` | `rgb(0 0 0 / 0.07)` | `hover:bg-overlay-medium` | Hover backgrounds |
+| `--color-overlay-strong` | `rgb(0 0 0 / 0.1)` | `hover:bg-overlay-strong` | Strong hover (close button) |
+| `--color-overlay-backdrop` | `rgb(0 0 0 / 0.3)` | `bg-overlay-backdrop` | Modal/dialog backdrop |
+| `--color-glass-bg` | `rgb(251 251 253 / 0.72)` | — | Used internally by `.glass-nav` |
+
+**Opacity modifiers**: `text-apple-text/50`, `bg-surface-page/80` etc. are supported automatically. Use these for secondary/tertiary text:
+
+| Pattern | Usage |
+|---------|-------|
+| `text-apple-text` | Primary text |
+| `text-apple-text/70` | Body text (disclaimer, descriptions) |
+| `text-apple-text/60` | Medium text (day headers, loading, icons) |
+| `text-apple-text/50` | Secondary text (professor names, subtitles) |
+| `text-apple-text/40` | Tertiary text (field labels, counters) |
+| `text-apple-text/30` | Placeholder text, muted icons |
+| `text-apple-text/20` | Spinner border (inactive arc) |
+
+### Font Size Tokens
+
+| Token | Value | Line Height | Utility | Usage |
+|-------|-------|-------------|---------|-------|
+| `--font-size-micro` | `11px` | `1.4` | `text-micro` | Professor names, file size labels |
+| `--font-size-caption` | `13px` | `1.4` | `text-caption` | Filters, grid headers, field labels, card titles |
+| `--font-size-sub` | `14px` | `1.4` | `text-sub` | Modal subtitles |
+| `--font-size-body` | `15px` | `1.5` | `text-body` | Body text, loading, error descriptions |
+| `--font-size-cta` | `17px` | `1.35` | `text-cta` | CTA buttons, error headings |
+
+For sizes above `17px`, use standard Tailwind utilities (`text-lg`, `text-xl`).
+
+### Shadow Tokens
+
+| Token | Value | Utility | Usage |
+|-------|-------|---------|-------|
+| `--shadow-card-hover` | `0 2px 12px rgba(0,0,0,0.08)` | `shadow-card-hover` | Course card hover lift |
+| `--shadow-card` | `0 3px 30px rgba(0,0,0,0.08)` | `shadow-card` | Static cards (error, instructions) |
+| `--shadow-modal` | `0 25px 50px rgba(0,0,0,0.15)` | `shadow-modal` | Modals, dialogs |
+
+Standard Tailwind `shadow-sm` is also used (e.g., segmented control active pill).
+
+### Easing & Animation Tokens
+
+| Token | Value | Utility | Usage |
+|-------|-------|---------|-------|
+| `--ease-spring` | `cubic-bezier(0.25, 0.46, 0.45, 0.94)` | `ease-spring` | Card hover, premium transitions |
+| `--animate-fade-in` | `fade-in 400ms ease-out` | `animate-fade-in` | Page content appearance |
+| `--animate-spinner` | `spinner-rotate 0.8s linear infinite` | `animate-spinner` | Loading spinner |
+
+Standard Tailwind `duration-200` and `duration-300` are used for transition timing.
+
+### Utility Classes (non-token)
+
+| Class | Defined In | Usage |
+|-------|-----------|-------|
+| `.glass-nav` | `app.css` | Frosted glass navigation bar (`backdrop-filter: saturate(180%) blur(20px)`) |
+
+### Guidelines for Future Development
+
+1. **Never hardcode colors** — use `text-apple-text`, `bg-surface-page`, `bg-apple-blue` etc.
+2. **Never hardcode font sizes in px** — use `text-micro`, `text-caption`, `text-sub`, `text-body`, `text-cta`
+3. **Never hardcode shadows** — use `shadow-card-hover`, `shadow-card`, `shadow-modal`
+4. **Use opacity modifiers** for text hierarchy — `text-apple-text/60`, not a separate token
+5. **Error states** (`red-50`, `red-600` etc.) may use standard Tailwind red utilities — they are not brand colors
+6. **Standard Tailwind utilities** (`shadow-sm`, `duration-200`, `rounded-xl`, `text-xl`) remain valid alongside tokens
+7. **Add new tokens to `@theme`** before using them in components — grep for `[#` to catch hardcoded values
