@@ -1,9 +1,9 @@
 <script lang="ts">
-import type { ProcessedData } from '../types/course'
+import type { ProcessedDataV2 } from '../types/course'
 import { validateProcessedData } from '../lib/validate'
 
 interface Props {
-	onload: (data: ProcessedData) => void
+	onload: (data: ProcessedDataV2) => void
 }
 
 let { onload }: Props = $props()
@@ -51,7 +51,7 @@ function processFile(file: File) {
 		}
 
 		const result = validateProcessedData(parsed)
-		console.log('[FileLoader] validation result:', result.ok, result.ok ? '' : (result as any).error)
+		console.log('[FileLoader] validation result:', result.ok, result.ok ? '' : result.error)
 		if (result.ok) {
 			onload(result.data)
 		} else {

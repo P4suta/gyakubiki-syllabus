@@ -1,94 +1,68 @@
-import type { Course } from '../types/course'
+import type { CourseV2, Dictionaries, IndicesMap } from '../types/course'
+import { BitSet } from './bitset'
 
 export function normalize(s: string): string {
 	return s.replace(/\u3000/g, ' ').toLowerCase()
 }
 
-function buildHaystack(c: Course): string {
-	if (c.searchText) return c.searchText
-	return normalize(
-		[c.kogiNm, c.fukudai, c.tantoKyoin, c.kogiCd, c.sekininBushoNm]
-			.filter(Boolean)
-			.join(' '),
-	)
-}
-
 export class CourseIndex {
-	readonly courses: Course[]
-	private readonly haystacks: string[]
-	private readonly byDepartment: Map<string, number[]>
-	private readonly bySemester: Map<string, Set<number>>
+	readonly courses: CourseV2[]
+	private readonly dicts: Dictionaries
+	private readonly semesterBitsets: Map<number, BitSet>
+	private readonly departmentBitsets: Map<number, BitSet>
+	private readonly campusBitsets: Map<number, BitSet>
+	private readonly allBits: BitSet
 
-	constructor(courses: Course[]) {
+	constructor(courses: CourseV2[], dicts: Dictionaries, indices: IndicesMap) {
 		this.courses = courses
-		this.haystacks = courses.map(buildHaystack)
+		this.dicts = dicts
+		this.allBits = BitSet.allOnes(courses.length)
 
-		this.byDepartment = new Map()
-		for (let i = 0; i < courses.length; i++) {
-			const dept = courses[i].sekininBushoNm
-			let arr = this.byDepartment.get(dept)
-			if (!arr) {
-				arr = []
-				this.byDepartment.set(dept, arr)
-			}
-			arr.push(i)
-		}
-
-		this.bySemester = new Map()
-		const tsuunenIndices: number[] = []
-
-		for (let i = 0; i < courses.length; i++) {
-			for (const slot of courses[i].slots ?? []) {
-				if (slot.semester === '通年') {
-					tsuunenIndices.push(i)
-				} else {
-					let set = this.bySemester.get(slot.semester)
-					if (!set) {
-						set = new Set()
-						this.bySemester.set(slot.semester, set)
-					}
-					set.add(i)
-				}
-			}
-		}
-
-		for (const set of this.bySemester.values()) {
-			for (const idx of tsuunenIndices) {
-				set.add(idx)
-			}
-		}
+		this.semesterBitsets = decodeBitsetMap(indices.semester)
+		this.departmentBitsets = decodeBitsetMap(indices.department)
+		this.campusBitsets = decodeBitsetMap(indices.campus)
 	}
 
-	filter(semester: string, department: string, query: string): Course[] {
-		const normalizedQuery = query ? normalize(query) : ''
+	filter(semester: string, department: string, campus: string, query: string): CourseV2[] {
+		if (this.courses.length === 0) return []
 
-		let indices: Iterable<number>
+		let bits = this.allBits
+
+		if (semester !== 'all') {
+			const semIdx = this.dicts.semesters.indexOf(semester)
+			const semBits = semIdx >= 0 ? this.semesterBitsets.get(semIdx) : undefined
+			bits = semBits ? bits.and(semBits) : BitSet.allOnes(0)
+		}
 
 		if (department !== 'all') {
-			indices = this.byDepartment.get(department) ?? []
-		} else if (semester !== 'all') {
-			indices = this.bySemester.get(semester) ?? new Set()
-		} else {
-			indices = this.courses.map((_, i) => i)
+			const deptIdx = this.dicts.departments.indexOf(department)
+			const deptBits = deptIdx >= 0 ? this.departmentBitsets.get(deptIdx) : undefined
+			bits = deptBits ? bits.and(deptBits) : BitSet.allOnes(0)
 		}
 
-		const needSemesterCheck = semester !== 'all' && department !== 'all'
-		const semesterSet = needSemesterCheck
-			? this.bySemester.get(semester)
-			: undefined
-
-		const results: Course[] = []
-
-		for (const i of indices) {
-			if (needSemesterCheck && !(semesterSet?.has(i) ?? false)) {
-				continue
-			}
-			if (normalizedQuery && !this.haystacks[i].includes(normalizedQuery)) {
-				continue
-			}
-			results.push(this.courses[i])
+		if (campus !== 'all') {
+			const campIdx = this.dicts.campuses.indexOf(campus)
+			const campBits = campIdx >= 0 ? this.campusBitsets.get(campIdx) : undefined
+			bits = campBits ? bits.and(campBits) : BitSet.allOnes(0)
 		}
 
-		return results
+		const candidateIndices = bits.popIndices()
+
+		if (query) {
+			const normalizedQuery = normalize(query)
+			return candidateIndices
+				.filter((i) => this.courses[i].st.includes(normalizedQuery))
+				.map((i) => this.courses[i])
+		}
+
+		return candidateIndices.map((i) => this.courses[i])
 	}
+}
+
+function decodeBitsetMap(encoded: Record<string, string>): Map<number, BitSet> {
+	const map = new Map<number, BitSet>()
+	for (const [key, value] of Object.entries(encoded)) {
+		map.set(Number(key), BitSet.fromBase64(value))
+	}
+	return map
 }

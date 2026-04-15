@@ -1,7 +1,7 @@
-import type { ProcessedData } from '../types/course'
+import type { ProcessedDataV2 } from '../types/course'
 import { validateProcessedData } from './validate'
 
-export async function loadData(): Promise<ProcessedData> {
+export async function loadData(): Promise<ProcessedDataV2> {
 	const url = `${import.meta.env.BASE_URL}data.json`
 	const res = await fetch(url)
 	if (!res.ok) {

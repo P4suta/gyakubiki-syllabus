@@ -1,12 +1,17 @@
-import type { Course } from '../types/course'
+import type { CourseV2, Dictionaries } from '../types/course'
 
 export const DAYS = ['月', '火', '水', '木', '金', '土'] as const
+export const DAY_INDICES = [0, 1, 2, 3, 4, 5] as const // indices matching DAYS
 export const PERIODS = [1, 2, 3, 4, 5, 6] as const
 
 export type GridKey = `${string}-${number}`
 
-export function buildGrid(courses: Course[], semester: string): Map<GridKey, Course[]> {
-	const grid = new Map<GridKey, Course[]>()
+export function buildGrid(
+	courses: CourseV2[],
+	semester: string,
+	dicts: Dictionaries,
+): Map<GridKey, CourseV2[]> {
+	const grid = new Map<GridKey, CourseV2[]>()
 
 	for (const d of DAYS) {
 		for (const p of PERIODS) {
@@ -14,14 +19,19 @@ export function buildGrid(courses: Course[], semester: string): Map<GridKey, Cou
 		}
 	}
 
+	const semIdx = semester !== 'all' ? dicts.semesters.indexOf(semester) : -1
+	const tsuunenIdx = dicts.semesters.indexOf('通年')
+
 	for (const course of courses) {
-		for (const slot of course.slots ?? []) {
-			if (semester !== 'all' && slot.semester !== semester && slot.semester !== '通年') {
+		for (const slot of course.slots) {
+			if (semIdx >= 0 && slot.s !== semIdx && slot.s !== tsuunenIdx) {
 				continue
 			}
-			const key: GridKey = `${slot.day}-${slot.period}`
+			if (slot.d < 0 || slot.d >= DAYS.length) continue
+			const day = DAYS[slot.d]
+			const key: GridKey = `${day}-${slot.p}`
 			const cell = grid.get(key)
-			if (cell && !cell.some((c) => c.kogiCd === course.kogiCd)) {
+			if (cell && !cell.some((c) => c.cd === course.cd)) {
 				cell.push(course)
 			}
 		}
@@ -30,11 +40,11 @@ export function buildGrid(courses: Course[], semester: string): Map<GridKey, Cou
 	return grid
 }
 
-export function countUnique(grid: Map<GridKey, Course[]>): number {
+export function countUnique(grid: Map<GridKey, CourseV2[]>): number {
 	const seen = new Set<string>()
 	for (const courses of grid.values()) {
 		for (const c of courses) {
-			seen.add(c.kogiCd)
+			seen.add(c.cd)
 		}
 	}
 	return seen.size
