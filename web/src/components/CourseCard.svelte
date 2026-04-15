@@ -8,7 +8,7 @@ interface Props {
 }
 
 let { course, onclick }: Props = $props()
-let color = $derived(getColor(course.cd))
+let color = $derived(getColor(course.kbn))
 </script>
 
 <button
