@@ -28,7 +28,7 @@ jobs:
         with:
           go-version-file: go.mod
       - run: go build -o syllabus-cli ./cmd/syllabus-cli
-      - run: ./syllabus-cli convert raw/*.json --compact -o web/public/data.json
+      - run: ./syllabus-cli convert raw/*.json --compact --v2 -o web/public/data.json
 
       # Frontend: build
       - uses: oven-sh/setup-bun@v2
