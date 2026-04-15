@@ -1,27 +1,37 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { loadData } from './load-data'
 
-function validData() {
+function validV2Data() {
 	return {
-		version: 1,
-		generatedAt: '2026-04-12T00:00:00+09:00',
+		version: 2,
+		generatedAt: '2026-04-16T00:00:00+09:00',
 		totalRaw: 1,
+		dicts: {
+			semesters: ['1学期'],
+			departments: ['理工学部'],
+			campuses: ['朝倉キャンパス'],
+			kubun: ['講義'],
+			kaikojiki: ['1学期'],
+		},
+		indices: {
+			semester: {},
+			department: {},
+			campus: {},
+		},
 		courses: [
 			{
-				kogiCd: '001',
-				kogiNm: 'テスト',
-				tantoKyoin: '教員',
-				jikanwariRaw: '',
+				cd: '001',
+				nm: 'テスト',
+				prof: '教員',
+				raw: '',
 				slots: [],
-				kogiKaikojikiNm: '',
-				kogiKubunNm: '',
-				sekininBushoNm: '',
-				kochiNm: '',
-				gakusokuKamokuNm: '',
+				ki: 0,
+				kbn: 0,
+				dept: 0,
+				campus: 0,
+				st: '',
 			},
 		],
-		semesters: ['1学期'],
-		departments: ['理工学部'],
 	}
 }
 
@@ -30,8 +40,8 @@ afterEach(() => {
 })
 
 describe('loadData', () => {
-	it('正常系: 有効なデータを返す', async () => {
-		const data = validData()
+	it('正常系: 有効なv2データを返す', async () => {
+		const data = validV2Data()
 		vi.stubGlobal(
 			'fetch',
 			vi.fn().mockResolvedValue({
@@ -41,9 +51,10 @@ describe('loadData', () => {
 		)
 
 		const result = await loadData()
-		expect(result.version).toBe(1)
+		expect(result.version).toBe(2)
 		expect(result.courses).toHaveLength(1)
-		expect(result.courses[0].kogiCd).toBe('001')
+		expect(result.courses[0].cd).toBe('001')
+		expect(result.dicts.semesters).toEqual(['1学期'])
 	})
 
 	it('異常系: HTTPエラー時にthrowする', async () => {

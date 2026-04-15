@@ -2,8 +2,10 @@
 interface Props {
 	semesters: string[]
 	departments: string[]
+	campuses: string[]
 	semester: string
 	department: string
+	campus: string
 	searchText: string
 	displayCount: number
 	totalCount: number
@@ -12,8 +14,10 @@ interface Props {
 let {
 	semesters,
 	departments,
+	campuses,
 	semester = $bindable(),
 	department = $bindable(),
+	campus = $bindable(),
 	searchText = $bindable(),
 	displayCount,
 	totalCount,
@@ -43,6 +47,17 @@ let {
 				</button>
 			{/each}
 		</div>
+
+		<!-- Campus filter -->
+		<select
+			bind:value={campus}
+			class="px-2.5 py-1 text-xs border border-gray-300 rounded-md bg-white text-gray-700 outline-none max-w-40"
+		>
+			<option value="all">全キャンパス</option>
+			{#each campuses as c}
+				<option value={c}>{c}</option>
+			{/each}
+		</select>
 
 		<!-- Department filter -->
 		<select

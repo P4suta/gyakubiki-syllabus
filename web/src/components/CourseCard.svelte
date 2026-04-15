@@ -1,14 +1,14 @@
 <script lang="ts">
 import { getColor } from '../lib/colors'
-import type { Course } from '../types/course'
+import type { CourseV2 } from '../types/course'
 
 interface Props {
-	course: Course
+	course: CourseV2
 	onclick: () => void
 }
 
 let { course, onclick }: Props = $props()
-let color = $derived(getColor(course.kogiCd))
+let color = $derived(getColor(course.cd))
 </script>
 
 <button
@@ -20,9 +20,9 @@ let color = $derived(getColor(course.kogiCd))
 		class="font-semibold text-[11px] leading-snug mb-0.5 line-clamp-2"
 		style="color: {color.text};"
 	>
-		{course.kogiNm}
+		{course.nm}
 	</div>
 	<div class="text-gray-500 text-[10px]">
-		{course.tantoKyoin?.split(',')[0]?.trim() ?? ''}
+		{course.prof?.split(',')[0]?.trim() ?? ''}
 	</div>
 </button>

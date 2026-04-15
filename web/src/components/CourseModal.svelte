@@ -1,26 +1,27 @@
 <script lang="ts">
-import type { Course } from '../types/course'
+import type { CourseV2, Dictionaries } from '../types/course'
 
 interface Props {
-	course: Course
+	course: CourseV2
+	dicts: Dictionaries
 	onclose: () => void
 }
 
-let { course, onclose }: Props = $props()
+let { course, dicts, onclose }: Props = $props()
 
 const fields: [string, string | undefined | null][] = $derived([
-	['授業コード', course.kogiCd],
-	['時間割', course.jikanwariRaw],
-	['担当教員', course.tantoKyoin],
-	['開講時期', course.kogiKaikojikiNm],
-	['講義区分', course.kogiKubunNm],
-	['校地', course.kochiNm],
-	['開講責任部署', course.sekininBushoNm],
-	['学則科目', course.gakusokuKamokuNm],
-	['対象学科/年次', course.taishoGakka],
-	['必須/選択', course.taishoNenji],
-	['科目分類', course.kamokuBunrui],
-	['科目分野', course.kamokuBunya],
+	['授業コード', course.cd],
+	['時間割', course.raw],
+	['担当教員', course.prof],
+	['開講時期', dicts.kaikojiki[course.ki]],
+	['講義区分', dicts.kubun[course.kbn]],
+	['校地', dicts.campuses[course.campus]],
+	['開講責任部署', dicts.departments[course.dept]],
+	['学則科目', course.gaku ?? course.nm],
+	['対象学科/年次', course.gakka],
+	['必須/選択', course.nen],
+	['科目分類', course.bunrui],
+	['科目分野', course.bunya],
 ])
 
 function handleKeydown(e: KeyboardEvent) {
@@ -45,10 +46,10 @@ function handleKeydown(e: KeyboardEvent) {
 		<div class="flex justify-between items-start mb-4">
 			<div>
 				<h2 class="text-lg font-bold text-gray-900 leading-snug">
-					{course.kogiNm}
+					{course.nm}
 				</h2>
-				{#if course.fukudai}
-					<p class="text-sm text-gray-500 mt-1">{course.fukudai}</p>
+				{#if course.sub}
+					<p class="text-sm text-gray-500 mt-1">{course.sub}</p>
 				{/if}
 			</div>
 			<button
