@@ -10,7 +10,7 @@ let accepted = $state(false)
 	transition:fade={{ duration: 200 }}
 >
 	<div
-		class="bg-surface-primary rounded-2xl shadow-modal max-w-md w-full max-h-[90vh] overflow-y-auto p-8"
+		class="bg-surface-primary rounded-2xl shadow-modal max-w-md w-full max-h-[90dvh] overflow-y-auto p-5 sm:p-8"
 		transition:scale={{ start: 0.95, duration: 300 }}
 	>
 		<h2 class="text-xl font-bold text-apple-text tracking-tight mb-5">ご利用にあたって</h2>

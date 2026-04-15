@@ -67,13 +67,23 @@ body {
   background: var(--color-surface-page);
   color: var(--color-apple-text);
   letter-spacing: -0.01em;
+  -webkit-tap-highlight-color: transparent;
 }
 
-/* Frosted glass navigation */
+/* Frosted glass */
 .glass-nav {
   background: var(--color-glass-bg);
   backdrop-filter: saturate(180%) blur(20px);
   -webkit-backdrop-filter: saturate(180%) blur(20px);
+}
+
+/* Hide scrollbar (for horizontal scroll strips) */
+.hide-scrollbar::-webkit-scrollbar { display: none; }
+.hide-scrollbar { scrollbar-width: none; }
+
+/* Safe area inset */
+@supports (padding: env(safe-area-inset-bottom)) {
+  .safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
 }
 
 /* Animations */

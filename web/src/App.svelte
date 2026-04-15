@@ -63,7 +63,7 @@ onMount(async () => {
 	</div>
 {:else if data}
 	<Disclaimer />
-	<div class="h-screen bg-surface-page font-sans flex flex-col overflow-hidden animate-fade-in">
+	<div class="h-dvh bg-surface-page font-sans flex flex-col overflow-hidden animate-fade-in">
 		<FilterBar
 			semesters={data.dicts.semesters}
 			departments={data.dicts.departments}
