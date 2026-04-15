@@ -16,6 +16,7 @@ import (
 func main() {
 	var outputFile string
 	var compact bool
+	var v2Format bool
 
 	rootCmd := &cobra.Command{
 		Use:   "syllabus-cli",
@@ -59,20 +60,35 @@ selectKogiDtoListラッパーと生配列の両方に対応しています。`,
 				return fmt.Errorf("講義データが0件です。入力ファイルの内容を確認してください")
 			}
 
-			result := transform.Convert(rawCourses)
+			var output []byte
+			var courseCount int
+			var totalRaw int
+			var warnings []string
+
+			if v2Format {
+				result := transform.ConvertV2(rawCourses)
+				warnings = result.Warnings
+				courseCount = len(result.Data.Courses)
+				totalRaw = result.Data.TotalRaw
+				output, err = marshalJSON(result.Data, compact)
+			} else {
+				result := transform.Convert(rawCourses)
+				warnings = result.Warnings
+				courseCount = len(result.Data.Courses)
+				totalRaw = result.Data.TotalRaw
+				output, err = marshalJSON(result.Data, compact)
+			}
+			if err != nil {
+				return err
+			}
 
 			// Print warnings to stderr
-			if len(result.Warnings) > 0 {
-				fmt.Fprintf(os.Stderr, "⚠ %d件の警告:\n", len(result.Warnings))
-				for _, w := range result.Warnings {
+			if len(warnings) > 0 {
+				fmt.Fprintf(os.Stderr, "⚠ %d件の警告:\n", len(warnings))
+				for _, w := range warnings {
 					fmt.Fprintln(os.Stderr, w)
 				}
 				fmt.Fprintln(os.Stderr)
-			}
-
-			output, err := marshalOutput(result.Data, compact)
-			if err != nil {
-				return err
 			}
 
 			if outputFile != "" {
@@ -80,7 +96,7 @@ selectKogiDtoListラッパーと生配列の両方に対応しています。`,
 					return fmt.Errorf("出力ファイルの書き込みに失敗しました: %s\n  原因: %w", outputFile, err)
 				}
 				fmt.Fprintf(os.Stderr, "✓ %d件の講義を変換しました (元データ: %d件) → %s\n",
-					len(result.Data.Courses), result.Data.TotalRaw, outputFile)
+					courseCount, totalRaw, outputFile)
 			} else {
 				fmt.Println(string(output))
 			}
@@ -91,6 +107,7 @@ selectKogiDtoListラッパーと生配列の両方に対応しています。`,
 
 	convertCmd.Flags().StringVarP(&outputFile, "output", "o", "", "出力先ファイル (デフォルト: stdout)")
 	convertCmd.Flags().BoolVar(&compact, "compact", false, "圧縮出力")
+	convertCmd.Flags().BoolVar(&v2Format, "v2", false, "v2最適化フォーマットで出力")
 
 	var jsonOutput bool
 
@@ -307,7 +324,8 @@ func parseInput(data []byte) ([]model.RawCourse, error) {
 	}
 }
 
-func marshalOutput(data model.ProcessedData, compact bool) ([]byte, error) {
+// marshalJSON encodes data as JSON. Go's json.Marshal requires interface{} — this is unavoidable.
+func marshalJSON[T model.ProcessedData | model.ProcessedDataV2](data T, compact bool) ([]byte, error) {
 	var output []byte
 	var err error
 	if compact {
