@@ -77,9 +77,8 @@ just install-hooks  # lefthook で git hooks を有効化
 
 ## License
 
-[GNU Affero General Public License v3.0](LICENSE) (AGPL-3.0)。
+[GNU Affero General Public License v3.0](LICENSE) (AGPL-3.0)。要点:
 
-要点:
 - ソースコードの閲覧・改変・私的利用は自由。
 - 改変版を **配布またはネットワーク経由で提供する場合**、ソースコードを同 license で公開する義務がある (コピーレフト)。
 - 著者は本ツールの利用に関する一切の保証・責任を負いません (license 本文の "NO WARRANTY" 条項)。
