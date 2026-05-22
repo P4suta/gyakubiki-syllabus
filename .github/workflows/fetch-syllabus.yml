@@ -14,6 +14,15 @@ on:
         description: kaikoNendo を明示指定 (空なら現在年度を自動計算)
         type: string
         default: ''
+      log-level:
+        description: ログレベル (debug 推奨 / info / warn / error)
+        type: choice
+        options: [info, debug, warn, error]
+        default: info
+      debug-dump:
+        description: HTTP req/res と SignalR frame を artifact に保存 (root cause 分析用)
+        type: boolean
+        default: false
 
 permissions:
   contents: write   # main に raw/ を push するため
@@ -42,13 +51,28 @@ jobs:
           KULAS_API_TOKEN: ${{ secrets.KULAS_API_TOKEN }}
         run: |
           args=(--out-dir raw/)
+          args+=(--log-level "${{ inputs.log-level || 'info' }}")
+          args+=(--log-format json)
           if [[ -n "${{ inputs.year }}" ]]; then
             args+=(--year "${{ inputs.year }}")
           fi
           if [[ "${{ inputs.dry-run }}" == "true" ]]; then
             args+=(--dry-run)
           fi
+          if [[ "${{ inputs.debug-dump }}" == "true" ]]; then
+            mkdir -p debug
+            args+=(--debug-dump-dir debug)
+          fi
           ./syllabus-cli fetch "${args[@]}"
+
+      - name: Upload debug dump
+        if: ${{ always() && inputs.debug-dump == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: kulas-debug-dump
+          path: debug/
+          retention-days: 7
+          if-no-files-found: warn
 
       - name: Commit & push if changed
         id: commit

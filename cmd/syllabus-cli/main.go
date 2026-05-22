@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"strings"
 
@@ -14,14 +15,31 @@ import (
 )
 
 func main() {
-	var outputFile string
-	var compact bool
-	var v2Format bool
+	os.Exit(run())
+}
+
+func run() int {
+	defer recoverPanic()
+
+	var (
+		outputFile string
+		compact    bool
+		v2Format   bool
+		logLevel   string
+		logFormat  string
+	)
 
 	rootCmd := &cobra.Command{
 		Use:   "syllabus-cli",
 		Short: "高知大学シラバスデータ変換ツール",
+		PersistentPreRunE: func(_ *cobra.Command, _ []string) error {
+			return setupLogger(LogConfig{Level: logLevel, Format: logFormat})
+		},
+		SilenceUsage:  true, // エラー発生時に Usage を毎回出さない (slog でログ出すので冗長)
+		SilenceErrors: true, // cobra のデフォルト stderr 出力を抑制、slog 経由で出す
 	}
+	rootCmd.PersistentFlags().StringVar(&logLevel, "log-level", "info", "ログレベル (debug | info | warn | error)")
+	rootCmd.PersistentFlags().StringVar(&logFormat, "log-format", "text", "ログ形式 (text | json)。CI では json 推奨")
 
 	convertCmd := &cobra.Command{
 		Use:   "convert <input-file> [input-file...]",
@@ -82,21 +100,23 @@ selectKogiDtoListラッパーと生配列の両方に対応しています。`,
 				return err
 			}
 
-			// Print warnings to stderr
 			if len(warnings) > 0 {
-				fmt.Fprintf(os.Stderr, "⚠ %d件の警告:\n", len(warnings))
+				slog.Warn("convert warnings", "count", len(warnings))
 				for _, w := range warnings {
-					fmt.Fprintln(os.Stderr, w)
+					slog.Warn("convert", "msg", w)
 				}
-				fmt.Fprintln(os.Stderr)
 			}
 
 			if outputFile != "" {
-				if err := os.WriteFile(outputFile, output, 0o644); err != nil { //nolint:gosec // ユーザー指定の出力先、web から読まれる前提で 0o644
+				if err := os.WriteFile(outputFile, output, 0o644); err != nil { //nolint:gosec // web から読まれる前提で 0o644
 					return fmt.Errorf("出力ファイルの書き込みに失敗しました: %s\n  原因: %w", outputFile, err)
 				}
-				fmt.Fprintf(os.Stderr, "✓ %d件の講義を変換しました (元データ: %d件) → %s\n",
-					courseCount, totalRaw, outputFile)
+				slog.Info("convert done",
+					"courses", courseCount,
+					"total_raw", totalRaw,
+					"output", outputFile,
+					"output_bytes", len(output),
+				)
 			} else {
 				fmt.Println(string(output))
 			}
@@ -160,8 +180,11 @@ convert前にデータの健全性を確認できます。
 	rootCmd.AddCommand(newFetchCommand())
 
 	if err := rootCmd.Execute(); err != nil {
-		os.Exit(1)
+		// PersistentPreRunE が成功していれば slog 初期化済、未初期化なら stderr fallback。
+		slog.Error("command failed", "error", err.Error())
+		return 1
 	}
+	return 0
 }
 
 func printReport(r *inspect.Report) {
@@ -253,10 +276,10 @@ func loadAndMerge(paths []string) ([]model.RawCourse, error) {
 		}
 
 		all = append(all, courses...)
-		fmt.Fprintf(os.Stderr, "  読み込み: %s (%d件)\n", p, len(courses))
+		slog.Info("input loaded", "file", p, "courses", len(courses))
 	}
 
-	fmt.Fprintf(os.Stderr, "  合計: %d件 (%dファイル)\n\n", len(all), len(paths))
+	slog.Info("merge done", "total_courses", len(all), "files", len(paths))
 	return all, nil
 }
 

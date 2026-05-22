@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -79,7 +80,7 @@ func All(ctx context.Context, opts Options, fetcher PageFetcher) (*Result, error
 	}
 
 	for pageNo := 2; pageNo <= first.MaxPageNo; pageNo++ {
-		fmt.Fprintf(os.Stderr, "  取得中: page %d/%d\n", pageNo, first.MaxPageNo)
+		slog.Info("fetching page", "page", pageNo, "of", first.MaxPageNo)
 		b, err := fetcher.FetchPage(ctx, pageNo)
 		if err != nil {
 			return nil, err
@@ -108,7 +109,7 @@ func All(ctx context.Context, opts Options, fetcher PageFetcher) (*Result, error
 	}
 
 	if opts.DryRun {
-		fmt.Fprintln(os.Stderr, "(dry-run) ファイルは書き込みません")
+		slog.Info("dry-run: skipping write", "total", result.Total, "pages", len(result.Pages))
 		sortPagesByNo(result.Pages)
 		return result, nil
 	}
