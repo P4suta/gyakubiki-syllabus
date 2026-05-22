@@ -72,3 +72,14 @@ just install-hooks  # lefthook で git hooks を有効化
 ### デプロイ
 
 `main` ブランチへの push で `.github/workflows/deploy.yml` が自動ビルド・デプロイを実行します。`fetch-syllabus.yml` は変更を commit して push した後、明示的に deploy を起動します (`GITHUB_TOKEN` の push は `on: push` を起動しない仕様への対応)。
+
+---
+
+## License
+
+[GNU Affero General Public License v3.0](LICENSE) (AGPL-3.0)。
+
+要点:
+- ソースコードの閲覧・改変・私的利用は自由。
+- 改変版を **配布またはネットワーク経由で提供する場合**、ソースコードを同 license で公開する義務がある (コピーレフト)。
+- 著者は本ツールの利用に関する一切の保証・責任を負いません (license 本文の "NO WARRANTY" 条項)。
