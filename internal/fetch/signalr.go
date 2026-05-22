@@ -109,7 +109,9 @@ func signalrConnect(ctx context.Context, httpClient *http.Client, base, connToke
 		}
 	}
 
-	conn, resp, err := websocket.DefaultDialer.DialContext(ctx, u, header)
+	dialer := *websocket.DefaultDialer
+	dialer.TLSClientConfig = newKulasTLSConfig()
+	conn, resp, err := dialer.DialContext(ctx, u, header)
 	if err != nil {
 		extra := ""
 		if resp != nil {

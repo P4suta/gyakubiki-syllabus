@@ -70,3 +70,35 @@ user-agent: <Chrome 系の現実的な UA>
 - ログイン認証は不要（GUEST ユーザー）
 - 国内大学システムが GitHub Actions runner の IP を弾く可能性は未検証。初回 `workflow_dispatch` の `dry-run` で 200 が返るか必ず確認すること。
 - `kaikoNendo` は毎年更新が必要。デフォルトは「現在年 (4月以降) または前年 (1-3月)」のロジックで自動計算し、`--year` フラグで上書き可能にする。
+
+## TLS chain について
+
+KULAS (IIS 10) は TLS handshake で **leaf 証明書のみ送信**し中間 CA を配信しない。
+Chrome / Firefox は AIA fetching で chain を補完するが、Go の `crypto/tls`
+は補完しないため `x509: certificate signed by unknown authority` で fail する。
+
+対応として `internal/fetch/kulas_ca.pem` に中間 CA (`NII Open Domain CA - G7 RSA`)
+を bundle して `internal/fetch/tls.go` の `newKulasTLSConfig()` で `RootCAs` に
+積んでいる。Root CA (`Security Communication RootCA2`) はシステム標準 bundle に
+含まれるので追加不要。
+
+### 中間 CA の有効期限と更新手順
+
+現行 bundle の有効期限: **2029-05-29** (確認: `openssl x509 -in internal/fetch/kulas_ca.pem -noout -dates`)
+
+期限切れまたは KULAS の証明書 chain が更新されて fetch が再び
+`unknown authority` で fail し始めたら、以下で再取得:
+
+```sh
+# 1. 現行 leaf 証明書の AIA URL を確認
+openssl s_client -connect kulas.kochi-u.ac.jp:443 \
+  -servername kulas.kochi-u.ac.jp </dev/null 2>/dev/null \
+  | openssl x509 -noout -text | grep -A1 'Authority Information Access'
+
+# 2. CA Issuers URL から DER を取得
+curl -sS -o /tmp/intermediate.cer "<上で得た URL>"
+
+# 3. PEM に変換して上書き
+openssl x509 -inform DER -in /tmp/intermediate.cer -outform PEM \
+  -out internal/fetch/kulas_ca.pem
+```
