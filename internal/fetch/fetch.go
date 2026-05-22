@@ -11,14 +11,14 @@ import (
 	"strconv"
 )
 
-// Options controls a FetchAll run.
+// Options controls a All run.
 type Options struct {
-	OutDir     string
-	MinTotal   int
-	DryRun     bool
+	OutDir   string
+	MinTotal int
+	DryRun   bool
 }
 
-// Result describes what FetchAll did.
+// Result describes what All did.
 type Result struct {
 	Total     int
 	MaxPageNo int
@@ -47,9 +47,9 @@ type pageMeta struct {
 	SelectKogiDtoList json.RawMessage `json:"selectKogiDtoList"`
 }
 
-// FetchAll downloads every page, validates counts, and writes raw JSON to disk.
+// All downloads every page, validates counts, and writes raw JSON to disk.
 // Returns without writing if opts.DryRun is set.
-func FetchAll(ctx context.Context, opts Options, fetcher PageFetcher) (*Result, error) {
+func All(ctx context.Context, opts Options, fetcher PageFetcher) (*Result, error) {
 	firstBytes, err := fetcher.FetchPage(ctx, 1)
 	if err != nil {
 		return nil, err
@@ -113,14 +113,15 @@ func FetchAll(ctx context.Context, opts Options, fetcher PageFetcher) (*Result, 
 		return result, nil
 	}
 
-	if err := os.MkdirAll(opts.OutDir, 0o755); err != nil {
+	if err := os.MkdirAll(opts.OutDir, 0o750); err != nil {
 		return nil, fmt.Errorf("出力ディレクトリの作成に失敗 %s: %w", opts.OutDir, err)
 	}
 
 	for pageNo, b := range pages {
 		path := filepath.Join(opts.OutDir, RawFileName(pageNo))
 		changed := fileChanged(path, b)
-		if err := os.WriteFile(path, b, 0o644); err != nil {
+		// raw/ は GitHub Pages から読まれるので 0o644 が必要
+		if err := os.WriteFile(path, b, 0o644); err != nil { //nolint:gosec
 			return nil, fmt.Errorf("ファイル書き込みに失敗 %s: %w", path, err)
 		}
 		for i := range result.Pages {
@@ -191,7 +192,7 @@ func countList(raw json.RawMessage) int {
 }
 
 func fileChanged(path string, newContent []byte) bool {
-	existing, err := os.ReadFile(path)
+	existing, err := os.ReadFile(path) //nolint:gosec // path は raw/ 内の既知 file 名のみ
 	if err != nil {
 		return true
 	}

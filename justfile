@@ -61,9 +61,9 @@ lint-typos:
 lint-actions:
     actionlint
 
-# Markdown lint
+# Markdown lint (web/ は別管理なので除外)
 lint-md:
-    markdownlint-cli2 "**/*.md" "#node_modules" "#web/dist"
+    markdownlint-cli2 "**/*.md" "#node_modules" "#web/**"
 
 # CI と等価のチェックを全部 (lefthook pre-push と同じ範囲)
 check: lint test

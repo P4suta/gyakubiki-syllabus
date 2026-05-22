@@ -119,34 +119,6 @@ func NewClient(ctx context.Context, kaikoNendo string, tokenProvider TokenProvid
 	return c, nil
 }
 
-func (c *Client) establishSession(ctx context.Context) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.searchPageURL, nil)
-	if err != nil {
-		return err
-	}
-	req.Header.Set("User-Agent", defaultUserAgent)
-	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
-	req.Header.Set("Accept-Language", "ja")
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	_, _ = io.Copy(io.Discard, resp.Body)
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("検索ページが HTTP %d を返しました", resp.StatusCode)
-	}
-
-	for _, ck := range c.httpClient.Jar.Cookies(req.URL) {
-		if ck.Name == "CPSMART_PUBLIC_AUTH" {
-			return nil
-		}
-	}
-	return fmt.Errorf("CPSMART_PUBLIC_AUTH cookie が取得できませんでした")
-}
-
 // FetchPage fetches one page of findPage results as raw JSON bytes.
 func (c *Client) FetchPage(ctx context.Context, pageNo int) ([]byte, error) {
 	var buf bytes.Buffer
@@ -173,7 +145,7 @@ func (c *Client) FetchPage(ctx context.Context, pageNo int) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("findPage HTTP 呼び出しに失敗 (page %d): %w", pageNo, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -182,13 +154,41 @@ func (c *Client) FetchPage(ctx context.Context, pageNo int) ([]byte, error) {
 
 	if resp.StatusCode != http.StatusOK {
 		preview := string(body)
-		const max = 500
-		if len(preview) > max {
-			preview = preview[:max] + "..."
+		const maxLen = 500
+		if len(preview) > maxLen {
+			preview = preview[:maxLen] + "..."
 		}
 		return nil, fmt.Errorf("findPage が HTTP %d を返しました (page %d): %s\n"+
 			"  ※ token または body フォーマットが API と不整合の可能性があります",
 			resp.StatusCode, pageNo, preview)
 	}
 	return body, nil
+}
+
+func (c *Client) establishSession(ctx context.Context) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.searchPageURL, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("User-Agent", defaultUserAgent)
+	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+	req.Header.Set("Accept-Language", "ja")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	_, _ = io.Copy(io.Discard, resp.Body)
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("検索ページが HTTP %d を返しました", resp.StatusCode)
+	}
+
+	for _, ck := range c.httpClient.Jar.Cookies(req.URL) {
+		if ck.Name == "CPSMART_PUBLIC_AUTH" {
+			return nil
+		}
+	}
+	return fmt.Errorf("CPSMART_PUBLIC_AUTH cookie が取得できませんでした")
 }

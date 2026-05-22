@@ -30,4 +30,4 @@ pre-push:
     typos-full:
       run: typos
     markdown-full:
-      run: markdownlint-cli2 "**/*.md" "#node_modules" "#web/dist"
+      run: markdownlint-cli2 "**/*.md" "#node_modules" "#web/**"

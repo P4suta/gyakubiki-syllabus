@@ -27,6 +27,17 @@ linters:
     - testpackage      # 同一 package test を許す
     - ireturn          # interface return 許容
     - nonamedreturns   # named return 許容
+    # 日本語プロジェクト特有
+    - gosmopolitan     # 日本語文字列・コメント禁止系。本プロジェクトでは日本語が一級市民
+    # error 系の過度な厳格化
+    - err113           # fmt.Errorf 動的エラー禁止は実用ノイズが大きい
+    - noinlineerr      # inline error 禁止も同様
+    - wrapcheck        # 全エラー wrap 必須は CLI レベルではノイズ
+    - forbidigo        # fmt.Print* 禁止 — CLI/dry-run report で使う
+    - goconst          # 短い JSON 構造文字列が多すぎて false positive
+    - intrange         # Go 1.22 range over int への強制移行 — 既存 for ループを温存
+    - perfsprint       # micro-optimization、可読性とトレードオフ
+    - gocheckcompilerdirectives  # //go:fix directive を誤検知 (go 1.24+)
   settings:
     gocognit:
       min-complexity: 30

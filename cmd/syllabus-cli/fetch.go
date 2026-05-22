@@ -11,7 +11,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const tokenEnvVar = "KULAS_API_TOKEN"
+const tokenEnvVar = "KULAS_API_TOKEN" //nolint:gosec // 環境変数名であって秘匿値ではない
 
 func newFetchCommand() *cobra.Command {
 	var (
@@ -51,7 +51,7 @@ token 取得方針 (優先順):
 			}
 
 			fmt.Fprintln(os.Stderr, "✓ findPage 取得開始")
-			result, err := fetch.FetchAll(ctx, fetch.Options{
+			result, err := fetch.All(ctx, fetch.Options{
 				OutDir:   outDir,
 				MinTotal: minTotal,
 				DryRun:   dryRun,

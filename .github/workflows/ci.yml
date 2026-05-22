@@ -45,7 +45,7 @@ jobs:
       - name: actionlint
         uses: reviewdog/action-actionlint@v1
         with:
-          fail_on_error: true
+          fail_level: error
           reporter: github-check
 
   markdownlint:
@@ -58,8 +58,7 @@ jobs:
           globs: |
             **/*.md
             !node_modules
-            !web/dist
-            !web/node_modules
+            !web/**
 
   web:
     name: Web (check / test)

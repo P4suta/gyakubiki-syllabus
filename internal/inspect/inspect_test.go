@@ -8,20 +8,20 @@ import (
 
 // === ヘルパー: テスト用JSON生成 ===
 
-func makeAPIResponse(courses []map[string]interface{}, pageNo, maxPageNo, total, pageSize int) []byte {
-	resp := map[string]interface{}{
+func makeAPIResponse(courses []map[string]any, pageNo, maxPageNo, total, pageSize int) []byte { //nolint:unparam // pageNo は将来複数値を渡せるよう仮引数として残す
+	resp := map[string]any{
 		"selectKogiDtoList": courses,
 		"pageNo":            pageNo,
 		"maxPageNo":         maxPageNo,
 		"total":             total,
 		"pageSize":          pageSize,
 	}
-	b, _ := json.Marshal(resp)
+	b, _ := json.Marshal(resp) //nolint:errchkjson // test ヘルパー、map[string]any の marshal は失敗しない前提
 	return b
 }
 
-func makeCourseMap(kogiCd, kogiNm, jikanwari string) map[string]interface{} {
-	return map[string]interface{}{
+func makeCourseMap(kogiCd, kogiNm, jikanwari string) map[string]any {
+	return map[string]any{
 		"kogiCd":           kogiCd,
 		"kogiNm":           kogiNm,
 		"fukudai":          nil,
@@ -39,15 +39,15 @@ func makeCourseMap(kogiCd, kogiNm, jikanwari string) map[string]interface{} {
 	}
 }
 
-func makeBareArray(courses []map[string]interface{}) []byte {
-	b, _ := json.Marshal(courses)
+func makeBareArray(courses []map[string]any) []byte {
+	b, _ := json.Marshal(courses) //nolint:errchkjson // test ヘルパー、map[string]any の marshal は失敗しない前提
 	return b
 }
 
 // === 入力形式の判定 ===
 
 func TestInspect_FormatAPIResponse(t *testing.T) {
-	courses := []map[string]interface{}{
+	courses := []map[string]any{
 		makeCourseMap("001", "テスト", "1学期: 月曜日１時限"),
 	}
 	data := makeAPIResponse(courses, 1, 1, 1, 500)
@@ -62,7 +62,7 @@ func TestInspect_FormatAPIResponse(t *testing.T) {
 }
 
 func TestInspect_FormatBareArray(t *testing.T) {
-	courses := []map[string]interface{}{
+	courses := []map[string]any{
 		makeCourseMap("001", "テスト", "1学期: 月曜日１時限"),
 	}
 	data := makeBareArray(courses)
@@ -103,7 +103,7 @@ func TestInspect_HTMLInput(t *testing.T) {
 // === ファイル情報 ===
 
 func TestInspect_FileInfo(t *testing.T) {
-	courses := []map[string]interface{}{
+	courses := []map[string]any{
 		makeCourseMap("001", "テスト", "1学期: 月曜日１時限"),
 	}
 	data := makeAPIResponse(courses, 1, 1, 1, 500)
@@ -123,7 +123,7 @@ func TestInspect_FileInfo(t *testing.T) {
 // === ページネーション ===
 
 func TestInspect_PaginationExtracted(t *testing.T) {
-	courses := []map[string]interface{}{
+	courses := []map[string]any{
 		makeCourseMap("001", "テスト", "1学期: 月曜日１時限"),
 	}
 	data := makeAPIResponse(courses, 1, 5, 2310, 500)
@@ -147,7 +147,7 @@ func TestInspect_PaginationExtracted(t *testing.T) {
 }
 
 func TestInspect_PaginationWarningWhenPartial(t *testing.T) {
-	courses := []map[string]interface{}{
+	courses := []map[string]any{
 		makeCourseMap("001", "テスト", "1学期: 月曜日１時限"),
 	}
 	data := makeAPIResponse(courses, 1, 5, 2310, 500)
@@ -170,7 +170,7 @@ func TestInspect_PaginationWarningWhenPartial(t *testing.T) {
 }
 
 func TestInspect_PaginationNoWarningWhenComplete(t *testing.T) {
-	courses := []map[string]interface{}{
+	courses := []map[string]any{
 		makeCourseMap("001", "テスト", "1学期: 月曜日１時限"),
 	}
 	data := makeAPIResponse(courses, 1, 1, 1, 500)
@@ -187,7 +187,7 @@ func TestInspect_PaginationNoWarningWhenComplete(t *testing.T) {
 }
 
 func TestInspect_BareArrayNoPagination(t *testing.T) {
-	courses := []map[string]interface{}{
+	courses := []map[string]any{
 		makeCourseMap("001", "テスト", "1学期: 月曜日１時限"),
 	}
 	data := makeBareArray(courses)
@@ -213,7 +213,7 @@ func TestInspect_FieldCoverage_AllFilled(t *testing.T) {
 	course["taishoNenji"] = "1年"
 	course["kamokuBunrui"] = "専門"
 	course["kamokuBunya"] = "数学"
-	data := makeAPIResponse([]map[string]interface{}{course}, 1, 1, 1, 500)
+	data := makeAPIResponse([]map[string]any{course}, 1, 1, 1, 500)
 
 	report, err := Inspect(data, "test.json", int64(len(data)))
 	if err != nil {
@@ -231,7 +231,7 @@ func TestInspect_FieldCoverage_AllFilled(t *testing.T) {
 }
 
 func TestInspect_FieldCoverage_NullFields(t *testing.T) {
-	courses := []map[string]interface{}{
+	courses := []map[string]any{
 		makeCourseMap("001", "テスト", "1学期: 月曜日１時限"),
 		makeCourseMap("002", "テスト2", "2学期: 火曜日２時限"),
 	}
@@ -256,21 +256,21 @@ func TestInspect_FieldCoverage_NullFields(t *testing.T) {
 }
 
 func TestInspect_TotalFieldsCount(t *testing.T) {
-	course := map[string]interface{}{
-		"kogiCd":   "001",
-		"kogiNm":   "テスト",
-		"field3":   "a",
-		"field4":   "b",
-		"field5":   nil,
-		"jikanwari": "1学期: 月曜日１時限",
-		"kogiKaikojikiNm": "1学期",
-		"kogiKubunNm": "講義",
-		"sekininBushoNm": "理工学部",
-		"kochiNm": "朝倉",
+	course := map[string]any{
+		"kogiCd":           "001",
+		"kogiNm":           "テスト",
+		"field3":           "a",
+		"field4":           "b",
+		"field5":           nil,
+		"jikanwari":        "1学期: 月曜日１時限",
+		"kogiKaikojikiNm":  "1学期",
+		"kogiKubunNm":      "講義",
+		"sekininBushoNm":   "理工学部",
+		"kochiNm":          "朝倉",
 		"gakusokuKamokuNm": "テスト",
-		"tantoKyoin": "教員",
+		"tantoKyoin":       "教員",
 	}
-	data := makeAPIResponse([]map[string]interface{}{course}, 1, 1, 1, 500)
+	data := makeAPIResponse([]map[string]any{course}, 1, 1, 1, 500)
 
 	report, err := Inspect(data, "test.json", int64(len(data)))
 	if err != nil {
@@ -282,7 +282,7 @@ func TestInspect_TotalFieldsCount(t *testing.T) {
 }
 
 func TestInspect_CourseCount(t *testing.T) {
-	courses := []map[string]interface{}{
+	courses := []map[string]any{
 		makeCourseMap("001", "A", "1学期: 月曜日１時限"),
 		makeCourseMap("002", "B", "1学期: 火曜日２時限"),
 		makeCourseMap("003", "C", "1学期: 水曜日３時限"),
@@ -299,7 +299,7 @@ func TestInspect_CourseCount(t *testing.T) {
 }
 
 func TestInspect_EmptyArray(t *testing.T) {
-	data := makeAPIResponse([]map[string]interface{}{}, 1, 1, 0, 500)
+	data := makeAPIResponse([]map[string]any{}, 1, 1, 0, 500)
 
 	report, err := Inspect(data, "test.json", int64(len(data)))
 	if err != nil {
@@ -326,7 +326,7 @@ func TestInspect_EmptyArray(t *testing.T) {
 // === データ概要 ===
 
 func TestInspect_UniqueKogiCd(t *testing.T) {
-	courses := []map[string]interface{}{
+	courses := []map[string]any{
 		makeCourseMap("001", "A", "1学期: 月曜日１時限"),
 		makeCourseMap("002", "B", "1学期: 火曜日２時限"),
 		makeCourseMap("001", "A", "1学期: 水曜日３時限"), // duplicate
@@ -343,7 +343,7 @@ func TestInspect_UniqueKogiCd(t *testing.T) {
 }
 
 func TestInspect_Semesters(t *testing.T) {
-	courses := []map[string]interface{}{
+	courses := []map[string]any{
 		makeCourseMap("001", "A", "1学期: 月曜日１時限"),
 		makeCourseMap("002", "B", "2学期: 火曜日２時限"),
 		makeCourseMap("003", "C", "通年: 水曜日３時限"),
@@ -364,7 +364,7 @@ func TestInspect_Departments(t *testing.T) {
 	c1["sekininBushoNm"] = "理工学部"
 	c2 := makeCourseMap("002", "B", "1学期: 火曜日２時限")
 	c2["sekininBushoNm"] = "人文社会科学部"
-	data := makeBareArray([]map[string]interface{}{c1, c2})
+	data := makeBareArray([]map[string]any{c1, c2})
 
 	report, err := Inspect(data, "test.json", int64(len(data)))
 	if err != nil {
@@ -380,7 +380,7 @@ func TestInspect_KogiKubuns(t *testing.T) {
 	c1["kogiKubunNm"] = "講義"
 	c2 := makeCourseMap("002", "B", "1学期: 火曜日２時限")
 	c2["kogiKubunNm"] = "演習"
-	data := makeBareArray([]map[string]interface{}{c1, c2})
+	data := makeBareArray([]map[string]any{c1, c2})
 
 	report, err := Inspect(data, "test.json", int64(len(data)))
 	if err != nil {
@@ -396,7 +396,7 @@ func TestInspect_Campuses(t *testing.T) {
 	c1["kochiNm"] = "朝倉キャンパス"
 	c2 := makeCourseMap("002", "B", "1学期: 火曜日２時限")
 	c2["kochiNm"] = "岡豊キャンパス"
-	data := makeBareArray([]map[string]interface{}{c1, c2})
+	data := makeBareArray([]map[string]any{c1, c2})
 
 	report, err := Inspect(data, "test.json", int64(len(data)))
 	if err != nil {
@@ -410,7 +410,7 @@ func TestInspect_Campuses(t *testing.T) {
 // === パース試行 ===
 
 func TestInspect_ParseAllSuccess(t *testing.T) {
-	courses := []map[string]interface{}{
+	courses := []map[string]any{
 		makeCourseMap("001", "A", "1学期: 月曜日１時限"),
 		makeCourseMap("002", "B", "2学期: 火曜日２時限"),
 	}
@@ -429,7 +429,7 @@ func TestInspect_ParseAllSuccess(t *testing.T) {
 }
 
 func TestInspect_ParseSomeFailures(t *testing.T) {
-	courses := []map[string]interface{}{
+	courses := []map[string]any{
 		makeCourseMap("001", "A", "1学期: 月曜日１時限"),
 		makeCourseMap("002", "集中講義", "集中"),
 	}
@@ -454,7 +454,7 @@ func TestInspect_ParseSomeFailures(t *testing.T) {
 }
 
 func TestInspect_EmptyJikanwariNotCountedAsFailure(t *testing.T) {
-	courses := []map[string]interface{}{
+	courses := []map[string]any{
 		makeCourseMap("001", "A", ""),
 	}
 	data := makeBareArray(courses)
@@ -476,7 +476,7 @@ func TestInspect_EmptyJikanwariNotCountedAsFailure(t *testing.T) {
 // === 総合判定 ===
 
 func TestInspect_CanConvertTrue(t *testing.T) {
-	courses := []map[string]interface{}{
+	courses := []map[string]any{
 		makeCourseMap("001", "A", "1学期: 月曜日１時限"),
 	}
 	data := makeAPIResponse(courses, 1, 1, 1, 500)
@@ -491,7 +491,7 @@ func TestInspect_CanConvertTrue(t *testing.T) {
 }
 
 func TestInspect_CanConvertTrueEvenWithWarnings(t *testing.T) {
-	courses := []map[string]interface{}{
+	courses := []map[string]any{
 		makeCourseMap("001", "A", "1学期: 月曜日１時限"),
 		makeCourseMap("002", "B", "集中"),
 	}
@@ -557,7 +557,7 @@ func TestInspect_PaginationFieldWrongType(t *testing.T) {
 
 func TestInspect_NonStringFieldInCourse(t *testing.T) {
 	// kogiNm is a number instead of string — getString should handle gracefully
-	courses := []map[string]interface{}{
+	courses := []map[string]any{
 		{
 			"kogiCd":           "001",
 			"kogiNm":           12345, // not a string
@@ -583,7 +583,7 @@ func TestInspect_NonStringFieldInCourse(t *testing.T) {
 
 func TestInspect_MissingFieldsInCourse(t *testing.T) {
 	// Course with some fields entirely missing (not null, but absent)
-	courses := []map[string]interface{}{
+	courses := []map[string]any{
 		{
 			"kogiCd":    "001",
 			"kogiNm":    "テスト",
@@ -606,7 +606,7 @@ func TestInspect_MissingFieldsInCourse(t *testing.T) {
 
 func TestInspect_JikanwariWhitespaceOnly(t *testing.T) {
 	// jikanwari is whitespace-only — parser returns no slots and no warnings
-	courses := []map[string]interface{}{
+	courses := []map[string]any{
 		{
 			"kogiCd":           "001",
 			"kogiNm":           "テスト",
@@ -635,7 +635,7 @@ func TestInspect_JikanwariWhitespaceOnly(t *testing.T) {
 
 func TestInspect_JikanwariNullInCourse(t *testing.T) {
 	// jikanwari is null (not string) — getString returns ("", false)
-	courses := []map[string]interface{}{
+	courses := []map[string]any{
 		{
 			"kogiCd":           "001",
 			"kogiNm":           "テスト",

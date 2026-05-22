@@ -35,12 +35,12 @@ func DefaultSignalRConfig() SignalRConfig {
 }
 
 type negotiateResponse struct {
-	URL             string  `json:"Url"`
-	ConnectionToken string  `json:"ConnectionToken"`
-	ConnectionID    string  `json:"ConnectionId"`
+	URL              string  `json:"Url"`
+	ConnectionToken  string  `json:"ConnectionToken"`
+	ConnectionID     string  `json:"ConnectionId"`
 	KeepAliveTimeout float64 `json:"KeepAliveTimeout"`
-	TryWebSockets   bool    `json:"TryWebSockets"`
-	ProtocolVersion string  `json:"ProtocolVersion"`
+	TryWebSockets    bool    `json:"TryWebSockets"`
+	ProtocolVersion  string  `json:"ProtocolVersion"`
 }
 
 var tokenRegex = regexp.MustCompile(`"token"\s*:\s*"([a-f0-9]{64})"`)
@@ -62,7 +62,7 @@ func fetchTokenViaSignalR(ctx context.Context, httpClient *http.Client, cfg Sign
 	if err != nil {
 		return "", err
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	if err := signalrStart(ctx, httpClient, cfg.StartURL, neg.ConnectionToken, connData); err != nil {
 		return "", err
@@ -84,7 +84,7 @@ func signalrNegotiate(ctx context.Context, httpClient *http.Client, base, connDa
 	if err != nil {
 		return nil, fmt.Errorf("SignalR negotiate HTTP に失敗: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("SignalR negotiate が HTTP %d を返しました", resp.StatusCode)
 	}
@@ -114,9 +114,13 @@ func signalrConnect(ctx context.Context, httpClient *http.Client, base, connToke
 		extra := ""
 		if resp != nil {
 			body, _ := io.ReadAll(resp.Body)
+			_ = resp.Body.Close()
 			extra = fmt.Sprintf(" (HTTP %d: %s)", resp.StatusCode, string(body))
 		}
 		return nil, fmt.Errorf("SignalR WebSocket 接続に失敗%s: %w", extra, err)
+	}
+	if resp != nil {
+		_ = resp.Body.Close()
 	}
 	return conn, nil
 }
@@ -134,7 +138,7 @@ func signalrStart(ctx context.Context, httpClient *http.Client, base, connToken,
 	if err != nil {
 		return fmt.Errorf("SignalR start HTTP に失敗: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	_, _ = io.Copy(io.Discard, resp.Body)
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("SignalR start が HTTP %d を返しました", resp.StatusCode)

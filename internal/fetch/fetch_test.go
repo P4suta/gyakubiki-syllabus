@@ -53,7 +53,7 @@ func buildPage(t *testing.T, pageNo, maxPageNo, total, listLen int, extraField s
 	return b
 }
 
-func TestFetchAll_HappyPath(t *testing.T) {
+func TestAll_HappyPath(t *testing.T) {
 	tmpDir := t.TempDir()
 	fetcher := &fakeFetcher{
 		pages: map[int][]byte{
@@ -63,12 +63,12 @@ func TestFetchAll_HappyPath(t *testing.T) {
 		},
 	}
 
-	result, err := FetchAll(context.Background(), Options{
+	result, err := All(context.Background(), Options{
 		OutDir:   tmpDir,
 		MinTotal: 100,
 	}, fetcher)
 	if err != nil {
-		t.Fatalf("FetchAll returned error: %v", err)
+		t.Fatalf("All returned error: %v", err)
 	}
 	if result.Total != 1200 || result.MaxPageNo != 3 {
 		t.Errorf("unexpected Total/MaxPageNo: got total=%d, max=%d", result.Total, result.MaxPageNo)
@@ -104,13 +104,13 @@ func TestFetchAll_HappyPath(t *testing.T) {
 	}
 }
 
-func TestFetchAll_BelowMinTotal(t *testing.T) {
+func TestAll_BelowMinTotal(t *testing.T) {
 	fetcher := &fakeFetcher{
 		pages: map[int][]byte{
 			1: buildPage(t, 1, 1, 50, 50, "small"),
 		},
 	}
-	_, err := FetchAll(context.Background(), Options{
+	_, err := All(context.Background(), Options{
 		OutDir:   t.TempDir(),
 		MinTotal: 100,
 	}, fetcher)
@@ -119,22 +119,15 @@ func TestFetchAll_BelowMinTotal(t *testing.T) {
 	}
 }
 
-func TestFetchAll_MidPageWrongSize(t *testing.T) {
+func TestAll_MidPageWrongSize(t *testing.T) {
+	// 3 ページ構成で page 2 (中間ページ) が部分件数 → 検証エラーになるべき
 	fetcher := &fakeFetcher{
-		pages: map[int][]byte{
-			1: buildPage(t, 1, 2, 800, 500, "p1"),
-			2: buildPage(t, 2, 2, 800, 100, "p2"), // mid page must be full, but listLen != pageSize on page 1 (not last)... wait page 2 IS last
-		},
-	}
-	// Actually with maxPageNo=2, page 2 IS the last page so partial is OK.
-	// Adjust: use 3 pages where page 2 is partial (should fail)
-	fetcher = &fakeFetcher{
 		pages: map[int][]byte{
 			1: buildPage(t, 1, 3, 1300, 500, "p1"),
 			2: buildPage(t, 2, 3, 1300, 300, "p2"), // partial mid page → invalid
 		},
 	}
-	_, err := FetchAll(context.Background(), Options{
+	_, err := All(context.Background(), Options{
 		OutDir:   t.TempDir(),
 		MinTotal: 100,
 	}, fetcher)
@@ -143,14 +136,14 @@ func TestFetchAll_MidPageWrongSize(t *testing.T) {
 	}
 }
 
-func TestFetchAll_DryRunDoesNotWrite(t *testing.T) {
+func TestAll_DryRunDoesNotWrite(t *testing.T) {
 	tmpDir := t.TempDir()
 	fetcher := &fakeFetcher{
 		pages: map[int][]byte{
 			1: buildPage(t, 1, 1, 300, 300, "dry"),
 		},
 	}
-	_, err := FetchAll(context.Background(), Options{
+	_, err := All(context.Background(), Options{
 		OutDir:   tmpDir,
 		MinTotal: 100,
 		DryRun:   true,
@@ -164,7 +157,7 @@ func TestFetchAll_DryRunDoesNotWrite(t *testing.T) {
 	}
 }
 
-func TestFetchAll_CleansUpStalePages(t *testing.T) {
+func TestAll_CleansUpStalePages(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	// Pre-populate with stale page 4 and 5 (left over from a previous run)
@@ -181,12 +174,12 @@ func TestFetchAll_CleansUpStalePages(t *testing.T) {
 			3: buildPage(t, 3, 3, 1200, 200, "p3"),
 		},
 	}
-	result, err := FetchAll(context.Background(), Options{
+	result, err := All(context.Background(), Options{
 		OutDir:   tmpDir,
 		MinTotal: 100,
 	}, fetcher)
 	if err != nil {
-		t.Fatalf("FetchAll error: %v", err)
+		t.Fatalf("All error: %v", err)
 	}
 
 	if len(result.Cleaned) != 2 {
