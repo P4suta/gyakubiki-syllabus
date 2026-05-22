@@ -12,18 +12,18 @@
     "test:watch": "vitest"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.4.11",
-    "@sveltejs/vite-plugin-svelte": "^7.0.0",
+    "@biomejs/biome": "^2.4.15",
+    "@sveltejs/vite-plugin-svelte": "^7.1.2",
     "@tsconfig/svelte": "^5.0.8",
-    "@types/node": "^24.12.2",
-    "svelte": "^5.55.1",
-    "svelte-check": "^4.4.6",
-    "typescript": "~6.0.2",
-    "vite": "^8.0.4",
-    "vitest": "^4.1.4"
+    "@types/node": "^25.9.1",
+    "svelte": "^5.55.9",
+    "svelte-check": "^4.4.8",
+    "typescript": "~6.0.3",
+    "vite": "^8.0.14",
+    "vitest": "^4.1.7"
   },
   "dependencies": {
-    "@tailwindcss/vite": "^4.2.2",
-    "tailwindcss": "^4.2.2"
+    "@tailwindcss/vite": "^4.3.0",
+    "tailwindcss": "^4.3.0"
   }
 }
