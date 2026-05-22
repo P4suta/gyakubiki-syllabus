@@ -66,7 +66,9 @@ jobs:
           ./syllabus-cli fetch "${args[@]}"
 
       - name: Upload debug dump
-        if: ${{ always() && inputs.debug-dump == 'true' }}
+        # type: boolean の input は expression で boolean。'true' (string) との
+        # 比較は常に false → 以前 skip されていた。truthy 評価に直す。
+        if: ${{ always() && inputs.debug-dump }}
         uses: actions/upload-artifact@v4
         with:
           name: kulas-debug-dump
@@ -76,7 +78,9 @@ jobs:
 
       - name: Commit & push if changed
         id: commit
-        if: ${{ inputs.dry-run != 'true' }}
+        # 同上: type: boolean の input は truthy 評価で扱う。!inputs.dry-run は
+        # dry-run=true なら false (= step skip)、dry-run=false なら true (= 実行)。
+        if: ${{ !inputs.dry-run }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
