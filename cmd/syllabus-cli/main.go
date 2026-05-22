@@ -157,6 +157,7 @@ convert前にデータの健全性を確認できます。
 
 	rootCmd.AddCommand(convertCmd)
 	rootCmd.AddCommand(inspectCmd)
+	rootCmd.AddCommand(newFetchCommand())
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)

@@ -1,0 +1,68 @@
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  default: all
+  disable:
+    # 自由を奪うすぎ系
+    - wsl              # whitespace 強制が過剰
+    - wsl_v5           # wsl の新版
+    - nlreturn         # ditto
+    - lll              # 長い行が読みやすいケースあり
+    - varnamelen       # 命名長が厳しすぎ
+    - funlen           # 既存 main.go が長め
+    - cyclop           # gocyclo で十分
+    - gocyclo          # gocognit で十分
+    # 本プロジェクトに合わない
+    - depguard         # import 制限は不要
+    - gochecknoglobals # 正当な package var あり (regex 等)
+    - gochecknoinits   # init() は cobra で使う想定
+    - exhaustruct      # struct 全フィールド指定強制は過剰
+    - tagliatelle      # KULAS の JSON tag は Go 流ではない
+    - mnd              # マジックナンバー検出は noisy
+    - paralleltest     # 全テストの parallel 化は不要
+    - testpackage      # 同一 package test を許す
+    - ireturn          # interface return 許容
+    - nonamedreturns   # named return 許容
+  settings:
+    gocognit:
+      min-complexity: 30
+    goconst:
+      min-len: 4
+      min-occurrences: 3
+    gosec:
+      excludes:
+        - G104   # errors unhandled — errcheck で見るので重複
+    nestif:
+      min-complexity: 5
+    revive:
+      rules:
+        - name: exported
+          disabled: false
+    staticcheck:
+      checks: ["all"]
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters:
+          - errcheck
+          - gosec
+          - gocognit
+          - nestif
+          - dupl
+      - path: cmd/syllabus-cli/main\.go
+        linters:
+          - gocognit
+          - nestif
+
+formatters:
+  enable:
+    - gofumpt
+    - goimports
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0

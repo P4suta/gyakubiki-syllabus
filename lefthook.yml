@@ -1,0 +1,33 @@
+# lefthook: Git hooks manager
+# https://github.com/evilmartians/lefthook
+#
+# `just install-hooks` (= lefthook install) で有効化。
+# pre-commit / pre-push は CI と同じ範囲を走らせる方針 (PR でしか落ちない事故を防ぐ)。
+
+pre-commit:
+  parallel: true
+  commands:
+    typos:
+      run: typos
+    gofumpt:
+      glob: "*.go"
+      run: gofumpt -l {staged_files}
+      fail_text: "gofumpt 違反あり。`just fmt` で修正してください"
+    actionlint:
+      glob: ".github/workflows/*.{yml,yaml}"
+      run: actionlint {staged_files}
+    markdownlint:
+      glob: "*.md"
+      run: markdownlint-cli2 {staged_files}
+
+pre-push:
+  parallel: false  # go test と golangci-lint は重いので順次
+  commands:
+    go-test:
+      run: go test -race ./...
+    go-lint:
+      run: golangci-lint run
+    typos-full:
+      run: typos
+    markdown-full:
+      run: markdownlint-cli2 "**/*.md" "#node_modules" "#web/dist"

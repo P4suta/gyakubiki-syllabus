@@ -1,0 +1,56 @@
+# typos: 高速 spell-checker (Rust 製) の設定
+# https://github.com/crate-ci/typos
+
+[files]
+extend-exclude = [
+  "go.sum",
+  "raw/**",
+  "internal/fetch/findpage_body.tmpl.json",
+  "internal/fetch/testdata/**",
+  "web/dist/**",
+  "web/node_modules/**",
+  "web/bun.lockb",
+  "**/*.har",
+  "docs/kulas-api-fields.md",
+  "docs/kulas-api-spec.md",
+]
+
+[default]
+# KULAS の API は ローマ字命名なので、誤判定が起こりやすい単語を許可
+extend-ignore-identifiers-re = [
+  "[Kk]ogi[A-Z][a-zA-Z]*",
+  "[Kk]aiko[A-Z][a-zA-Z]*",
+  "[Jj]ikanwari[a-zA-Z]*",
+  "[Tt]anto[A-Z][a-zA-Z]*",
+  "[Ss]ekinin[A-Z][a-zA-Z]*",
+  "[Gg]akusoku[a-zA-Z]*",
+  "[Tt]aisho[A-Z][a-zA-Z]*",
+  "[Kk]amoku[A-Z][a-zA-Z]*",
+  "[Ff]ukudai",
+  "[Kk]ochi[A-Z][a-zA-Z]*",
+  "[Nn]endo[a-zA-Z]*",
+  "[Hh]iduke",
+  "[Jj]igen",
+  "[Yy]obi",
+  "[Bb]iko\\d*",
+  "[Hh]aito[A-Z][a-zA-Z]*",
+  "[Cc]husen[A-Z][a-zA-Z]*",
+  "[Cc]huya[A-Z][a-zA-Z]*",
+  "[Dd]aihyo[A-Z][a-zA-Z]*",
+  "[Kk]yoin[a-zA-Z]*",
+  "[Ss]hozoku[A-Z][a-zA-Z]*",
+  "[Nn]arikawari[a-zA-Z]*",
+  "[Ss]hori[A-Z][a-zA-Z]*",
+  "[Pp]roc[Dd]ate",
+  "[Kk]ino[A-Z][a-zA-Z]*",
+  "Kensaku[a-zA-Z]*",
+  "Cpsmart[a-zA-Z]*",
+  "CPSMART[A-Z_]*",
+  "KULAS",
+]
+
+[default.extend-words]
+# KULAS 関連の固有名詞・略称
+fukudai = "fukudai"
+KULAS = "KULAS"
+kulas = "kulas"

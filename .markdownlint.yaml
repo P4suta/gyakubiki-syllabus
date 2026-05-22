@@ -1,0 +1,12 @@
+# markdownlint-cli2 設定
+# https://github.com/DavidAnson/markdownlint
+
+# 既定の rule set
+default: true
+
+# 個別 rule 調整
+MD013: false  # 行長制限 — 日本語混在で意味が薄い
+MD033: false  # inline HTML 許可
+MD041: false  # 先頭が H1 でなくても OK
+MD024:
+  siblings_only: true  # 同階層内で重複見出し禁止のみ

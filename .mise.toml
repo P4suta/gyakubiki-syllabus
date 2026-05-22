@@ -1,0 +1,19 @@
+# mise: 開発ツールのバージョン管理
+# https://mise.jdx.dev/
+#
+# `mise install` で一括 install。`just install-tools` の代替。
+
+[tools]
+go = "1.26"
+bun = "latest"
+just = "latest"
+lefthook = "latest"
+typos = "latest"
+actionlint = "latest"
+
+# go backend で取得 (mise が go install を裏で叩く)
+"go:mvdan.cc/gofumpt" = "latest"
+"go:github.com/golangci/golangci-lint/v2/cmd/golangci-lint" = "latest"
+
+# npm backend (bun ではなく npm 経由のほうが mise の cache が効く)
+"npm:markdownlint-cli2" = "latest"
