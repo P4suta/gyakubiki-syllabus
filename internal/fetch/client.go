@@ -93,6 +93,9 @@ func NewClient(ctx context.Context, kaikoNendo string, tokenProvider TokenProvid
 		httpClient: &http.Client{
 			Jar:     jar,
 			Timeout: requestTimeout,
+			Transport: &http.Transport{
+				TLSClientConfig: newKulasTLSConfig(),
+			},
 		},
 		bodyTmpl:      tmpl,
 		kaikoNendo:    kaikoNendo,
