@@ -69,7 +69,7 @@ jobs:
         # type: boolean の input は expression で boolean。'true' (string) との
         # 比較は常に false → 以前 skip されていた。truthy 評価に直す。
         if: ${{ always() && inputs.debug-dump }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: kulas-debug-dump
           path: debug/
