@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -21,6 +22,7 @@ type SignalRConfig struct {
 	StartURL     string // https://.../dashboard/signalr/start
 	HubName      string // "roothub" for KULAS
 	WaitTimeout  time.Duration
+	DumpDir      string // empty = no frame dump
 }
 
 // DefaultSignalRConfig returns the production KULAS SignalR config.
@@ -48,27 +50,37 @@ var tokenRegex = regexp.MustCompile(`"token"\s*:\s*"([a-f0-9]{64})"`)
 // fetchTokenViaSignalR walks the SignalR negotiate → connect → start handshake,
 // then reads WebSocket frames until one of them contains an entryContext token.
 func fetchTokenViaSignalR(ctx context.Context, httpClient *http.Client, cfg SignalRConfig) (string, error) {
+	logger := slog.With("op", "signalr_token", "hub", cfg.HubName)
 	connData := fmt.Sprintf(`[{"name":"%s"}]`, cfg.HubName)
+
+	logger.Info("SignalR handshake start", "negotiate_url", cfg.NegotiateURL)
 
 	neg, err := signalrNegotiate(ctx, httpClient, cfg.NegotiateURL, connData)
 	if err != nil {
 		return "", err
 	}
 	if !neg.TryWebSockets {
-		return "", fmt.Errorf("SignalR サーバが WebSocket をサポートしていません")
+		return "", fmt.Errorf("SignalR サーバが WebSocket をサポートしていません (ProtocolVersion=%s)", neg.ProtocolVersion)
 	}
+	logger.Info("negotiate done",
+		"connection_id", neg.ConnectionID,
+		"protocol", neg.ProtocolVersion,
+		"keepalive_sec", neg.KeepAliveTimeout,
+	)
 
 	conn, err := signalrConnect(ctx, httpClient, cfg.ConnectURL, neg.ConnectionToken, connData)
 	if err != nil {
 		return "", err
 	}
 	defer func() { _ = conn.Close() }()
+	logger.Info("websocket connected", "url", cfg.ConnectURL)
 
 	if err := signalrStart(ctx, httpClient, cfg.StartURL, neg.ConnectionToken, connData); err != nil {
 		return "", err
 	}
+	logger.Info("start signaled, awaiting token frames", "timeout", cfg.WaitTimeout, "dump_dir", cfg.DumpDir)
 
-	return readUntilToken(conn, cfg.WaitTimeout)
+	return readUntilToken(conn, cfg.WaitTimeout, cfg.DumpDir)
 }
 
 func signalrNegotiate(ctx context.Context, httpClient *http.Client, base, connData string) (*negotiateResponse, error) {
@@ -148,21 +160,80 @@ func signalrStart(ctx context.Context, httpClient *http.Client, base, connToken,
 	return nil
 }
 
-func readUntilToken(conn *websocket.Conn, waitTimeout time.Duration) (string, error) {
+func readUntilToken(conn *websocket.Conn, waitTimeout time.Duration, dumpDir string) (string, error) {
+	logger := slog.With("op", "signalr_recv")
 	deadline := time.Now().Add(waitTimeout)
 	if err := conn.SetReadDeadline(deadline); err != nil {
-		return "", err
+		return "", fmt.Errorf("WebSocket read deadline 設定に失敗: %w", err)
 	}
+
+	var (
+		frameCount int
+		lastFrame  string
+		start      = time.Now()
+	)
+	const previewMax = 300
+
 	for {
-		_, msg, err := conn.ReadMessage()
+		msgType, msg, err := conn.ReadMessage()
 		if err != nil {
-			return "", fmt.Errorf("SignalR メッセージ受信中にエラー (token 未取得): %w", err)
+			elapsed := time.Since(start)
+			logger.Error("recv error before token",
+				"frames_received", frameCount,
+				"elapsed_ms", elapsed.Milliseconds(),
+				"last_frame_preview", lastFrame,
+				"error", err.Error(),
+			)
+			return "", fmt.Errorf("SignalR メッセージ受信中にエラー (token 未取得、frames=%d, last=%q): %w",
+				frameCount, lastFrame, err)
 		}
+		frameCount++
+		dumpFrame(dumpDir, frameCount, msg)
+		preview := string(msg)
+		if len(preview) > previewMax {
+			preview = preview[:previewMax] + "..."
+		}
+		lastFrame = preview
+
+		logger.Debug("frame received",
+			"#", frameCount,
+			"type", websocketMessageTypeName(msgType),
+			"bytes", len(msg),
+			"preview", preview,
+		)
+
 		if m := tokenRegex.FindSubmatch(msg); m != nil {
+			logger.Info("token extracted from SignalR frame",
+				"frame_no", frameCount,
+				"elapsed_ms", time.Since(start).Milliseconds(),
+			)
 			return string(m[1]), nil
 		}
 		if time.Now().After(deadline) {
-			return "", fmt.Errorf("SignalR から token を %s 以内に受信できませんでした", waitTimeout)
+			logger.Error("token wait timeout",
+				"frames_received", frameCount,
+				"elapsed_ms", time.Since(start).Milliseconds(),
+				"last_frame_preview", lastFrame,
+			)
+			return "", fmt.Errorf("SignalR から token を %s 以内に受信できませんでした (受信 %d frames、最後の frame: %q)",
+				waitTimeout, frameCount, lastFrame)
 		}
+	}
+}
+
+func websocketMessageTypeName(t int) string {
+	switch t {
+	case websocket.TextMessage:
+		return "text"
+	case websocket.BinaryMessage:
+		return "binary"
+	case websocket.CloseMessage:
+		return "close"
+	case websocket.PingMessage:
+		return "ping"
+	case websocket.PongMessage:
+		return "pong"
+	default:
+		return fmt.Sprintf("type_%d", t)
 	}
 }

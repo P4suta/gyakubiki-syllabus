@@ -7,6 +7,7 @@ import (
 	"embed"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/cookiejar"
 	"text/template"
@@ -62,6 +63,7 @@ type Client struct {
 	kaikoNendo    string
 	searchPageURL string
 	findPageURL   string
+	dumpDir       string // empty = no dump
 }
 
 // ClientOption configures a Client (used by tests to swap URLs).
@@ -77,6 +79,12 @@ func WithFindPageURL(u string) ClientOption {
 	return func(c *Client) { c.findPageURL = u }
 }
 
+// WithDumpDir enables HTTP req/res + SignalR frame dumping to the given directory.
+// Empty path disables dumping. Used by --debug-dump-dir for root cause analysis.
+func WithDumpDir(dir string) ClientOption {
+	return func(c *Client) { c.dumpDir = dir }
+}
+
 // NewClient builds a Client, establishes a KULAS session, and obtains the token.
 func NewClient(ctx context.Context, kaikoNendo string, tokenProvider TokenProvider, opts ...ClientOption) (*Client, error) {
 	tmpl, err := template.ParseFS(bodyTemplateFS, "findpage_body.tmpl.json")
@@ -90,13 +98,6 @@ func NewClient(ctx context.Context, kaikoNendo string, tokenProvider TokenProvid
 	}
 
 	c := &Client{
-		httpClient: &http.Client{
-			Jar:     jar,
-			Timeout: requestTimeout,
-			Transport: &http.Transport{
-				TLSClientConfig: newKulasTLSConfig(),
-			},
-		},
 		bodyTmpl:      tmpl,
 		kaikoNendo:    kaikoNendo,
 		searchPageURL: defaultSearchPageURL,
@@ -104,6 +105,18 @@ func NewClient(ctx context.Context, kaikoNendo string, tokenProvider TokenProvid
 	}
 	for _, opt := range opts {
 		opt(c)
+	}
+
+	var rt http.RoundTripper = &http.Transport{
+		TLSClientConfig: newKulasTLSConfig(),
+	}
+	if c.dumpDir != "" {
+		rt = &DumpTransport{Base: rt, Dir: c.dumpDir}
+	}
+	c.httpClient = &http.Client{
+		Jar:       jar,
+		Timeout:   requestTimeout,
+		Transport: rt,
 	}
 
 	if err := c.establishSession(ctx); err != nil {
@@ -124,6 +137,8 @@ func NewClient(ctx context.Context, kaikoNendo string, tokenProvider TokenProvid
 
 // FetchPage fetches one page of findPage results as raw JSON bytes.
 func (c *Client) FetchPage(ctx context.Context, pageNo int) ([]byte, error) {
+	logger := slog.With("op", "findPage", "page", pageNo)
+
 	var buf bytes.Buffer
 	if err := c.bodyTmpl.Execute(&buf, map[string]any{
 		"PageNo":     pageNo,
@@ -132,10 +147,11 @@ func (c *Client) FetchPage(ctx context.Context, pageNo int) ([]byte, error) {
 	}); err != nil {
 		return nil, fmt.Errorf("body テンプレートの render に失敗: %w", err)
 	}
+	bodySize := buf.Len()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.findPageURL, &buf)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("リクエスト生成に失敗: %w", err)
 	}
 	req.Header.Set("User-Agent", defaultUserAgent)
 	req.Header.Set("Accept", "*/*")
@@ -144,8 +160,12 @@ func (c *Client) FetchPage(ctx context.Context, pageNo int) ([]byte, error) {
 	req.Header.Set("Origin", "https://kulas.kochi-u.ac.jp")
 	req.Header.Set("Referer", c.searchPageURL)
 
+	logger.Debug("request prepared", "url", c.findPageURL, "method", http.MethodPost, "body_bytes", bodySize)
+
+	start := time.Now()
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
+		logger.Error("HTTP call failed", "error", err.Error(), "elapsed_ms", time.Since(start).Milliseconds())
 		return nil, fmt.Errorf("findPage HTTP 呼び出しに失敗 (page %d): %w", pageNo, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
@@ -154,6 +174,13 @@ func (c *Client) FetchPage(ctx context.Context, pageNo int) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("findPage レスポンス読み込みに失敗 (page %d): %w", pageNo, err)
 	}
+	elapsed := time.Since(start)
+
+	logger.Info("response received",
+		"status", resp.StatusCode,
+		"resp_bytes", len(body),
+		"elapsed_ms", elapsed.Milliseconds(),
+	)
 
 	if resp.StatusCode != http.StatusOK {
 		preview := string(body)
@@ -161,6 +188,10 @@ func (c *Client) FetchPage(ctx context.Context, pageNo int) ([]byte, error) {
 		if len(preview) > maxLen {
 			preview = preview[:maxLen] + "..."
 		}
+		logger.Error("non-2xx response",
+			"status", resp.StatusCode,
+			"resp_body_preview", preview,
+		)
 		return nil, fmt.Errorf("findPage が HTTP %d を返しました (page %d): %s\n"+
 			"  ※ token または body フォーマットが API と不整合の可能性があります",
 			resp.StatusCode, pageNo, preview)
@@ -169,29 +200,46 @@ func (c *Client) FetchPage(ctx context.Context, pageNo int) ([]byte, error) {
 }
 
 func (c *Client) establishSession(ctx context.Context) error {
+	logger := slog.With("op", "session_establish")
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.searchPageURL, nil)
 	if err != nil {
-		return err
+		return fmt.Errorf("リクエスト生成に失敗: %w", err)
 	}
 	req.Header.Set("User-Agent", defaultUserAgent)
 	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
 	req.Header.Set("Accept-Language", "ja")
 
+	logger.Debug("request prepared", "url", c.searchPageURL, "method", http.MethodGet)
+
+	start := time.Now()
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return err
+		logger.Error("HTTP call failed", "error", err.Error(), "elapsed_ms", time.Since(start).Milliseconds())
+		return fmt.Errorf("検索ページ GET に失敗 (TLS chain や ネットワーク疎通を確認): %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
-	_, _ = io.Copy(io.Discard, resp.Body)
+	n, _ := io.Copy(io.Discard, resp.Body)
+	elapsed := time.Since(start)
+
+	logger.Info("response received",
+		"status", resp.StatusCode,
+		"resp_bytes", n,
+		"elapsed_ms", elapsed.Milliseconds(),
+	)
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("検索ページが HTTP %d を返しました", resp.StatusCode)
+		return fmt.Errorf("検索ページが HTTP %d を返しました (URL: %s)", resp.StatusCode, c.searchPageURL)
 	}
 
+	cookieNames := make([]string, 0, 4)
 	for _, ck := range c.httpClient.Jar.Cookies(req.URL) {
+		cookieNames = append(cookieNames, ck.Name)
 		if ck.Name == "CPSMART_PUBLIC_AUTH" {
+			logger.Info("session cookie acquired", "cookies", cookieNames)
 			return nil
 		}
 	}
-	return fmt.Errorf("CPSMART_PUBLIC_AUTH cookie が取得できませんでした")
+	logger.Error("CPSMART_PUBLIC_AUTH cookie missing", "received_cookies", cookieNames)
+	return fmt.Errorf("CPSMART_PUBLIC_AUTH cookie が取得できませんでした (受信 cookie: %v)", cookieNames)
 }
