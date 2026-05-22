@@ -54,8 +54,8 @@ function resetFilters() {
 	<div class="flex items-center gap-2">
 		<h1 class="text-body font-semibold text-apple-text whitespace-nowrap tracking-tight">時間割</h1>
 		{#if generatedAtLabel}
-			<span class="bg-overlay-subtle text-apple-text/60 rounded-full px-2 py-0.5 text-micro tabular-nums" title="データ最終更新日">
-				{generatedAtLabel}
+			<span class="bg-overlay-subtle text-apple-text/60 rounded-full px-2 py-0.5 text-micro whitespace-nowrap">
+				最終更新: <span class="tabular-nums">{generatedAtLabel}</span>
 			</span>
 		{/if}
 
@@ -219,8 +219,8 @@ function resetFilters() {
 	<div class="flex items-center gap-4 flex-wrap">
 		<h1 class="text-lg font-semibold text-apple-text whitespace-nowrap tracking-tight">時間割</h1>
 		{#if generatedAtLabel}
-			<span class="bg-overlay-subtle text-apple-text/60 rounded-full px-2.5 py-0.5 text-caption tabular-nums" title="データ最終更新日 ({generatedAt})">
-				{generatedAtLabel}
+			<span class="bg-overlay-subtle text-apple-text/60 rounded-full px-2.5 py-0.5 text-caption whitespace-nowrap">
+				最終更新: <span class="tabular-nums">{generatedAtLabel}</span>
 			</span>
 		{/if}
 
