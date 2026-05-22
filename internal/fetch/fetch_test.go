@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -209,15 +210,55 @@ func TestRawFileName(t *testing.T) {
 	}
 }
 
-func TestStaticTokenProvider(t *testing.T) {
-	p := StaticTokenProvider{Token: "abc"}
-	tok, err := p.GetToken(context.Background(), nil)
-	if err != nil || tok != "abc" {
-		t.Errorf("StaticTokenProvider failed: tok=%q err=%v", tok, err)
+func TestExtractTokenFromHTML(t *testing.T) {
+	// "{\"token\":\"abc123\"}" を base64 化したもの
+	validHTML := []byte(`<html><body>
+<script>
+cpSmartVueStartup('dash-app-main', '2025-03-26-13-31-19-072', true, 'eyJ0b2tlbiI6ImFiYzEyMyJ9')
+</script>
+</body></html>`)
+	tok, err := extractTokenFromHTML(validHTML)
+	if err != nil {
+		t.Fatalf("expected success, got error: %v", err)
 	}
+	if tok != "abc123" {
+		t.Errorf("token = %q, want %q", tok, "abc123")
+	}
+}
 
-	empty := StaticTokenProvider{}
-	if _, err := empty.GetToken(context.Background(), nil); err == nil {
-		t.Error("empty StaticTokenProvider should return error")
+func TestExtractTokenFromHTML_NoMatch(t *testing.T) {
+	// cpSmartVueStartup が無い
+	_, err := extractTokenFromHTML([]byte(`<html><body>no startup script</body></html>`))
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "cpSmartVueStartup") {
+		t.Errorf("error should mention cpSmartVueStartup: %v", err)
+	}
+}
+
+func TestExtractTokenFromHTML_BadBase64(t *testing.T) {
+	html := []byte(`cpSmartVueStartup('dash-app-main', 'v', true, 'not!base64')`)
+	_, err := extractTokenFromHTML(html)
+	if err == nil {
+		t.Fatal("expected error for unparsable base64")
+	}
+}
+
+func TestExtractTokenFromHTML_EmptyToken(t *testing.T) {
+	// {"token":""} の base64
+	html := []byte(`cpSmartVueStartup('dash-app-main', 'v', true, 'eyJ0b2tlbiI6IiJ9')`)
+	_, err := extractTokenFromHTML(html)
+	if err == nil {
+		t.Fatal("expected error for empty token")
+	}
+}
+
+func TestExtractTokenFromHTML_WrongComponent(t *testing.T) {
+	// dash-header の token は無視されるべき (dash-app-main のみマッチ)
+	html := []byte(`cpSmartVueStartup('dash-header', 'v', true, 'eyJ0b2tlbiI6Im90aGVyIn0=')`)
+	_, err := extractTokenFromHTML(html)
+	if err == nil {
+		t.Fatal("expected error when only non-dash-app-main script exists")
 	}
 }

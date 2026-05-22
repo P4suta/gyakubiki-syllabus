@@ -54,14 +54,3 @@ func InitDumpDir(base string) (string, error) {
 	slog.Info("debug dump dir created", "path", dir)
 	return dir, nil
 }
-
-// dumpFrame は WS frame バイト列を `signalr_frame_NNNN.bin` として保存する (best-effort)。
-func dumpFrame(dir string, frameNo int, data []byte) {
-	if dir == "" {
-		return
-	}
-	path := filepath.Join(dir, fmt.Sprintf("signalr_frame_%04d.bin", frameNo))
-	if err := os.WriteFile(path, data, 0o600); err != nil {
-		slog.Warn("frame dump failed", "path", path, "error", err.Error())
-	}
-}

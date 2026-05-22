@@ -10,16 +10,28 @@ POST https://kulas.kochi-u.ac.jp/cpsmart/public/wsl/WebRoot/SystemD.Lead.Gkm.Com
 
 ## セッション確立フロー
 
-KULAS は GUEST ユーザーでもセッション cookie + CSRF token を要求する。
+KULAS は GUEST ユーザーでもセッション cookie + token を要求する。
+両方とも **検索ページの 1 回の GET** で揃う。
 
 1. **GET** `https://kulas.kochi-u.ac.jp/cpsmart/public/dashboard/main/ja/Simple/1900/3000120/wsl/SyllabusKensaku`
-   - レスポンス: HTML
+   - レスポンス: HTML (~120KB)
    - `Set-Cookie: CPSMART_PUBLIC_AUTH=...; GCLB=...` を取得
-   - HTML 内に CSRF token が埋め込まれている（要観察 — 多分 `<script>` 内）
+   - HTML 内 inline script `cpSmartVueStartup('dash-app-main', '<ver>', true, '<base64>')` の
+     第 4 引数を base64 デコード → JSON 化 → `.token` を抽出 (64 文字 hex)
 2. **POST** findPage（上記）
    - Cookie: `CPSMART_PUBLIC_AUTH`, `GCLB`
    - body: JSON（後述）
-   - body 内の `tempData.entryContext.token` に CSRF token を埋める
+   - body 内の `tempData.entryContext.token` に上で抽出した token を埋める
+
+### token 抽出ロジック (実装: `internal/fetch/html_token.go`)
+
+```go
+var cpSmartVueStartupRe = regexp.MustCompile(
+    `cpSmartVueStartup\(\s*'dash-app-main'\s*,\s*'[^']+'\s*,\s*\w+\s*,\s*'([A-Za-z0-9+/=]+)'`)
+```
+
+`dash-app-main` 以外の component (`dash-header` / `dash-watcher` etc.) の base64 は別の
+token を持つので必ず `dash-app-main` に絞る。
 
 ## リクエストヘッダ
 
@@ -34,13 +46,13 @@ user-agent: <Chrome 系の現実的な UA>
 
 ## リクエスト body
 
-巨大（約 60KB のミニファイ JSON）。`internal/fetch/findpage_body.json` にテンプレートとして保存し、以下のプレースホルダだけ差し替える：
+巨大（約 60KB の整形 JSON）。`internal/fetch/findpage_body.tmpl.json` にテンプレートとして保存し、以下のプレースホルダだけ差し替える：
 
 | プレースホルダ | 場所 | 内容 |
 |---|---|---|
-| `{{PAGE_NO}}` | `methodParams.kensakuJoken.pageNo` および `methodParams.kensakuJoken.values.pageNo` | 1, 2, 3, ... |
-| `{{KAIKO_NENDO}}` | `methodParams.kensakuJoken.values.kaikoNendo.values[0]` | `"2026"` 等。年度 |
-| `{{TOKEN}}` | `tempData.entryContext.token` | GET レスポンスから抽出した CSRF token |
+| `{{.PageNo}}` | `methodParams.kensakuJoken.pageNo` および `methodParams.kensakuJoken.values.pageNo` | 1, 2, 3, ... |
+| `{{.KaikoNendo}}` | `methodParams.kensakuJoken.values.kaikoNendo.values[0]` および `tempData.entryContext.shoriNendo` | `"2026"` 等。年度 |
+| `{{.Token}}` | `tempData.entryContext.token` | 検索ページ HTML から抽出した token |
 
 それ以外の数百フィールドは検索条件のスキーマ宣言（空 values）で、KULAS 側が body 全体を要求するため温存する。
 
