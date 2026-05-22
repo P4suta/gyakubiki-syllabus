@@ -1,0 +1,73 @@
+name: Fetch syllabus monthly
+
+on:
+  schedule:
+    # UTC 月初 19:00 = JST 月 2 日 04:00 (≒ 月初の早朝に取得)
+    - cron: '0 19 1 * *'
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: 取得して件数のみ報告、commit しない
+        type: boolean
+        default: false
+      year:
+        description: kaikoNendo を明示指定 (空なら現在年度を自動計算)
+        type: string
+        default: ''
+
+permissions:
+  contents: write   # main に raw/ を push するため
+  actions: write    # gh workflow run deploy.yml をトリガーするため
+
+concurrency:
+  group: fetch-syllabus
+  cancel-in-progress: false
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Build syllabus-cli
+        run: go build -o syllabus-cli ./cmd/syllabus-cli
+
+      - name: Fetch syllabus
+        env:
+          KULAS_API_TOKEN: ${{ secrets.KULAS_API_TOKEN }}
+        run: |
+          args=(--out-dir raw/)
+          if [[ -n "${{ inputs.year }}" ]]; then
+            args+=(--year "${{ inputs.year }}")
+          fi
+          if [[ "${{ inputs.dry-run }}" == "true" ]]; then
+            args+=(--dry-run)
+          fi
+          ./syllabus-cli fetch "${args[@]}"
+
+      - name: Commit & push if changed
+        id: commit
+        if: ${{ inputs.dry-run != 'true' }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if [[ -n "$(git status --porcelain raw/)" ]]; then
+            git add raw/
+            git commit -m "chore(raw): monthly syllabus refresh ($(date -u +%Y-%m-%d))"
+            git push
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No changes."
+          fi
+
+      - name: Trigger deploy workflow
+        if: ${{ steps.commit.outputs.changed == 'true' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run deploy.yml --ref main

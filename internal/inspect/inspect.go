@@ -1,3 +1,4 @@
+// Package inspect は raw KULAS JSON の構造とフィールド充填率を診断する。
 package inspect
 
 import (
@@ -114,7 +115,7 @@ func Inspect(data []byte, fileName string, fileSize int64) (*Report, error) {
 	return report, nil
 }
 
-func extractCourses(data []byte, report *Report) ([]map[string]interface{}, error) {
+func extractCourses(data []byte, report *Report) ([]map[string]any, error) {
 	// Try API response format
 	var apiResp map[string]json.RawMessage
 	if err := json.Unmarshal(data, &apiResp); err == nil {
@@ -127,7 +128,7 @@ func extractCourses(data []byte, report *Report) ([]map[string]interface{}, erro
 			report.Total = extractInt(apiResp, "total")
 			report.PageSize = extractInt(apiResp, "pageSize")
 
-			var courses []map[string]interface{}
+			var courses []map[string]any
 			if err := json.Unmarshal(listRaw, &courses); err != nil {
 				return nil, fmt.Errorf("selectKogiDtoListのパースに失敗: %w", err)
 			}
@@ -136,7 +137,7 @@ func extractCourses(data []byte, report *Report) ([]map[string]interface{}, erro
 	}
 
 	// Try bare array
-	var courses []map[string]interface{}
+	var courses []map[string]any
 	if err := json.Unmarshal(data, &courses); err == nil {
 		report.Format = "配列"
 		return courses, nil
@@ -157,7 +158,7 @@ func extractInt(m map[string]json.RawMessage, key string) *int {
 	return &v
 }
 
-func computeFieldCoverage(courses []map[string]interface{}) []FieldStat {
+func computeFieldCoverage(courses []map[string]any) []FieldStat {
 	total := len(courses)
 	stats := make([]FieldStat, len(usedFields))
 
@@ -179,7 +180,7 @@ func computeFieldCoverage(courses []map[string]interface{}) []FieldStat {
 	return stats
 }
 
-func computeSummary(courses []map[string]interface{}, report *Report) {
+func computeSummary(courses []map[string]any, report *Report) {
 	kogiCdSet := make(map[string]struct{})
 	semesterSet := make(map[string]struct{})
 	deptSet := make(map[string]struct{})
@@ -216,7 +217,7 @@ func computeSummary(courses []map[string]interface{}, report *Report) {
 	report.Campuses = sortedKeys(campusSet)
 }
 
-func computeParseTrial(courses []map[string]interface{}, report *Report) {
+func computeParseTrial(courses []map[string]any, report *Report) {
 	for _, c := range courses {
 		jikanwari, ok := getString(c, "jikanwari")
 		if !ok || jikanwari == "" {
@@ -242,7 +243,7 @@ func computeParseTrial(courses []map[string]interface{}, report *Report) {
 	}
 }
 
-func getString(m map[string]interface{}, key string) (string, bool) {
+func getString(m map[string]any, key string) (string, bool) {
 	v, exists := m[key]
 	if !exists || v == nil {
 		return "", false

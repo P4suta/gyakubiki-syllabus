@@ -7,8 +7,6 @@ import (
 	"github.com/livec/gyakubiki-syllabus/internal/model"
 )
 
-func ptr(s string) *string { return &s }
-
 func TestConvert(t *testing.T) {
 	raw := []model.RawCourse{
 		{
@@ -156,10 +154,10 @@ func TestConvertWarnsUnparseableJikanwari(t *testing.T) {
 		t.Fatalf("courses len = %d, want 1", len(result.Data.Courses))
 	}
 	if len(result.Data.Courses[0].Slots) != 0 {
-		t.Errorf("expected 0 slots for unparseable jikanwari")
+		t.Errorf("expected 0 slots for unparsable jikanwari")
 	}
 	if len(result.Warnings) == 0 {
-		t.Error("expected warning for unparseable jikanwari")
+		t.Error("expected warning for unparsable jikanwari")
 	}
 }
 
@@ -181,7 +179,7 @@ func TestConvertPreservesOptionalFields(t *testing.T) {
 		{
 			KogiCd:           "001",
 			KogiNm:           "テスト",
-			Fukudai:          ptr("副題テスト"),
+			Fukudai:          new("副題テスト"),
 			TantoKyoin:       "教員",
 			Jikanwari:        "1学期: 月曜日１時限",
 			KogiKaikojikiNm:  "2026年度",
@@ -189,10 +187,10 @@ func TestConvertPreservesOptionalFields(t *testing.T) {
 			SekininBushoNm:   "理工学部",
 			KochiNm:          "朝倉",
 			GakusokuKamokuNm: "テスト",
-			TaishoGakka:      ptr("理工学部"),
-			TaishoNenji:      ptr("1年"),
-			KamokuBunrui:     ptr("専門"),
-			KamokuBunya:      ptr("数学"),
+			TaishoGakka:      new("理工学部"),
+			TaishoNenji:      new("1年"),
+			KamokuBunrui:     new("専門"),
+			KamokuBunya:      new("数学"),
 		},
 	}
 
@@ -322,8 +320,8 @@ func TestBuildSearchTextNormalization(t *testing.T) {
 		{
 			KogiCd:         "ABC",
 			KogiNm:         "English Communication",
-			Fukudai:        ptr("副題\u3000テスト"), // full-width space
-			TantoKyoin:     "Smith\u3000John",      // full-width space
+			Fukudai:        new("副題\u3000テスト"), // full-width space
+			TantoKyoin:     "Smith\u3000John",  // full-width space
 			Jikanwari:      "1学期: 月曜日１時限",
 			SekininBushoNm: "共通教育",
 		},

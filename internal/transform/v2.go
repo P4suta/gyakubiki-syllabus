@@ -16,7 +16,7 @@ var campusOrder = map[string]int{
 	"朝倉キャンパス": 0,
 	"物部キャンパス": 1,
 	"岡豊キャンパス": 2,
-	"その他":       3,
+	"その他":     3,
 }
 
 var dayIndex = map[string]int{
@@ -36,6 +36,8 @@ type ConvertV2Result struct {
 }
 
 // ConvertV2 transforms raw courses into the optimized v2 output format.
+//
+//nolint:gocognit,maintidx // 既存実装。辞書ビルド→正規化→bitset 化を 1 関数で行うため複雑度が高い
 func ConvertV2(raw []model.RawCourse) ConvertV2Result {
 	seen := make(map[string]int) // kogiCd → index in courses
 	var courses []model.CourseV2
@@ -337,7 +339,6 @@ func setBit(bitsets map[int][]uint64, dictIdx, courseIdx, numWords int) {
 	}
 	bitsets[dictIdx][courseIdx/64] |= 1 << uint(courseIdx%64)
 }
-
 
 func encodeBitsets(bitsets map[int][]uint64) map[string]string {
 	result := make(map[string]string, len(bitsets))

@@ -1,3 +1,4 @@
+// Package model は KULAS API のレスポンスとビューア向け加工データの型を定義する。
 package model
 
 import "time"
@@ -71,22 +72,22 @@ type SlotV2 struct {
 
 // CourseV2 represents a course optimized for the frontend (v2).
 type CourseV2 struct {
-	KogiCd       string  `json:"cd"`
-	KogiNm       string  `json:"nm"`
-	Fukudai      *string `json:"sub,omitempty"`
-	TantoKyoin   string  `json:"prof"`
-	JikanwariRaw string  `json:"raw"`
+	KogiCd       string   `json:"cd"`
+	KogiNm       string   `json:"nm"`
+	Fukudai      *string  `json:"sub,omitempty"`
+	TantoKyoin   string   `json:"prof"`
+	JikanwariRaw string   `json:"raw"`
 	Slots        []SlotV2 `json:"slots"`
-	Kaikojiki    int     `json:"ki"`            // index into Dicts.Kaikojiki
-	Kubun        int     `json:"kbn"`           // index into Dicts.Kubun
-	Department   int     `json:"dept"`          // index into Dicts.Departments
-	Campus       int     `json:"campus"`        // index into Dicts.Campuses
-	GakusokuNm   *string `json:"gaku,omitempty"` // only when != KogiNm
-	TaishoGakka  *string `json:"gakka,omitempty"`
-	TaishoNenji  *string `json:"nen,omitempty"`
-	KamokuBunrui *string `json:"bunrui,omitempty"`
-	KamokuBunya  *string `json:"bunya,omitempty"`
-	SearchText   string  `json:"st"`
+	Kaikojiki    int      `json:"ki"`             // index into Dicts.Kaikojiki
+	Kubun        int      `json:"kbn"`            // index into Dicts.Kubun
+	Department   int      `json:"dept"`           // index into Dicts.Departments
+	Campus       int      `json:"campus"`         // index into Dicts.Campuses
+	GakusokuNm   *string  `json:"gaku,omitempty"` // only when != KogiNm
+	TaishoGakka  *string  `json:"gakka,omitempty"`
+	TaishoNenji  *string  `json:"nen,omitempty"`
+	KamokuBunrui *string  `json:"bunrui,omitempty"`
+	KamokuBunya  *string  `json:"bunya,omitempty"`
+	SearchText   string   `json:"st"`
 }
 
 // Dictionaries holds the lookup tables for indexed fields.

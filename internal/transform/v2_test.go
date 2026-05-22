@@ -534,7 +534,7 @@ func TestConvertV2WarnsUnparseableJikanwari(t *testing.T) {
 		t.Fatalf("courses len = %d, want 1", len(result.Data.Courses))
 	}
 	if len(result.Warnings) == 0 {
-		t.Error("expected warnings for unparseable jikanwari")
+		t.Error("expected warnings for unparsable jikanwari")
 	}
 }
 
@@ -574,12 +574,12 @@ func TestConvertV2PreservesOptionalFields(t *testing.T) {
 	bunya := "数学"
 	raw := []model.RawCourse{
 		{
-			KogiCd:      "001",
-			KogiNm:      "テスト",
-			TaishoGakka: &gakka,
-			TaishoNenji: &nenji,
+			KogiCd:       "001",
+			KogiNm:       "テスト",
+			TaishoGakka:  &gakka,
+			TaishoNenji:  &nenji,
 			KamokuBunrui: &bunrui,
-			KamokuBunya: &bunya,
+			KamokuBunya:  &bunya,
 		},
 	}
 

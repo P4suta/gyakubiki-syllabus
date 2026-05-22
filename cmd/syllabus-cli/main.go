@@ -92,7 +92,7 @@ selectKogiDtoListラッパーと生配列の両方に対応しています。`,
 			}
 
 			if outputFile != "" {
-				if err := os.WriteFile(outputFile, output, 0644); err != nil {
+				if err := os.WriteFile(outputFile, output, 0o644); err != nil { //nolint:gosec // ユーザー指定の出力先、web から読まれる前提で 0o644
 					return fmt.Errorf("出力ファイルの書き込みに失敗しました: %s\n  原因: %w", outputFile, err)
 				}
 				fmt.Fprintf(os.Stderr, "✓ %d件の講義を変換しました (元データ: %d件) → %s\n",
@@ -121,7 +121,7 @@ convert前にデータの健全性を確認できます。
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			filePath := args[0]
-			data, err := os.ReadFile(filePath)
+			data, err := os.ReadFile(filePath) //nolint:gosec // CLI で user-supplied path を読むのは想定動作
 			if err != nil {
 				if os.IsNotExist(err) {
 					return fmt.Errorf("ファイルが見つかりません: %s", filePath)
@@ -157,6 +157,7 @@ convert前にデータの健全性を確認できます。
 
 	rootCmd.AddCommand(convertCmd)
 	rootCmd.AddCommand(inspectCmd)
+	rootCmd.AddCommand(newFetchCommand())
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
@@ -238,7 +239,7 @@ func loadAndMerge(paths []string) ([]model.RawCourse, error) {
 	var all []model.RawCourse
 
 	for _, p := range paths {
-		data, err := os.ReadFile(p)
+		data, err := os.ReadFile(p) //nolint:gosec // CLI で user-supplied path を読むのは想定動作
 		if err != nil {
 			if os.IsNotExist(err) {
 				return nil, fmt.Errorf("ファイルが見つかりません: %s", p)
@@ -306,15 +307,15 @@ func parseInput(data []byte) ([]model.RawCourse, error) {
 
 	// Both failed — provide helpful diagnostics
 	firstChar := string(data[0])
-	switch {
-	case firstChar == "{":
+	switch firstChar {
+	case "{":
 		return nil, fmt.Errorf("JSONオブジェクトとして解析しましたが、selectKogiDtoListキーが見つかりません。\n" +
 			"  KULASのAPIレスポンス全体をコピーしているか確認してください。\n" +
 			"  期待される形式: {\"selectKogiDtoList\": [...]}")
-	case firstChar == "[":
+	case "[":
 		return nil, fmt.Errorf("JSON配列として解析しましたが、講義データとして認識できません。\n" +
 			"  配列内の各要素にkogiCd, kogiNmなどのフィールドが必要です")
-	case firstChar == "<":
+	case "<":
 		return nil, fmt.Errorf("HTMLが入力されました。JSONデータを指定してください。\n" +
 			"  ブラウザのDevTools → Networkタブ → findPageリクエスト → Responseタブからコピーしてください")
 	default:

@@ -1,3 +1,4 @@
+// Package parser は jikanwari (時間割) 文字列から学期・曜日・時限を抽出する。
 package parser
 
 import (
@@ -19,14 +20,14 @@ var fullWidthToInt = map[rune]int{
 	'５': 5, '６': 6, '７': 7, '８': 8,
 }
 
-// ParseResult holds parsed slots and any warnings from unparseable parts.
+// ParseResult holds parsed slots and any warnings from unparsable parts.
 type ParseResult struct {
 	Slots    []model.Slot
 	Warnings []string
 }
 
 // ParseJikanwari parses a jikanwari string into a slice of Slots.
-// Unparseable parts are collected as warnings rather than silently dropped.
+// Unparsable parts are collected as warnings rather than silently dropped.
 func ParseJikanwari(jikanwari string) ParseResult {
 	if jikanwari == "" {
 		return ParseResult{}

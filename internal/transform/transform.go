@@ -1,7 +1,9 @@
+// Package transform は KULAS の RawCourse をビューア表示用の Course / CourseV2 に変換する。
 package transform
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -11,15 +13,15 @@ import (
 )
 
 var semesterOrder = map[string]int{
-	"1学期":    0,
+	"1学期":   0,
 	"1学期前半": 1,
 	"1学期後半": 2,
-	"2学期":    3,
+	"2学期":   3,
 	"2学期前半": 4,
 	"2学期後半": 5,
-	"通年":     6,
-	"前期":     7,
-	"後期":     8,
+	"通年":    6,
+	"前期":    7,
+	"後期":    8,
 }
 
 // buildSearchText creates a pre-normalized search haystack for a course.
@@ -152,12 +154,7 @@ func ensureSlots(slots []model.Slot) []model.Slot {
 }
 
 func containsSlot(slots []model.Slot, s model.Slot) bool {
-	for _, existing := range slots {
-		if existing == s {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(slots, s)
 }
 
 func sortSemesters(set map[string]struct{}) []string {
