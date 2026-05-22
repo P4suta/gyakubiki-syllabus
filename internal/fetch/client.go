@@ -24,38 +24,11 @@ const (
 	requestTimeout       = 120 * time.Second
 )
 
-// TokenProvider abstracts how the entryContext token is obtained.
-// Static deployments use StaticTokenProvider; production uses SignalRTokenProvider
-// which establishes a WebSocket connection and reads the token from a push message.
-type TokenProvider interface {
-	GetToken(ctx context.Context, httpClient *http.Client) (string, error)
-}
-
-// StaticTokenProvider returns a pre-supplied token. Useful for tests or
-// short-term fallback when the dynamic route is unavailable.
-type StaticTokenProvider struct {
-	Token string
-}
-
-// GetToken returns the static token.
-func (s StaticTokenProvider) GetToken(_ context.Context, _ *http.Client) (string, error) {
-	if s.Token == "" {
-		return "", fmt.Errorf("StaticTokenProvider に token が設定されていません")
-	}
-	return s.Token, nil
-}
-
-// SignalRTokenProvider obtains the token by listening to the KULAS SignalR hub.
-type SignalRTokenProvider struct {
-	Config SignalRConfig
-}
-
-// GetToken connects to the SignalR hub and reads the token from a push message.
-func (s SignalRTokenProvider) GetToken(ctx context.Context, httpClient *http.Client) (string, error) {
-	return fetchTokenViaSignalR(ctx, httpClient, s.Config)
-}
-
 // Client wraps an HTTP client with KULAS session state and the body template.
+//
+// 通常の lifecycle: NewClient() → FetchPage() を繰り返し → Client が GC される。
+// セッション (CPSMART_PUBLIC_AUTH cookie + entryContext.token) は NewClient
+// 内の establishSession で一度に確立し、以降のリクエストで再利用する。
 type Client struct {
 	httpClient    *http.Client
 	bodyTmpl      *template.Template
@@ -79,14 +52,18 @@ func WithFindPageURL(u string) ClientOption {
 	return func(c *Client) { c.findPageURL = u }
 }
 
-// WithDumpDir enables HTTP req/res + SignalR frame dumping to the given directory.
+// WithDumpDir enables HTTP req/res dumping to the given directory.
 // Empty path disables dumping. Used by --debug-dump-dir for root cause analysis.
 func WithDumpDir(dir string) ClientOption {
 	return func(c *Client) { c.dumpDir = dir }
 }
 
-// NewClient builds a Client, establishes a KULAS session, and obtains the token.
-func NewClient(ctx context.Context, kaikoNendo string, tokenProvider TokenProvider, opts ...ClientOption) (*Client, error) {
+// NewClient builds a Client and establishes a KULAS session.
+//
+// tokenOverride: 通常は空文字列で OK (HTML から抽出した token を使う)。
+// 空でないとき、HTML 抽出済の token を上書きする。`--token` flag や
+// `KULAS_API_TOKEN` env からの fallback / 検証用途。
+func NewClient(ctx context.Context, kaikoNendo, tokenOverride string, opts ...ClientOption) (*Client, error) {
 	tmpl, err := template.ParseFS(bodyTemplateFS, "findpage_body.tmpl.json")
 	if err != nil {
 		return nil, fmt.Errorf("body テンプレートのパースに失敗: %w", err)
@@ -123,14 +100,10 @@ func NewClient(ctx context.Context, kaikoNendo string, tokenProvider TokenProvid
 		return nil, fmt.Errorf("KULAS セッションの確立に失敗: %w", err)
 	}
 
-	if tokenProvider == nil {
-		return nil, fmt.Errorf("TokenProvider が指定されていません")
+	if tokenOverride != "" {
+		slog.Info("token override applied", "source", "flag_or_env", "prev_token_prefix", tokenPrefix(c.token))
+		c.token = tokenOverride
 	}
-	token, err := tokenProvider.GetToken(ctx, c.httpClient)
-	if err != nil {
-		return nil, fmt.Errorf("token の取得に失敗: %w", err)
-	}
-	c.token = token
 
 	return c, nil
 }
@@ -193,12 +166,17 @@ func (c *Client) FetchPage(ctx context.Context, pageNo int) ([]byte, error) {
 			"resp_body_preview", preview,
 		)
 		return nil, fmt.Errorf("findPage が HTTP %d を返しました (page %d): %s\n"+
-			"  ※ token または body フォーマットが API と不整合の可能性があります",
+			"  ※ token が古い / body フォーマットが API と不整合の可能性があります",
 			resp.StatusCode, pageNo, preview)
 	}
 	return body, nil
 }
 
+// establishSession は検索ページを GET して以下 2 つを確立する:
+//  1. CPSMART_PUBLIC_AUTH cookie (httpClient.Jar に保存される)
+//  2. entryContext.token (HTML 内 cpSmartVueStartup の base64 引数から抽出して c.token にセット)
+//
+// HTML 取得は 1 回だけで session と token が同時に手に入る。
 func (c *Client) establishSession(ctx context.Context) error {
 	logger := slog.With("op", "session_establish")
 
@@ -216,15 +194,18 @@ func (c *Client) establishSession(ctx context.Context) error {
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		logger.Error("HTTP call failed", "error", err.Error(), "elapsed_ms", time.Since(start).Milliseconds())
-		return fmt.Errorf("検索ページ GET に失敗 (TLS chain や ネットワーク疎通を確認): %w", err)
+		return fmt.Errorf("検索ページ GET に失敗 (TLS chain やネットワーク疎通を確認): %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
-	n, _ := io.Copy(io.Discard, resp.Body)
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("検索ページ HTML の読み込みに失敗: %w", err)
+	}
 	elapsed := time.Since(start)
 
 	logger.Info("response received",
 		"status", resp.StatusCode,
-		"resp_bytes", n,
+		"resp_bytes", len(body),
 		"elapsed_ms", elapsed.Milliseconds(),
 	)
 
@@ -233,13 +214,32 @@ func (c *Client) establishSession(ctx context.Context) error {
 	}
 
 	cookieNames := make([]string, 0, 4)
+	hasAuth := false
 	for _, ck := range c.httpClient.Jar.Cookies(req.URL) {
 		cookieNames = append(cookieNames, ck.Name)
 		if ck.Name == "CPSMART_PUBLIC_AUTH" {
-			logger.Info("session cookie acquired", "cookies", cookieNames)
-			return nil
+			hasAuth = true
 		}
 	}
-	logger.Error("CPSMART_PUBLIC_AUTH cookie missing", "received_cookies", cookieNames)
-	return fmt.Errorf("CPSMART_PUBLIC_AUTH cookie が取得できませんでした (受信 cookie: %v)", cookieNames)
+	if !hasAuth {
+		logger.Error("CPSMART_PUBLIC_AUTH cookie missing", "received_cookies", cookieNames)
+		return fmt.Errorf("CPSMART_PUBLIC_AUTH cookie が取得できませんでした (受信 cookie: %v)", cookieNames)
+	}
+	logger.Info("session cookie acquired", "cookies", cookieNames)
+
+	token, err := extractTokenFromHTML(body)
+	if err != nil {
+		return fmt.Errorf("token 抽出に失敗: %w", err)
+	}
+	c.token = token
+	logger.Info("token extracted", "token_prefix", tokenPrefix(token))
+	return nil
+}
+
+// tokenPrefix returns the first 8 chars of a token for log redaction.
+func tokenPrefix(token string) string {
+	if len(token) <= 8 {
+		return token
+	}
+	return token[:8] + "..."
 }

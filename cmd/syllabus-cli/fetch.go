@@ -30,10 +30,10 @@ func newFetchCommand() *cobra.Command {
 		Long: `KULAS の findPage API をページネーションで全件叩いて、
 raw/ ディレクトリの 講義データ*.json を更新します。
 
-token 取得方針 (優先順):
-  1. --token フラグ
-  2. 環境変数 ` + tokenEnvVar + `
-  3. SignalR WebSocket で動的取得 (上記が両方空のとき)`,
+token 取得 (通常は自動):
+  検索ページ HTML 内の cpSmartVueStartup base64 引数から抽出。
+  ` + "`--token`" + ` フラグまたは環境変数 ` + tokenEnvVar + ` を指定するとそれで上書き
+  (検証用、通常は使わない)。`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx, cancel := context.WithTimeout(cmd.Context(), 10*time.Minute)
@@ -49,17 +49,17 @@ token 取得方針 (優先順):
 				return fmt.Errorf("--debug-dump-dir 初期化に失敗: %w", err)
 			}
 
-			provider, providerName := buildTokenProvider(token, dumpDir)
+			tokenOverride, tokenSource := resolveTokenOverride(token)
 
 			slog.Info("fetch start",
 				"kaikoNendo", kaikoNendo,
 				"out_dir", outDir,
 				"min_total", minTotal,
 				"dry_run", dryRun,
-				"token_provider", providerName,
+				"token_source", tokenSource,
 				"debug_dump_dir", dumpDir,
 			)
-			client, err := fetch.NewClient(ctx, kaikoNendo, provider, fetch.WithDumpDir(dumpDir))
+			client, err := fetch.NewClient(ctx, kaikoNendo, tokenOverride, fetch.WithDumpDir(dumpDir))
 			if err != nil {
 				slog.Error("client init failed", "error", err.Error())
 				return fmt.Errorf("client 初期化に失敗 (TLS/session/token のいずれか — 直前の slog Error 参照): %w", err)
@@ -83,11 +83,11 @@ token 取得方針 (優先順):
 
 	cmd.Flags().StringVar(&outDir, "out-dir", "raw", "raw JSON の出力ディレクトリ")
 	cmd.Flags().StringVar(&yearFlag, "year", "", "kaikoNendo (空なら現在年度を自動計算)")
-	cmd.Flags().StringVar(&token, "token", "", "KULAS API token (空なら環境変数 "+tokenEnvVar+" → SignalR の順で取得)")
+	cmd.Flags().StringVar(&token, "token", "", "KULAS API token を上書き (空なら HTML から自動抽出、"+tokenEnvVar+" env でも上書き可)")
 	cmd.Flags().IntVar(&minTotal, "min-total", 1500, "page 1 の total 件数の最小ガード (これを下回ると fail)")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "取得して件数のみ報告、ファイル書き込みなし")
 	cmd.Flags().StringVar(&debugDumpDir, "debug-dump-dir", "",
-		"指定すると <dir>/<timestamp>/ に全 HTTP req/resp と SignalR frame を保存 (root cause 分析用)")
+		"指定すると <dir>/<timestamp>/ に全 HTTP req/resp を保存 (root cause 分析用)")
 
 	return cmd
 }
@@ -102,18 +102,17 @@ func currentKaikoNendo(now time.Time) int {
 	return year
 }
 
-// buildTokenProvider は flag / env / SignalR の優先順で token provider を選ぶ。
-// 第2戻り値は slog 用の provider name (例: "flag", "env:KULAS_API_TOKEN", "signalr")。
-func buildTokenProvider(flagToken, dumpDir string) (fetch.TokenProvider, string) {
+// resolveTokenOverride は flag / env で token 上書きが指定されているかを判定する。
+// 戻り値 (token, source) — token が空文字列なら override なし (HTML 抽出を使う)、
+// 非空なら override する。source は slog 用ラベル ("flag" | "env:..." | "html")。
+func resolveTokenOverride(flagToken string) (string, string) {
 	if flagToken != "" {
-		return fetch.StaticTokenProvider{Token: flagToken}, "flag"
+		return flagToken, "flag"
 	}
 	if env := os.Getenv(tokenEnvVar); env != "" {
-		return fetch.StaticTokenProvider{Token: env}, "env:" + tokenEnvVar
+		return env, "env:" + tokenEnvVar
 	}
-	cfg := fetch.DefaultSignalRConfig()
-	cfg.DumpDir = dumpDir
-	return fetch.SignalRTokenProvider{Config: cfg}, "signalr"
+	return "", "html"
 }
 
 func printFetchReport(result *fetch.Result, dryRun bool) {
