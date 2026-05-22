@@ -11,6 +11,7 @@ interface Props {
 	searchText: string
 	displayCount: number
 	totalCount: number
+	generatedAt: string
 }
 
 let {
@@ -23,10 +24,22 @@ let {
 	searchText = $bindable(),
 	displayCount,
 	totalCount,
+	generatedAt,
 }: Props = $props()
 
 let mobileFilterOpen = $state(false)
 let hasActiveFilters = $derived(department !== 'all' || campus !== 'all' || searchText !== '')
+
+// ISO-8601 を YYYY-MM-DD (ローカル TZ) に整形。データ最終更新日の表示用。
+let generatedAtLabel = $derived.by(() => {
+	if (!generatedAt) return ''
+	const d = new Date(generatedAt)
+	if (Number.isNaN(d.getTime())) return ''
+	const y = d.getFullYear()
+	const m = String(d.getMonth() + 1).padStart(2, '0')
+	const dd = String(d.getDate()).padStart(2, '0')
+	return `${y}-${m}-${dd}`
+})
 
 function resetFilters() {
 	semester = 'all'
@@ -40,6 +53,11 @@ function resetFilters() {
 <div class="glass-nav sticky top-0 z-50 border-b border-overlay-light px-3 py-2 sm:hidden">
 	<div class="flex items-center gap-2">
 		<h1 class="text-body font-semibold text-apple-text whitespace-nowrap tracking-tight">時間割</h1>
+		{#if generatedAtLabel}
+			<span class="bg-overlay-subtle text-apple-text/60 rounded-full px-2 py-0.5 text-micro tabular-nums" title="データ最終更新日">
+				{generatedAtLabel}
+			</span>
+		{/if}
 
 		<button
 			class="bg-overlay-muted rounded-full px-3 py-1 text-caption font-medium text-apple-text truncate max-w-[140px]"
@@ -200,6 +218,11 @@ function resetFilters() {
 <div class="glass-nav sticky top-0 z-50 border-b border-overlay-light px-6 py-3 hidden sm:block">
 	<div class="flex items-center gap-4 flex-wrap">
 		<h1 class="text-lg font-semibold text-apple-text whitespace-nowrap tracking-tight">時間割</h1>
+		{#if generatedAtLabel}
+			<span class="bg-overlay-subtle text-apple-text/60 rounded-full px-2.5 py-0.5 text-caption tabular-nums" title="データ最終更新日 ({generatedAt})">
+				{generatedAtLabel}
+			</span>
+		{/if}
 
 		<!-- Semester segmented control -->
 		<div class="flex bg-overlay-muted rounded-full p-0.5">
