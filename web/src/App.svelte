@@ -3,6 +3,7 @@ import { onMount } from 'svelte'
 import CourseModal from './components/CourseModal.svelte'
 import Disclaimer from './components/Disclaimer.svelte'
 import FilterBar from './components/FilterBar.svelte'
+import SearchBar from './components/SearchBar.svelte'
 import Timetable from './components/Timetable.svelte'
 import { CourseIndex } from './lib/course-index'
 import { buildGrid, countUnique } from './lib/grid'
@@ -76,6 +77,7 @@ onMount(async () => {
 			totalCount={data.courses.length}
 			generatedAt={data.generatedAt}
 		/>
+		<SearchBar bind:searchText />
 		<Timetable {grid} onselect={(c) => { selectedCourse = c }} />
 	</div>
 	{#if selectedCourse}
