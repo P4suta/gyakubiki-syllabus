@@ -21,7 +21,9 @@ updates:
           - "*"
 
   # Web deps (Svelte / Vite / Tailwind / Vitest etc.)
-  - package-ecosystem: npm
+  # web/ は bun + bun.lockb を使う。Dependabot の bun ecosystem は bun.lockb を
+  # ネイティブに更新できる (npm として扱うと frozen-lockfile で CI fail する)。
+  - package-ecosystem: bun
     directory: /web
     schedule:
       interval: monthly
