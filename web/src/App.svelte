@@ -74,6 +74,7 @@ onMount(async () => {
 			bind:searchText
 			{displayCount}
 			totalCount={data.courses.length}
+			generatedAt={data.generatedAt}
 		/>
 		<Timetable {grid} onselect={(c) => { selectedCourse = c }} />
 	</div>
