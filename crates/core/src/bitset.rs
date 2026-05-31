@@ -40,6 +40,19 @@ impl BitSet {
         Ok(Self { words })
     }
 
+    /// Encode the way the Go pipeline's `encodeBitsets` does — each `u64` word as
+    /// little-endian bytes, then standard base64. The exact inverse of
+    /// [`from_base64`], and byte-identical to the Go producer, so a decoded set
+    /// re-encodes to the same string.
+    #[must_use]
+    pub fn to_base64(&self) -> String {
+        let mut bytes = Vec::with_capacity(self.words.len() * Self::BITS_PER_WORD / 8);
+        for word in &self.words {
+            bytes.extend_from_slice(&word.to_le_bytes());
+        }
+        STANDARD.encode(bytes)
+    }
+
     /// The empty set — no words, so every membership test is `false` and an
     /// [`and`](Self::and) against it collapses to empty.
     #[must_use]
@@ -60,6 +73,27 @@ impl BitSet {
             words[full] = (1u64 << remainder) - 1;
         }
         Self { words }
+    }
+
+    /// Create an all-zero set wide enough for `num_words` 64-bit words.
+    ///
+    /// The producer sizes this to `n.div_ceil(64)` for `n` courses and keeps
+    /// every word in [`to_base64`], so a dimension stays fixed-width — matching
+    /// Go's `encodeBitsets`, which emits `len(words)*8` bytes regardless of which
+    /// bits are set.
+    #[must_use]
+    pub fn with_words(num_words: usize) -> Self {
+        Self {
+            words: vec![0u64; num_words],
+        }
+    }
+
+    /// Set bit `i`.
+    ///
+    /// # Panics
+    /// Panics if `i` is beyond the capacity reserved by [`with_words`].
+    pub fn set(&mut self, i: usize) {
+        self.words[i / Self::BITS_PER_WORD] |= 1u64 << (i % Self::BITS_PER_WORD);
     }
 
     /// Test whether bit `i` is set.
@@ -203,5 +237,31 @@ mod tests {
         let bs = BitSet::from_base64(&b64(&[42, 0, 0, 0, 0, 0, 0, 0])).unwrap();
         let all = BitSet::all_ones(64);
         assert_eq!(ones(&bs.and(&all)), ones(&bs));
+    }
+
+    #[test]
+    fn set_then_to_base64_matches_go_little_endian() {
+        // bits 0 and 2 set in one word => byte 0x05, then seven zero bytes.
+        let mut bs = BitSet::with_words(1);
+        bs.set(0);
+        bs.set(2);
+        assert_eq!(bs.to_base64(), b64(&[5, 0, 0, 0, 0, 0, 0, 0]));
+    }
+
+    #[test]
+    fn to_base64_round_trips_through_from_base64() {
+        let mut bs = BitSet::with_words(2);
+        for i in [0usize, 2, 63, 64, 127] {
+            bs.set(i);
+        }
+        let decoded = BitSet::from_base64(&bs.to_base64()).unwrap();
+        assert_eq!(ones(&decoded), vec![0, 2, 63, 64, 127]);
+    }
+
+    #[test]
+    fn with_words_is_fixed_width_even_when_empty() {
+        // No bits set, but two reserved words => 16 little-endian bytes, like Go.
+        let bs = BitSet::with_words(2);
+        assert_eq!(bs.to_base64(), b64(&[0u8; 16]));
     }
 }

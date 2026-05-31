@@ -5,12 +5,13 @@
 //! deliberately faithful to the wire format; the richer in-memory domain lives
 //! in the `engine` layer.
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
-/// Top-level v2 payload.
-#[derive(Debug, Clone, Deserialize)]
+/// Top-level v2 payload. Deserialized by the consumer (the engine) and
+/// serialized by the producer (the native `convert` CLI).
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ProcessedDataV2 {
     pub version: u32,
     #[serde(rename = "generatedAt")]
@@ -33,11 +34,14 @@ pub struct Dictionaries {
 }
 
 /// Precomputed base64 bitsets per filter dimension, keyed by dictionary index.
-#[derive(Debug, Clone, Deserialize)]
+///
+/// A [`BTreeMap`] (not a `HashMap`) so serialization emits keys in a stable,
+/// lexical order — byte-identical to Go's `encoding/json`, which sorts map keys.
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct IndicesMap {
-    pub semester: HashMap<String, String>,
-    pub department: HashMap<String, String>,
-    pub campus: HashMap<String, String>,
+    pub semester: BTreeMap<String, String>,
+    pub department: BTreeMap<String, String>,
+    pub campus: BTreeMap<String, String>,
 }
 
 /// A single time slot, using dictionary indices instead of strings.
@@ -77,4 +81,75 @@ pub struct CourseV2 {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bunya: Option<String>,
     pub st: String,
+}
+
+// --- Raw KULAS wire format (producer input) ---
+//
+// The shapes the `convert` pipeline ingests. Field names mirror the Go
+// `json:"..."` tags in `internal/model/model.go`. Unknown keys are ignored
+// (no `deny_unknown_fields`), and JSON `null` is tolerated everywhere the Go
+// side tolerated it: required strings fall back to `""` (Go leaves the zero
+// value), optional pointers become `None`.
+
+/// The KULAS API envelope: `{ "selectKogiDtoList": [...] }`.
+#[derive(Debug, Clone, Deserialize)]
+pub struct RawResponse {
+    /// `Some` (even if empty) when the key is present and non-null — mirroring
+    /// the Go `resp.SelectKogiDtoList != nil` check that selects this shape.
+    #[serde(rename = "selectKogiDtoList")]
+    pub select_kogi_dto_list: Option<Vec<RawCourse>>,
+}
+
+/// A single course as delivered by KULAS, before normalization.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct RawCourse {
+    #[serde(rename = "kogiCd", default, deserialize_with = "string_or_null")]
+    pub kogi_cd: String,
+    #[serde(rename = "kogiNm", default, deserialize_with = "string_or_null")]
+    pub kogi_nm: String,
+    #[serde(default)]
+    pub fukudai: Option<String>,
+    #[serde(rename = "tantoKyoin", default, deserialize_with = "string_or_null")]
+    pub tanto_kyoin: String,
+    #[serde(default, deserialize_with = "string_or_null")]
+    pub jikanwari: String,
+    #[serde(
+        rename = "kogiKaikojikiNm",
+        default,
+        deserialize_with = "string_or_null"
+    )]
+    pub kogi_kaikojiki_nm: String,
+    #[serde(rename = "kogiKubunNm", default, deserialize_with = "string_or_null")]
+    pub kogi_kubun_nm: String,
+    #[serde(
+        rename = "sekininBushoNm",
+        default,
+        deserialize_with = "string_or_null"
+    )]
+    pub sekinin_busho_nm: String,
+    #[serde(rename = "kochiNm", default, deserialize_with = "string_or_null")]
+    pub kochi_nm: String,
+    #[serde(
+        rename = "gakusokuKamokuNm",
+        default,
+        deserialize_with = "string_or_null"
+    )]
+    pub gakusoku_kamoku_nm: String,
+    #[serde(rename = "taishoGakka", default)]
+    pub taisho_gakka: Option<String>,
+    #[serde(rename = "taishoNenji", default)]
+    pub taisho_nenji: Option<String>,
+    #[serde(rename = "kamokuBunrui", default)]
+    pub kamoku_bunrui: Option<String>,
+    #[serde(rename = "kamokuBunya", default)]
+    pub kamoku_bunya: Option<String>,
+}
+
+/// Deserialize a string field that the producer treats as required, accepting a
+/// JSON `null` as `""` (Go's `encoding/json` leaves the zero value on null).
+fn string_or_null<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Ok(Option::<String>::deserialize(deserializer)?.unwrap_or_default())
 }

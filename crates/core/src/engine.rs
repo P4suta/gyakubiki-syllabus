@@ -7,7 +7,7 @@
 //! Parsing, bitset decoding and index construction all happen in [`Engine::from_json`],
 //! so the WASM layer only ever marshals **indices** across the boundary.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::hash::Hash;
 
 use crate::bitset::BitSet;
@@ -243,7 +243,7 @@ where
 
 /// Decode a `{ "dictIndex": base64 }` map into `{ K: BitSet }`, where `K` is the
 /// dimension's typed index (inferred from the destination field).
-fn decode_bitsets<K>(encoded: &HashMap<String, String>) -> Result<HashMap<K, BitSet>, EngineError>
+fn decode_bitsets<K>(encoded: &BTreeMap<String, String>) -> Result<HashMap<K, BitSet>, EngineError>
 where
     K: From<usize> + Eq + Hash,
 {
@@ -268,7 +268,7 @@ mod tests {
     use crate::index::CourseIndex;
     use crate::model::{CourseV2, Dictionaries, IndicesMap, ProcessedDataV2, SlotV2};
     use base64::{engine::general_purpose::STANDARD, Engine as _};
-    use std::collections::HashMap;
+    use std::collections::BTreeMap;
 
     fn dicts() -> Dictionaries {
         Dictionaries {
@@ -325,7 +325,7 @@ mod tests {
             .map(|(ci, _)| ci)
             .collect();
 
-        let mut semester = HashMap::new();
+        let mut semester = BTreeMap::new();
         for si in 0..dicts.semesters.len() {
             let mut words = vec![0u64; num_words];
             for (ci, c) in courses.iter().enumerate() {
@@ -342,7 +342,7 @@ mod tests {
         }
 
         let dimension = |selector: &dyn Fn(&CourseV2) -> u32, len: usize| {
-            let mut map = HashMap::new();
+            let mut map = BTreeMap::new();
             for di in 0..len {
                 let mut words = vec![0u64; num_words];
                 for (ci, c) in courses.iter().enumerate() {

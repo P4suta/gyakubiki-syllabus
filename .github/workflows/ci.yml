@@ -44,6 +44,32 @@ jobs:
       - name: fmt
         run: cargo fmt --check
 
+  # Migration gate: the Rust `convert` must produce byte-identical data.json to
+  # the Go pipeline it is replacing. Lives only while both exist; removed with the
+  # Go job once `convert` is switched over.
+  parity:
+    name: convert parity (Go vs Rust)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - name: build both CLIs
+        run: |
+          go build -o /tmp/go-cli ./cmd/syllabus-cli
+          cargo build --release -p syllabus-cli
+      - name: convert raw/*.json with both
+        run: |
+          /tmp/go-cli convert raw/*.json --v2 --compact -o /tmp/go.json
+          ./target/release/syllabus-cli convert raw/*.json --v2 --compact -o /tmp/rs.json
+      - name: byte-compare (generatedAt blanked — it is wall-clock)
+        run: |
+          sed -E 's/"generatedAt":"[^"]*"/"generatedAt":""/' /tmp/go.json > /tmp/go.norm
+          sed -E 's/"generatedAt":"[^"]*"/"generatedAt":""/' /tmp/rs.json > /tmp/rs.norm
+          cmp /tmp/go.norm /tmp/rs.norm
+
   typos:
     name: typos (spell check)
     runs-on: ubuntu-latest
