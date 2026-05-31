@@ -2,7 +2,7 @@
 # Coexists with the Go module at the repo root during the migration.
 [workspace]
 resolver = "2"
-members = ["crates/core", "crates/wasm"]
+members = ["crates/core", "crates/wasm", "crates/cli"]
 
 [workspace.package]
 edition = "2021"
