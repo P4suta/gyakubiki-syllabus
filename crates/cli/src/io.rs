@@ -47,3 +47,39 @@ fn parse(text: &str) -> Result<Vec<RawCourse>> {
     }
     bail!("JSON として講義データを認識できません (selectKogiDtoList ラッパー、または生配列が必要です)")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::parse;
+
+    #[test]
+    fn parses_kulas_envelope() {
+        let raw = parse(r#"{"selectKogiDtoList":[{"kogiCd":"001","kogiNm":"A"}]}"#).unwrap();
+        assert_eq!(raw.len(), 1);
+        assert_eq!(raw[0].kogi_cd, "001");
+    }
+
+    #[test]
+    fn parses_bare_array() {
+        let raw = parse(r#"[{"kogiCd":"001"},{"kogiCd":"002"}]"#).unwrap();
+        assert_eq!(raw.len(), 2);
+    }
+
+    #[test]
+    fn empty_input_is_an_error() {
+        assert!(parse("   ").is_err());
+    }
+
+    #[test]
+    fn non_course_json_is_an_error() {
+        assert!(parse(r#"{"unexpected": true}"#).is_err());
+    }
+
+    #[test]
+    fn envelope_with_null_list_falls_back_and_errors() {
+        // `selectKogiDtoList: null` is not the envelope shape (it's `None`, not
+        // `Some`), so the bare-array branch is tried next and also fails — an
+        // error, never a panic.
+        assert!(parse(r#"{"selectKogiDtoList": null}"#).is_err());
+    }
+}

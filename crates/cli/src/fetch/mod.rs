@@ -102,6 +102,7 @@ impl PageMeta {
     }
 }
 
+/// One page in the final report.
 struct PageResult {
     page_no: i32,
     list_len: i32,
@@ -116,8 +117,87 @@ struct FetchResult {
     cleaned: Vec<String>,
 }
 
-/// Download every page, validate counts, and write raw JSON — port of Go's `All`.
+impl FetchResult {
+    /// Report a dry run: pages fetched but never written, so nothing changed.
+    fn report_only(fetched: &FetchedPages) -> Self {
+        let pages = fetched.pages.iter().map(|p| p.report(false)).collect();
+        Self {
+            total: fetched.total,
+            max_page_no: fetched.max_page_no,
+            pages,
+            cleaned: Vec::new(),
+        }
+    }
+
+    /// Report a real run, folding in each page's on-disk changed flag.
+    fn written(fetched: &FetchedPages, writes: &[PageWrite], cleaned: Vec<String>) -> Self {
+        let pages = fetched
+            .pages
+            .iter()
+            .map(|p| p.report(writes.iter().any(|w| w.page_no == p.page_no && w.changed)))
+            .collect();
+        Self {
+            total: fetched.total,
+            max_page_no: fetched.max_page_no,
+            pages,
+            cleaned,
+        }
+    }
+}
+
+/// A fetched, validated page held in memory before any disk write.
+struct RawPage {
+    page_no: i32,
+    list_len: i32,
+    bytes: Vec<u8>,
+}
+
+impl RawPage {
+    fn report(&self, changed: bool) -> PageResult {
+        PageResult {
+            page_no: self.page_no,
+            list_len: self.list_len,
+            file_name: raw_file_name(self.page_no),
+            changed,
+        }
+    }
+}
+
+/// Every page fetched and validated, before writing — the filesystem-free
+/// product of [`fetch_and_validate`].
+struct FetchedPages {
+    total: i32,
+    max_page_no: i32,
+    pages: Vec<RawPage>,
+}
+
+/// The outcome of writing one page: whether its bytes differed from disk.
+struct PageWrite {
+    page_no: i32,
+    changed: bool,
+}
+
+/// Download every page, validate the pagination, and write raw JSON — port of
+/// Go's `All`, split into fetch/validate, write, and cleanup so the orchestrator
+/// reads top-down and each step is testable on its own.
 fn fetch_all(opts: &Options, fetcher: &impl PageFetcher) -> Result<FetchResult> {
+    let fetched = fetch_and_validate(opts, fetcher)?;
+    if opts.dry_run {
+        eprintln!(
+            "dry-run: skipping write (total={}, pages={})",
+            fetched.total,
+            fetched.pages.len()
+        );
+        return Ok(FetchResult::report_only(&fetched));
+    }
+    let writes = write_pages(&opts.out_dir, &fetched)?;
+    let cleaned = cleanup_stale_pages(&opts.out_dir, fetched.max_page_no)?;
+    Ok(FetchResult::written(&fetched, &writes, cleaned))
+}
+
+/// Fetch page 1 and guard its totals, then fetch and validate pages 2..=max.
+/// Touches no filesystem, so it is unit-testable with a fake fetcher.
+fn fetch_and_validate(opts: &Options, fetcher: &impl PageFetcher) -> Result<FetchedPages> {
     let first_bytes = fetcher.fetch_page(1)?;
     let first =
         parse_meta(&first_bytes).context("page 1 のレスポンスを JSON として解析できません")?;
@@ -132,77 +212,77 @@ fn fetch_all(opts: &Options, fetcher: &impl PageFetcher) -> Result<FetchResult> 
         );
     }
 
-    let mut pages: Vec<(i32, Vec<u8>)> = vec![(1, first_bytes)];
-    let mut result = FetchResult {
-        total: first.total,
-        max_page_no: first.max_page_no,
-        pages: vec![PageResult {
-            page_no: 1,
-            list_len: first.list_len(),
-            file_name: raw_file_name(1),
-            changed: false,
-        }],
-        cleaned: Vec::new(),
-    };
-
+    let mut pages = vec![RawPage {
+        page_no: 1,
+        list_len: first.list_len(),
+        bytes: first_bytes,
+    }];
     for page_no in 2..=first.max_page_no {
         eprintln!("fetching page {page_no} of {}", first.max_page_no);
         let bytes = fetcher.fetch_page(page_no)?;
         let meta = parse_meta(&bytes)
             .with_context(|| format!("page {page_no} のレスポンスを JSON として解析できません"))?;
-        if meta.page_no != page_no {
-            bail!(
-                "page {page_no} を要求したが pageNo={} が返ってきました",
-                meta.page_no
-            );
-        }
-        if meta.max_page_no != first.max_page_no {
-            bail!(
-                "page {page_no} で maxPageNo が変化 ({} → {})",
-                first.max_page_no,
-                meta.max_page_no
-            );
-        }
-        let list_len = meta.list_len();
-        if page_no < first.max_page_no && list_len != meta.page_size {
-            bail!(
-                "中間 page {page_no} の件数が不足 (listLen={list_len}, pageSize={})",
-                meta.page_size
-            );
-        }
-        pages.push((page_no, bytes));
-        result.pages.push(PageResult {
+        validate_page(&meta, page_no, first.max_page_no)?;
+        pages.push(RawPage {
             page_no,
-            list_len,
-            file_name: raw_file_name(page_no),
-            changed: false,
+            list_len: meta.list_len(),
+            bytes,
         });
     }
 
-    if opts.dry_run {
-        eprintln!(
-            "dry-run: skipping write (total={}, pages={})",
-            result.total,
-            result.pages.len()
-        );
-        result.pages.sort_by_key(|p| p.page_no);
-        return Ok(result);
-    }
+    Ok(FetchedPages {
+        total: first.total,
+        max_page_no: first.max_page_no,
+        pages,
+    })
+}
 
-    fs::create_dir_all(&opts.out_dir)
-        .with_context(|| format!("出力ディレクトリの作成に失敗 {}", opts.out_dir.display()))?;
-    for (page_no, bytes) in &pages {
-        let path = opts.out_dir.join(raw_file_name(*page_no));
-        let changed = file_changed(&path, bytes);
-        fs::write(&path, bytes)
-            .with_context(|| format!("ファイル書き込みに失敗 {}", path.display()))?;
-        if let Some(p) = result.pages.iter_mut().find(|p| p.page_no == *page_no) {
-            p.changed = changed;
-        }
+/// Validate one non-first page's metadata against what was requested: the page
+/// number echoes back, `maxPageNo` is stable, and every page before the last is
+/// full (`listLen == pageSize`).
+fn validate_page(meta: &PageMeta, expected_page: i32, first_max: i32) -> Result<()> {
+    if meta.page_no != expected_page {
+        bail!(
+            "page {expected_page} を要求したが pageNo={} が返ってきました",
+            meta.page_no
+        );
     }
-    result.pages.sort_by_key(|p| p.page_no);
-    result.cleaned = cleanup_stale_pages(&opts.out_dir, first.max_page_no)?;
-    Ok(result)
+    if meta.max_page_no != first_max {
+        bail!(
+            "page {expected_page} で maxPageNo が変化 ({} → {})",
+            first_max,
+            meta.max_page_no
+        );
+    }
+    let list_len = meta.list_len();
+    if expected_page < first_max && list_len != meta.page_size {
+        bail!(
+            "中間 page {expected_page} の件数が不足 (listLen={list_len}, pageSize={})",
+            meta.page_size
+        );
+    }
+    Ok(())
+}
+
+/// Write each validated page to `out_dir` verbatim, reporting which differed
+/// from what was already on disk.
+fn write_pages(out_dir: &Path, fetched: &FetchedPages) -> Result<Vec<PageWrite>> {
+    fs::create_dir_all(out_dir)
+        .with_context(|| format!("出力ディレクトリの作成に失敗 {}", out_dir.display()))?;
+    fetched
+        .pages
+        .iter()
+        .map(|p| {
+            let path = out_dir.join(raw_file_name(p.page_no));
+            let changed = file_changed(&path, &p.bytes);
+            fs::write(&path, &p.bytes)
+                .with_context(|| format!("ファイル書き込みに失敗 {}", path.display()))?;
+            Ok(PageWrite {
+                page_no: p.page_no,
+                changed,
+            })
+        })
+        .collect()
 }
 
 fn parse_meta(bytes: &[u8]) -> Result<PageMeta> {
@@ -459,5 +539,42 @@ mod tests {
         assert_eq!(raw_file_name(2), "講義データ-02.json");
         assert_eq!(raw_file_name(8), "講義データ-08.json");
         assert_eq!(raw_file_name(10), "講義データ-10.json");
+    }
+
+    /// A `PageMeta` with `list_len` placeholder courses, for `validate_page`.
+    fn meta(page_no: i32, max_page_no: i32, page_size: i32, list_len: i32) -> PageMeta {
+        PageMeta {
+            page_no,
+            max_page_no,
+            total: 0,
+            page_size,
+            select_kogi_dto_list: vec![serde_json::Value::Null; list_len as usize],
+        }
+    }
+
+    #[test]
+    fn validate_page_accepts_a_full_middle_page() {
+        assert!(validate_page(&meta(2, 3, 500, 500), 2, 3).is_ok());
+    }
+
+    #[test]
+    fn validate_page_accepts_a_short_last_page() {
+        // The final page may be partial.
+        assert!(validate_page(&meta(3, 3, 500, 200), 3, 3).is_ok());
+    }
+
+    #[test]
+    fn validate_page_rejects_wrong_page_no() {
+        assert!(validate_page(&meta(9, 3, 500, 500), 2, 3).is_err());
+    }
+
+    #[test]
+    fn validate_page_rejects_changed_max_page_no() {
+        assert!(validate_page(&meta(2, 5, 500, 500), 2, 3).is_err());
+    }
+
+    #[test]
+    fn validate_page_rejects_short_middle_page() {
+        assert!(validate_page(&meta(2, 3, 500, 300), 2, 3).is_err());
     }
 }

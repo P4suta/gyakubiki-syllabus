@@ -169,20 +169,28 @@ fn build_body(
 }
 
 /// Transform the page's `entryContext` into the shape the browser sends to
-/// findPage: drop the display-only keys and expose `ResourceId` as `resourceId`.
+/// findPage: keep every session field, drop the display-only keys, and expose
+/// `ResourceId` as `resourceId`.
+///
+/// The denylist (`ENTRY_CONTEXT_DROP`) is load-bearing: KULAS validates the
+/// *whole* context, so every other session field must survive. Do **not**
+/// rewrite this as an allowlist — an unlisted key silently dropped breaks the
+/// request.
 fn browser_entry_context(entry_context: &Value) -> Value {
-    let mut context = entry_context.clone();
-    if let Some(object) = context.as_object_mut() {
-        let resource_id = object
-            .get("ResourceId")
-            .cloned()
-            .unwrap_or_else(|| Value::String(String::new()));
-        for key in ENTRY_CONTEXT_DROP {
-            object.remove(key);
-        }
-        object.insert("resourceId".to_owned(), resource_id);
-    }
-    context
+    let Some(object) = entry_context.as_object() else {
+        return entry_context.clone();
+    };
+    let resource_id = object
+        .get("ResourceId")
+        .cloned()
+        .unwrap_or_else(|| Value::String(String::new()));
+    let mut out: serde_json::Map<String, Value> = object
+        .iter()
+        .filter(|(key, _)| !ENTRY_CONTEXT_DROP.contains(&key.as_str()))
+        .map(|(key, value)| (key.clone(), value.clone()))
+        .collect();
+    out.insert("resourceId".to_owned(), resource_id);
+    Value::Object(out)
 }
 
 #[cfg(test)]
