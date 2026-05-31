@@ -13,7 +13,6 @@ const SVELTE_FILES = [
 	'components/CourseCard.svelte',
 	'components/CourseModal.svelte',
 	'components/Disclaimer.svelte',
-	'components/FileLoader.svelte',
 	'components/FilterBar.svelte',
 	'components/Timetable.svelte',
 	'components/TimetableCell.svelte',

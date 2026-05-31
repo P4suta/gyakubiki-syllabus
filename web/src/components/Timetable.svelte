@@ -1,16 +1,16 @@
 <script lang="ts">
-import type { GridKey } from '../lib/grid'
-import { DAYS, PERIODS } from '../lib/grid'
+import { type GridKey, PERIODS } from '../lib/engine'
 import type { CourseV2 } from '../types/course'
 import CourseCard from './CourseCard.svelte'
 import TimetableCell from './TimetableCell.svelte'
 
 interface Props {
 	grid: Map<GridKey, CourseV2[]>
+	days: readonly string[]
 	onselect: (course: CourseV2) => void
 }
 
-let { grid, onselect }: Props = $props()
+let { grid, days, onselect }: Props = $props()
 
 // Mobile: single-day view state
 let activeDay = $state(0)
@@ -28,14 +28,14 @@ function handleTouchEnd(e: TouchEvent) {
 	const dx = e.changedTouches[0].clientX - touchStartX
 	const dy = e.changedTouches[0].clientY - touchStartY
 	if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) {
-		if (dx < 0 && activeDay < DAYS.length - 1) activeDay++
+		if (dx < 0 && activeDay < days.length - 1) activeDay++
 		if (dx > 0 && activeDay > 0) activeDay--
 	}
 }
 
-// Desktop grid
-const gridCols = `56px repeat(${DAYS.length}, 1fr)`
-const minWidth = `${DAYS.length * 120 + 56}px`
+// Desktop grid (day count is data-driven, so these track `days`)
+const gridCols = $derived(`56px repeat(${days.length}, 1fr)`)
+const minWidth = $derived(`${days.length * 120 + 56}px`)
 </script>
 
 <!-- ==================== Mobile: Single-day view ==================== -->
@@ -48,7 +48,7 @@ const minWidth = `${DAYS.length * 120 + 56}px`
 >
 	<!-- Day tab strip -->
 	<div class="flex bg-surface-page border-b border-overlay-subtle shrink-0">
-		{#each DAYS as day, i}
+		{#each days as day, i}
 			<button
 				class="flex-1 py-2.5 text-center text-caption font-semibold min-h-[44px] transition-colors
 					{activeDay === i
@@ -64,7 +64,7 @@ const minWidth = `${DAYS.length * 120 + 56}px`
 	<!-- Periods list for active day -->
 	<div class="flex-1 overflow-y-auto p-2 space-y-1.5 bg-surface-page">
 		{#each PERIODS as period}
-			{@const courses = grid.get(`${DAYS[activeDay]}-${period}`) ?? []}
+			{@const courses = grid.get(`${days[activeDay]}-${period}`) ?? []}
 			<div class="bg-surface-primary rounded-xl p-3">
 				<div class="text-micro font-medium text-apple-text/40 mb-1.5">{period}限</div>
 				{#if courses.length === 0}
@@ -86,7 +86,7 @@ const minWidth = `${DAYS.length * 120 + 56}px`
 		<div class="sticky top-0 left-0 z-30 bg-surface-page"></div>
 
 		<!-- Day headers -->
-		{#each DAYS as day}
+		{#each days as day}
 			<div
 				class="sticky top-0 z-20 text-center py-3 font-semibold text-caption text-apple-text/60 tracking-tight bg-surface-page/80 backdrop-blur-sm"
 			>
@@ -102,7 +102,7 @@ const minWidth = `${DAYS.length * 120 + 56}px`
 					{period}限
 				</div>
 			</div>
-			{#each DAYS as day}
+			{#each days as day}
 				<TimetableCell
 					courses={grid.get(`${day}-${period}`) ?? []}
 					{onselect}
