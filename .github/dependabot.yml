@@ -6,8 +6,8 @@
 
 version: 2
 updates:
-  # Go modules (cmd/syllabus-cli, internal/fetch などが import するもの)
-  - package-ecosystem: gomod
+  # Rust crates (crates/core, crates/wasm, crates/cli)
+  - package-ecosystem: cargo
     directory: /
     schedule:
       interval: monthly
@@ -16,7 +16,7 @@ updates:
       timezone: "Asia/Tokyo"
     open-pull-requests-limit: 5
     groups:
-      go-deps:
+      rust-deps:
         patterns:
           - "*"
 

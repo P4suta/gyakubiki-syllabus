@@ -3,10 +3,8 @@
 
 [files]
 extend-exclude = [
-  "go.sum",
   "raw/**",
-  "internal/fetch/findpage_body.tmpl.json",
-  "internal/fetch/testdata/**",
+  "crates/cli/assets/findpage_body.tmpl.json",
   "web/dist/**",
   "web/node_modules/**",
   "web/bun.lockb",

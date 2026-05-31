@@ -23,7 +23,12 @@ KULAS は GUEST ユーザーでもセッション cookie + token を要求する
    - body: JSON（後述）
    - body 内の `tempData.entryContext.token` に上で抽出した token を埋める
 
-### token 抽出ロジック (実装: `internal/fetch/html_token.go`)
+### token 抽出ロジック (実装: `crates/cli/src/fetch/token.rs`)
+
+> 注意: token (entryContext.token) 単体ではなく、HTML から **entryContext 全体**
+> (cpClientPid / userId 等のセッション識別子込み) を抽出し、findPage body の
+> `tempData.entryContext` を毎回それで差し替える。token だけ差し替えた古い
+> entryContext は「Token 不正 (400)」で拒否される。
 
 ```go
 var cpSmartVueStartupRe = regexp.MustCompile(
@@ -46,7 +51,7 @@ user-agent: <Chrome 系の現実的な UA>
 
 ## リクエスト body
 
-巨大（約 60KB の整形 JSON）。`internal/fetch/findpage_body.tmpl.json` にテンプレートとして保存し、以下のプレースホルダだけ差し替える：
+巨大（約 60KB の整形 JSON）。`crates/cli/assets/findpage_body.tmpl.json` にテンプレートとして保存し、`{{.PageNo}}` / `{{.KaikoNendo}}` を差し替えたうえで `tempData.entryContext` を実行時に丸ごと差し替える：
 
 | プレースホルダ | 場所 | 内容 |
 |---|---|---|
@@ -86,17 +91,18 @@ user-agent: <Chrome 系の現実的な UA>
 ## TLS chain について
 
 KULAS (IIS 10) は TLS handshake で **leaf 証明書のみ送信**し中間 CA を配信しない。
-Chrome / Firefox は AIA fetching で chain を補完するが、Go の `crypto/tls`
-は補完しないため `x509: certificate signed by unknown authority` で fail する。
+Chrome / Firefox は AIA fetching で chain を補完するが、HTTP クライアント
+(reqwest + native-tls / 旧 Go `crypto/tls` も同様) は補完しないため
+`certificate signed by unknown authority` 系で fail する。
 
-対応として `internal/fetch/kulas_ca.pem` に中間 CA (`NII Open Domain CA - G7 RSA`)
-を bundle して `internal/fetch/tls.go` の `newKulasTLSConfig()` で `RootCAs` に
-積んでいる。Root CA (`Security Communication RootCA2`) はシステム標準 bundle に
-含まれるので追加不要。
+対応として `crates/cli/assets/kulas_ca.pem` に中間 CA (`NII Open Domain CA - G7 RSA`)
+を bundle し、`crates/cli/src/fetch/client.rs` で reqwest の `add_root_certificate`
+に積んでいる (旧 Go の `SystemCertPool` + `AppendCertsFromPEM` と同じ chain 補完)。
+Root CA (`Security Communication RootCA2`) はシステム標準 bundle に含まれるので追加不要。
 
 ### 中間 CA の有効期限と更新手順
 
-現行 bundle の有効期限: **2029-05-29** (確認: `openssl x509 -in internal/fetch/kulas_ca.pem -noout -dates`)
+現行 bundle の有効期限: **2029-05-29** (確認: `openssl x509 -in crates/cli/assets/kulas_ca.pem -noout -dates`)
 
 期限切れまたは KULAS の証明書 chain が更新されて fetch が再び
 `unknown authority` で fail し始めたら、以下で再取得:
@@ -112,5 +118,5 @@ curl -sS -o /tmp/intermediate.cer "<上で得た URL>"
 
 # 3. PEM に変換して上書き
 openssl x509 -inform DER -in /tmp/intermediate.cer -outform PEM \
-  -out internal/fetch/kulas_ca.pem
+  -out crates/cli/assets/kulas_ca.pem
 ```

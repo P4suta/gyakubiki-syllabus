@@ -4,7 +4,6 @@
 # `mise install` で一括 install。`just install-tools` の代替。
 
 [tools]
-go = "1.26"
 bun = "latest"
 just = "latest"
 lefthook = "latest"
@@ -12,10 +11,6 @@ typos = "latest"
 actionlint = "latest"
 # WASM ビルダ。Rust 本体は rust-toolchain.toml が唯一の真実の源 (channel + wasm32 target)。
 wasm-pack = "0.13.1"
-
-# go backend で取得 (mise が go install を裏で叩く)
-"go:mvdan.cc/gofumpt" = "latest"
-"go:github.com/golangci/golangci-lint/v2/cmd/golangci-lint" = "latest"
 
 # npm backend (bun ではなく npm 経由のほうが mise の cache が効く)
 "npm:markdownlint-cli2" = "latest"
