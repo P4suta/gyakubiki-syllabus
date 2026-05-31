@@ -68,7 +68,7 @@ export interface Dictionaries {
 	kaikojiki: string[]
 }
 
-// The full v2 wire envelope (top-level `ProcessedDataV2`, bitset `IndicesMap`)
-// now lives solely in the Rust core: it is parsed inside WASM and never
-// materializes in TS. Only the view-models above (CourseV2 / SlotV2 /
+// The full v3 wire envelope (top-level `ProcessedDataV2`, positional bitset
+// `IndicesMap`) lives solely in the Rust core: it is parsed inside WASM and
+// never materializes in TS. Only the view-models above (CourseV2 / SlotV2 /
 // Dictionaries) cross the boundary, so only they need a TS type.

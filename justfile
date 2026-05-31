@@ -8,7 +8,7 @@ default:
 
 # raw/ から web/public/data.json を生成 (Rust pipeline)
 convert:
-    cargo run --release -q -p syllabus-cli -- convert raw/*.json --v2 --compact -o web/public/data.json
+    cargo run --release -q -p syllabus-cli -- convert raw/*.json --compact -o web/public/data.json
 
 # Rust core を WASM にビルドし web/src/wasm へ出力 (web ビルド/dev の前段依存)
 # 注意: wasm-pack の --out-dir は *crate ルート* (crates/wasm) 相対なので、

@@ -1,11 +1,9 @@
-//! DTOs for the v2 JSON wire format emitted by the Go pipeline (`data.json`).
+//! DTOs for the v3 JSON wire format (`data.json`) the `convert` pipeline emits
+//! and the engine consumes.
 //!
-//! Field renames mirror the Go `json:"..."` tags in `internal/model/model.go`
-//! and the TS interfaces in `web/src/types/course.ts`. These types are kept
-//! deliberately faithful to the wire format; the richer in-memory domain lives
-//! in the `engine` layer.
-
-use std::collections::BTreeMap;
+//! Field renames mirror the TS interfaces in `web/src/types/course.ts`. These
+//! types are kept deliberately faithful to the wire format; the richer in-memory
+//! domain lives in the `engine` layer.
 
 use serde::{Deserialize, Deserializer, Serialize};
 
@@ -33,15 +31,17 @@ pub struct Dictionaries {
     pub kaikojiki: Vec<String>,
 }
 
-/// Precomputed base64 bitsets per filter dimension, keyed by dictionary index.
+/// Precomputed base64 bitsets per filter dimension, one positional `Vec` per
+/// dimension: element `i` is the bitset for dictionary index `i`.
 ///
-/// A [`BTreeMap`] (not a `HashMap`) so serialization emits keys in a stable,
-/// lexical order — byte-identical to Go's `encoding/json`, which sorts map keys.
+/// The dictionaries are dense (every value has ≥1 course), so the vectors have
+/// no holes — which is why this is an array, not the v2 `{"0": …}` map whose
+/// stringified keys forced a parse round-trip on both sides.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct IndicesMap {
-    pub semester: BTreeMap<String, String>,
-    pub department: BTreeMap<String, String>,
-    pub campus: BTreeMap<String, String>,
+    pub semester: Vec<String>,
+    pub department: Vec<String>,
+    pub campus: Vec<String>,
 }
 
 /// A single time slot, using dictionary indices instead of strings.

@@ -44,9 +44,6 @@ struct ConvertArgs {
     /// 圧縮出力 (インデントなし)。
     #[arg(long)]
     compact: bool,
-    /// v2 最適化フォーマット。本 CLI は v2 のみ対応 (呼び出し互換のため受理)。
-    #[arg(long)]
-    v2: bool,
     /// `generatedAt` を上書き (RFC 3339)。省略時は現在時刻 (UTC)。
     #[arg(long = "generated-at")]
     generated_at: Option<String>,
