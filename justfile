@@ -49,6 +49,16 @@ test-go:
 test-web: wasm-build
     cd web && bun install --frozen-lockfile && bun run check && bun run test
 
+# 移行期のパリティゲート: Go と Rust の convert 出力が byte 一致するか検証。
+# generatedAt は wall-clock で必ず違うので比較前にブランク化する。
+parity: build
+    cargo build --release -p syllabus-cli
+    ./bin/syllabus-cli convert raw/*.json --v2 --compact -o /tmp/parity-go.json
+    "${CARGO_TARGET_DIR:-target}/release/syllabus-cli" convert raw/*.json --v2 --compact -o /tmp/parity-rs.json
+    sed -E 's/"generatedAt":"[^"]*"/"generatedAt":""/' /tmp/parity-go.json > /tmp/parity-go.norm
+    sed -E 's/"generatedAt":"[^"]*"/"generatedAt":""/' /tmp/parity-rs.json > /tmp/parity-rs.norm
+    cmp /tmp/parity-go.norm /tmp/parity-rs.norm && echo "✅ Go と Rust の convert は byte 一致"
+
 # === フォーマット・リント ===
 
 # 全部 format (Rust + Go + YAML + JSON など、まとめて自動修正)
