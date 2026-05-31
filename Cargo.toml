@@ -1,0 +1,14 @@
+# Rust workspace for the syllabus core (Phase 1: WASM; Phase 2: native reuse).
+# Coexists with the Go module at the repo root during the migration.
+[workspace]
+resolver = "2"
+members = ["crates/core", "crates/wasm"]
+
+[workspace.package]
+edition = "2021"
+license = "AGPL-3.0-or-later"
+repository = "https://github.com/P4suta/gyakubiki-syllabus"
+
+[profile.release]
+opt-level = "s"  # WASM: favour small binary over raw speed (speed is not a goal here)
+lto = true

@@ -68,17 +68,7 @@ export interface Dictionaries {
 	kaikojiki: string[]
 }
 
-export interface IndicesMap {
-	semester: Record<string, string>   // dict index → base64 bitset
-	department: Record<string, string>
-	campus: Record<string, string>
-}
-
-export interface ProcessedDataV2 {
-	version: number
-	generatedAt: string
-	totalRaw: number
-	dicts: Dictionaries
-	indices: IndicesMap
-	courses: CourseV2[]
-}
+// The full v2 wire envelope (top-level `ProcessedDataV2`, bitset `IndicesMap`)
+// now lives solely in the Rust core: it is parsed inside WASM and never
+// materializes in TS. Only the view-models above (CourseV2 / SlotV2 /
+// Dictionaries) cross the boundary, so only they need a TS type.

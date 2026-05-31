@@ -10,6 +10,8 @@ just = "latest"
 lefthook = "latest"
 typos = "latest"
 actionlint = "latest"
+# WASM ビルダ。Rust 本体は rust-toolchain.toml が唯一の真実の源 (channel + wasm32 target)。
+wasm-pack = "0.13.1"
 
 # go backend で取得 (mise が go install を裏で叩く)
 "go:mvdan.cc/gofumpt" = "latest"

@@ -1,0 +1,10 @@
+# The image bakes only toolchains; sources arrive at runtime via the bind mount,
+# so the build context can stay tiny. (raw/*.json are ~2 MB each and are still
+# available at runtime through the mount — excluding them here does not break
+# `just convert`.)
+.git
+target
+web/node_modules
+web/dist
+raw
+**/*.swp

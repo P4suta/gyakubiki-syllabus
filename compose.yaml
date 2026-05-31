@@ -1,0 +1,37 @@
+# Docker Compose for the development container. Drive it from the CLI with:
+#   docker compose up -d            # start (persistent) container
+#   docker compose exec dev <cmd>   # run a command inside it
+# VS Code's Dev Containers extension consumes the same service via
+# .devcontainer/devcontainer.json.
+name: gyakubiki-syllabus
+
+services:
+  dev:
+    build:
+      context: .
+      dockerfile: .devcontainer/Dockerfile
+      args:
+        UID: "1000"
+        GID: "1000"
+    image: gyakubiki-syllabus-dev
+    init: true
+    command: sleep infinity
+    working_dir: /workspace
+    environment:
+      CARGO_TERM_COLOR: always
+    volumes:
+      # The repo, live-edited from the host.
+      - .:/workspace:cached
+      # Heavy build artifacts & caches → named volumes, off the host filesystem.
+      - cargo-cache:/home/dev/.cargo
+      - cargo-target:/home/dev/target
+      - bun-cache:/home/dev/.bun/install/cache
+      - go-pkg:/home/dev/go
+      - go-build:/home/dev/.cache/go-build
+
+volumes:
+  cargo-cache:
+  cargo-target:
+  bun-cache:
+  go-pkg:
+  go-build:
