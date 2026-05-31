@@ -26,6 +26,6 @@ chrono = "0.4"
 # intermediate CA completes the chain the same way. `gzip` mirrors Go's
 # net/http, which advertises Accept-Encoding: gzip and decompresses
 # transparently — so the bytes written match Go's regardless of server encoding.
-reqwest = { version = "0.12", default-features = false, features = ["blocking", "cookies", "native-tls", "gzip"] }
+reqwest = { version = "0.13", default-features = false, features = ["blocking", "cookies", "native-tls", "gzip"] }
 regex = "1"
 base64 = "0.22"
