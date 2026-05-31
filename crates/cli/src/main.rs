@@ -2,6 +2,7 @@
 //! Go's `syllabus-cli convert`. The domain logic lives in `syllabus_core`; this
 //! binary is only argument parsing, I/O, timestamping and output encoding.
 
+mod fetch;
 mod io;
 
 use std::borrow::Cow;
@@ -29,6 +30,8 @@ struct Cli {
 enum Command {
     /// 生 KULAS JSON を v2 `data.json` に変換する。
     Convert(ConvertArgs),
+    /// KULAS から月次でシラバスを取得し raw/ を更新する。
+    Fetch(fetch::FetchArgs),
 }
 
 #[derive(Args)]
@@ -52,6 +55,7 @@ struct ConvertArgs {
 fn main() -> Result<()> {
     match Cli::parse().command {
         Command::Convert(args) => convert(args),
+        Command::Fetch(args) => fetch::run(args),
     }
 }
 
