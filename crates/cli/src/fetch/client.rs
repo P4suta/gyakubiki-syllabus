@@ -1,15 +1,20 @@
-//! KULAS HTTP client — port of Go's `internal/fetch/client.go`.
+//! KULAS HTTP client — port of Go's `internal/fetch/client.go`, with the fix for
+//! the findPage "Token invalid" rejection.
 //!
 //! One GET to the search page establishes the session cookie and yields the
-//! token (extracted from the inline `cpSmartVueStartup` script); subsequent
-//! POSTs to findPage reuse both. native-tls (OpenSSL) plus the embedded KULAS
-//! intermediate CA completes the TLS chain exactly as the Go pipeline did.
+//! **full `entryContext`** (token + session identifiers like `cpClientPid`,
+//! `userId`, …). findPage validates the token against the rest of that context,
+//! so each request must carry the *current* session's context — not a stale
+//! captured one with only the token swapped (the bug that made findPage 400).
+//! native-tls (OpenSSL) plus the embedded KULAS intermediate CA completes the
+//! TLS chain exactly as the Go pipeline did.
 
 use std::time::Duration;
 
 use anyhow::{bail, Context, Result};
+use serde_json::Value;
 
-use super::token::extract_token;
+use super::token::extract_entry_context;
 use super::PageFetcher;
 
 const SEARCH_PAGE_URL: &str = "https://kulas.kochi-u.ac.jp/cpsmart/public/dashboard/main/ja/Simple/1900/3000120/wsl/SyllabusKensaku";
@@ -17,21 +22,40 @@ const FIND_PAGE_URL: &str = "https://kulas.kochi-u.ac.jp/cpsmart/public/wsl/WebR
 const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36";
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
 
-/// The findPage request body template (3 logicless placeholders).
+/// The findPage request body template (`{{.PageNo}}`/`{{.KaikoNendo}}` for the
+/// search params; `tempData.entryContext` is replaced wholesale at runtime).
 const BODY_TEMPLATE: &str = include_str!("../../assets/findpage_body.tmpl.json");
 /// The KULAS intermediate CA (NII Open Domain CA - G7 RSA), embedded so the
 /// chain completes even though the server does not send it.
 const KULAS_CA_PEM: &[u8] = include_bytes!("../../assets/kulas_ca.pem");
 
-/// A live KULAS client holding the session cookie jar, token and academic year.
+/// entryContext keys the browser strips when building the findPage body — they
+/// are display-only and absent from the working request (derived from a captured
+/// session). Sending the page's `ResourceId` under the lowercase `resourceId`
+/// the body uses.
+const ENTRY_CONTEXT_DROP: [&str; 10] = [
+    "ResourceId",
+    "contextName",
+    "el",
+    "isCustom",
+    "isKikannai",
+    "isNarikawariSeigen",
+    "kinoNm",
+    "kinoType",
+    "scriptsVersion",
+    "systemNm",
+];
+
+/// A live KULAS client holding the session cookie jar, the current session's
+/// full `entryContext`, and the academic year.
 pub struct Client {
     http: reqwest::blocking::Client,
-    token: String,
+    entry_context: Value,
     kaiko_nendo: String,
 }
 
 impl Client {
-    /// Build a client and establish a KULAS session (cookie + token).
+    /// Build a client and establish a KULAS session (cookie + entryContext).
     ///
     /// `token_override` (from `--token` / `KULAS_API_TOKEN`) replaces the
     /// HTML-extracted token when non-empty — for verification only.
@@ -47,17 +71,17 @@ impl Client {
 
         let mut client = Self {
             http,
-            token: String::new(),
+            entry_context: Value::Null,
             kaiko_nendo: kaiko_nendo.to_owned(),
         };
         client.establish_session()?;
         if let Some(token) = token_override.filter(|t| !t.is_empty()) {
-            client.token = token.to_owned();
+            client.entry_context["token"] = Value::String(token.to_owned());
         }
         Ok(client)
     }
 
-    /// GET the search page: stores the session cookie and extracts the token.
+    /// GET the search page: stores the session cookie and the full entryContext.
     fn establish_session(&mut self) -> Result<()> {
         let response = self
             .http
@@ -79,7 +103,7 @@ impl Client {
             bail!("検索ページが HTTP {} を返しました", status.as_u16());
         }
 
-        self.token = extract_token(&html).context("token 抽出に失敗")?;
+        self.entry_context = extract_entry_context(&html).context("entryContext 抽出に失敗")?;
         Ok(())
     }
 }
@@ -87,7 +111,12 @@ impl Client {
 impl PageFetcher for Client {
     /// Fetch one findPage page as raw JSON bytes (the exact response body).
     fn fetch_page(&self, page_no: i32) -> Result<Vec<u8>> {
-        let body = render_body(BODY_TEMPLATE, page_no, &self.kaiko_nendo, &self.token);
+        let body = build_body(
+            BODY_TEMPLATE,
+            page_no,
+            &self.kaiko_nendo,
+            &self.entry_context,
+        )?;
         let response = self
             .http
             .post(FIND_PAGE_URL)
@@ -111,7 +140,7 @@ impl PageFetcher for Client {
             let preview: String = String::from_utf8_lossy(&bytes).chars().take(500).collect();
             bail!(
                 "findPage が HTTP {} を返しました (page {page_no}): {preview}\n  \
-                 ※ token が古い / body フォーマットが API と不整合の可能性があります",
+                 ※ token / entryContext が古い / body フォーマットが API と不整合の可能性があります",
                 status.as_u16()
             );
         }
@@ -119,28 +148,98 @@ impl PageFetcher for Client {
     }
 }
 
-/// Render the findPage body by substituting the three template placeholders —
-/// byte-identical to Go's `text/template` for these logicless value insertions.
-pub(super) fn render_body(template: &str, page_no: i32, kaiko_nendo: &str, token: &str) -> String {
-    template
+/// Build the findPage body: substitute the search params, then inject the fresh
+/// session `entryContext` (replacing the template's placeholder context).
+fn build_body(
+    template: &str,
+    page_no: i32,
+    kaiko_nendo: &str,
+    entry_context: &Value,
+) -> Result<String> {
+    // The template's `{{.Token}}` lives inside the entryContext we are about to
+    // replace, so a blank substitution just keeps the JSON valid before parsing.
+    let rendered = template
         .replace("{{.PageNo}}", &page_no.to_string())
         .replace("{{.KaikoNendo}}", kaiko_nendo)
-        .replace("{{.Token}}", token)
+        .replace("{{.Token}}", "");
+    let mut body: Value = serde_json::from_str(&rendered)
+        .context("findPage body テンプレートの JSON パースに失敗")?;
+    body["tempData"]["entryContext"] = browser_entry_context(entry_context);
+    serde_json::to_string(&body).context("findPage body のシリアライズに失敗")
+}
+
+/// Transform the page's `entryContext` into the shape the browser sends to
+/// findPage: drop the display-only keys and expose `ResourceId` as `resourceId`.
+fn browser_entry_context(entry_context: &Value) -> Value {
+    let mut context = entry_context.clone();
+    if let Some(object) = context.as_object_mut() {
+        let resource_id = object
+            .get("ResourceId")
+            .cloned()
+            .unwrap_or_else(|| Value::String(String::new()));
+        for key in ENTRY_CONTEXT_DROP {
+            object.remove(key);
+        }
+        object.insert("resourceId".to_owned(), resource_id);
+    }
+    context
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{render_body, BODY_TEMPLATE};
+    use super::{browser_entry_context, build_body, BODY_TEMPLATE};
+    use serde_json::{json, Value};
 
-    /// The body Rust renders must match the body Go's `text/template` renders for
-    /// the same inputs — the golden was produced by the Go template engine
-    /// (`crates/cli/assets/testdata/findpage_body.golden.json`). This is the
-    /// load-bearing parity check: it determines whether Rust would get the same
-    /// data from the real server. Template drift breaks whichever side lagged.
+    fn sample_entry_context() -> Value {
+        json!({
+            "token": "FRESH_TOKEN_64",
+            "cpClientPid": "pid-1",
+            "userId": "u1",
+            "ResourceId": "",
+            "contextName": "",
+            "el": "dash-app-main",
+            "kinoNm": "シラバス検索",
+            "scriptsVersion": "2025-03-26",
+            "isProduction": false
+        })
+    }
+
     #[test]
-    fn render_matches_go_golden() {
-        let golden = include_str!("../../assets/testdata/findpage_body.golden.json");
-        let rendered = render_body(BODY_TEMPLATE, 1, "2026", "GOLDEN_TOKEN_0123456789");
-        assert_eq!(rendered, golden);
+    fn browser_entry_context_drops_display_keys_and_renames_resource_id() {
+        let out = browser_entry_context(&sample_entry_context());
+        let obj = out.as_object().unwrap();
+        // display-only keys gone
+        for k in [
+            "ResourceId",
+            "contextName",
+            "el",
+            "kinoNm",
+            "scriptsVersion",
+        ] {
+            assert!(!obj.contains_key(k), "{k} should be dropped");
+        }
+        // lowercase resourceId present; session fields preserved
+        assert!(obj.contains_key("resourceId"));
+        assert_eq!(obj["token"], json!("FRESH_TOKEN_64"));
+        assert_eq!(obj["cpClientPid"], json!("pid-1"));
+    }
+
+    #[test]
+    fn build_body_injects_fresh_entry_context_and_params() {
+        let body = build_body(BODY_TEMPLATE, 3, "2026", &sample_entry_context()).unwrap();
+        let parsed: Value = serde_json::from_str(&body).unwrap();
+        // entryContext came from our fresh session, not the stale template
+        assert_eq!(
+            parsed["tempData"]["entryContext"]["token"],
+            json!("FRESH_TOKEN_64")
+        );
+        assert_eq!(
+            parsed["tempData"]["entryContext"]["cpClientPid"],
+            json!("pid-1")
+        );
+        // display key dropped even though present in the source context
+        assert!(parsed["tempData"]["entryContext"].get("kinoNm").is_none());
+        // methodParams (search config) is preserved from the template
+        assert!(parsed["methodParams"].is_object());
     }
 }
