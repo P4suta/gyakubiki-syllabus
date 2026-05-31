@@ -85,7 +85,11 @@ export class SyllabusEngine {
 	static async create(): Promise<SyllabusEngine> {
 		await initWasm()
 
-		const res = await fetch(`${import.meta.env.BASE_URL}data.json`)
+		// `data.json` lives at a stable, unhashed URL, so browsers cache it hard.
+		// `no-cache` forces an ETag revalidation every load: a wire-format bump or
+		// the monthly data refresh reaches users instead of erroring on a stale copy
+		// (a cached v2 against the v3 engine, say). 304 keeps it cheap when unchanged.
+		const res = await fetch(`${import.meta.env.BASE_URL}data.json`, { cache: 'no-cache' })
 		if (!res.ok) {
 			throw new Error(`データの取得に失敗しました (HTTP ${res.status})`)
 		}
