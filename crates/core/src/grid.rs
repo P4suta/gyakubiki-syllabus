@@ -10,7 +10,7 @@
 use std::collections::{BTreeMap, HashSet};
 
 use crate::index::{CourseIndex, Day, Period, SemesterIndex};
-use crate::model::Course;
+use crate::model::Slot;
 
 /// Weekday columns always present (月‥金). Saturday (day 5) is added only when
 /// the dataset contains a Saturday slot — see [`build_grid`]'s `saturday`.
@@ -65,49 +65,75 @@ impl Grid {
     }
 }
 
+/// A timetable slot validated into the grid's typed [`Day`] / [`Period`].
+///
+/// The wire [`Slot`] carries raw `i32` day/period; [`GridSlot::from_wire`]
+/// range-checks them **once** (when the engine is built) so [`build_grid`] —
+/// which runs on every filter change — only ever sees displayable slots and
+/// never re-validates.
+#[derive(Debug, Clone, Copy)]
+pub struct GridSlot {
+    /// Dictionary index of the slot's semester (drives the semester filter).
+    semester: usize,
+    day: Day,
+    period: Period,
+}
+
+impl GridSlot {
+    /// Validate a wire [`Slot`], or `None` if it can never appear on the grid:
+    /// a day outside the columns (only 月..土 = 0..=5 are shown; 日 and anything
+    /// out of range fall away) or a period outside 1限..6限.
+    #[must_use]
+    pub fn from_wire(slot: &Slot) -> Option<Self> {
+        // 0..=5 = 月..土; 日 (6) is never a column, negatives fail `try_from`.
+        let day = u8::try_from(slot.d)
+            .ok()
+            .filter(|&d| d <= WEEKDAYS)
+            .map(Day::new)?;
+        let period = u8::try_from(slot.p).ok().and_then(Period::new)?;
+        Some(Self {
+            semester: slot.s as usize,
+            day,
+            period,
+        })
+    }
+
+    /// Whether this slot meets on Saturday (drives the extra grid column).
+    #[must_use]
+    pub fn is_saturday(self) -> bool {
+        self.day.get() == WEEKDAYS
+    }
+}
+
 /// Build the timetable for an already-filtered set of courses.
 ///
-/// - `courses` yields `(index, course)` pairs in ascending index order (the
-///   filter output); the index is what each cell stores.
+/// - `timetables` yields `(index, slots)` in ascending course-index order (the
+///   filter output); `slots` are the course's pre-validated [`GridSlot`]s.
 /// - `semester` is the chosen semester, or `None` for "all".
 /// - `tsuunen` is the 通年 semester if the dataset has it; its courses appear
 ///   under every semester filter (`None` when 通年 is absent).
-/// - `saturday` widens the day bound to include 土 (day 5).
+/// - `saturday` records whether the grid shows the 土 column.
 pub fn build_grid<'a>(
-    courses: impl IntoIterator<Item = (CourseIndex, &'a Course)>,
+    timetables: impl IntoIterator<Item = (CourseIndex, &'a [GridSlot])>,
     semester: Option<SemesterIndex>,
     tsuunen: Option<SemesterIndex>,
     saturday: bool,
 ) -> Grid {
-    let day_count = i32::from(WEEKDAYS) + i32::from(saturday);
     let mut cells: BTreeMap<(Day, Period), Vec<CourseIndex>> = BTreeMap::new();
 
-    for (index, course) in courses {
-        for slot in &course.slots {
+    for (index, slots) in timetables {
+        for slot in slots {
             // Semester filter: keep the slot when no filter is set, it matches
             // the chosen semester, or the course is 通年 (shown every term).
             if let Some(sem) = semester {
-                let slot_sem = slot.s as usize;
-                let is_tsuunen = tsuunen.is_some_and(|t| t.get() == slot_sem);
-                if slot_sem != sem.get() && !is_tsuunen {
+                let is_tsuunen = tsuunen.is_some_and(|t| t.get() == slot.semester);
+                if slot.semester != sem.get() && !is_tsuunen {
                     continue;
                 }
             }
-            // The day must fall within the visible columns…
-            if slot.d < 0 || slot.d >= day_count {
-                continue;
-            }
-            let day = Day::new(slot.d as u8);
-            // …and the period within 1限‥6限.
-            let Ok(raw_period) = u8::try_from(slot.p) else {
-                continue;
-            };
-            let Some(period) = Period::new(raw_period) else {
-                continue;
-            };
-            let cell = cells.entry((day, period)).or_default();
             // De-duplicate by course within a cell (1限 reached via two slots,
             // e.g. {1学期,月,1} and {通年,月,1}).
+            let cell = cells.entry((slot.day, slot.period)).or_default();
             if !cell.contains(&index) {
                 cell.push(index);
             }
@@ -122,40 +148,29 @@ mod tests {
     //! Ported from `web/src/lib/grid.test.ts`. The test dataset has no Saturday,
     //! so `saturday = false` throughout; 通年 sits at semester index 2.
 
-    use super::{build_grid, Grid};
+    use super::{build_grid, Grid, GridSlot};
     use crate::index::{CourseIndex, Day, Period, SemesterIndex};
-    use crate::model::{Course, Slot};
+    use crate::model::Slot;
 
     const TSUUNEN: Option<SemesterIndex> = Some(SemesterIndex::new(2));
 
-    fn course(cd: &str, slots: &[(u32, i32, i32)]) -> Course {
-        Course {
-            cd: cd.to_owned(),
-            nm: "テスト講義".to_owned(),
-            sub: None,
-            prof: "教員".to_owned(),
-            raw: String::new(),
-            slots: slots.iter().map(|&(s, d, p)| Slot { s, d, p }).collect(),
-            ki: 0,
-            kbn: 0,
-            dept: 0,
-            campus: 0,
-            gaku: None,
-            gakka: None,
-            nen: None,
-            bunrui: None,
-            bunya: None,
-            st: String::new(),
-        }
+    /// One course's validated timetable from `(semester, day, period)` wire slots.
+    fn timetable(slots: &[(u32, i32, i32)]) -> Vec<GridSlot> {
+        slots
+            .iter()
+            .filter_map(|&(s, d, p)| GridSlot::from_wire(&Slot { s, d, p }))
+            .collect()
     }
 
-    /// Build over the whole `courses` slice, enumerating indices like the engine.
-    fn grid(courses: &[Course], semester: Option<usize>) -> Grid {
+    /// Build a grid over courses given as per-course wire slot lists, enumerating
+    /// indices like the engine.
+    fn grid(courses: &[&[(u32, i32, i32)]], semester: Option<usize>) -> Grid {
+        let timetables: Vec<Vec<GridSlot>> = courses.iter().copied().map(timetable).collect();
         build_grid(
-            courses
+            timetables
                 .iter()
                 .enumerate()
-                .map(|(i, c)| (CourseIndex::new(i), c)),
+                .map(|(i, t)| (CourseIndex::new(i), t.as_slice())),
             semester.map(SemesterIndex::from),
             TSUUNEN,
             false,
@@ -179,58 +194,39 @@ mod tests {
 
     #[test]
     fn places_course_in_correct_cell() {
-        let courses = [course("001", &[(0, 0, 1)])]; // 1学期, 月, 1
-        let g = grid(&courses, None);
+        let g = grid(&[&[(0, 0, 1)]], None); // 1学期, 月, 1
         assert_eq!(at(&g, 0, 1), [0]);
     }
 
     #[test]
     fn places_multiple_slots_in_multiple_cells() {
-        let courses = [course("001", &[(0, 0, 1), (0, 2, 3)])]; // 月1, 水3
-        let g = grid(&courses, None);
+        let g = grid(&[&[(0, 0, 1), (0, 2, 3)]], None); // 月1, 水3
         assert_eq!(at(&g, 0, 1), [0]);
         assert_eq!(at(&g, 2, 3), [0]);
     }
 
     #[test]
     fn filters_by_semester() {
-        let courses = [course("001", &[(1, 1, 2)])]; // 2学期, 火, 2
-        let g = grid(&courses, Some(0)); // 1学期
+        let g = grid(&[&[(1, 1, 2)]], Some(0)); // course in 2学期, filter 1学期
         assert!(at(&g, 1, 2).is_empty());
     }
 
     #[test]
     fn tsuunen_courses_appear_in_any_semester() {
-        let courses = [course("001", &[(2, 4, 5)])]; // 通年, 金, 5
-        assert_eq!(at(&grid(&courses, Some(0)), 4, 5), [0]);
-        assert_eq!(at(&grid(&courses, Some(1)), 4, 5), [0]);
+        let courses: &[&[(u32, i32, i32)]] = &[&[(2, 4, 5)]]; // 通年, 金, 5
+        assert_eq!(at(&grid(courses, Some(0)), 4, 5), [0]);
+        assert_eq!(at(&grid(courses, Some(1)), 4, 5), [0]);
     }
 
     #[test]
     fn deduplicates_same_course_in_same_cell() {
-        let courses = [course("001", &[(0, 0, 1), (2, 0, 1)])]; // 月1 via 1学期 & 通年
-        let g = grid(&courses, None);
+        let g = grid(&[&[(0, 0, 1), (2, 0, 1)]], None); // 月1 via 1学期 & 通年
         assert_eq!(at(&g, 0, 1), [0]);
     }
 
     #[test]
     fn courses_with_no_slots_place_nothing() {
-        let courses = [course("001", &[])];
-        let g = grid(&courses, None);
-        assert_eq!(g.cells().count(), 0);
-    }
-
-    #[test]
-    fn ignores_day_index_6_when_no_saturday() {
-        let courses = [course("001", &[(0, 6, 1)])]; // 日 (index 6) is off-grid
-        let g = grid(&courses, None);
-        assert_eq!(g.cells().count(), 0);
-    }
-
-    #[test]
-    fn ignores_period_outside_1_to_6() {
-        let courses = [course("001", &[(0, 0, 7)])];
-        let g = grid(&courses, None);
+        let g = grid(&[&[]], None);
         assert_eq!(g.cells().count(), 0);
     }
 
@@ -241,16 +237,38 @@ mod tests {
 
     #[test]
     fn count_unique_counts_distinct_courses_across_cells() {
-        let courses = [
-            course("001", &[(0, 0, 1), (0, 2, 3)]),
-            course("002", &[(0, 1, 2)]),
-        ];
-        assert_eq!(grid(&courses, None).count_unique(), 2);
+        let g = grid(&[&[(0, 0, 1), (0, 2, 3)], &[(0, 1, 2)]], None);
+        assert_eq!(g.count_unique(), 2);
     }
 
     #[test]
     fn count_unique_does_not_double_count() {
-        let courses = [course("001", &[(0, 0, 1), (0, 1, 2), (0, 2, 3)])];
-        assert_eq!(grid(&courses, None).count_unique(), 1);
+        let g = grid(&[&[(0, 0, 1), (0, 1, 2), (0, 2, 3)]], None);
+        assert_eq!(g.count_unique(), 1);
+    }
+
+    // GridSlot::from_wire — the range validation that used to live in build_grid.
+
+    #[test]
+    fn from_wire_drops_sunday_and_beyond() {
+        assert!(GridSlot::from_wire(&Slot { s: 0, d: 6, p: 1 }).is_none()); // 日
+        assert!(GridSlot::from_wire(&Slot { s: 0, d: 99, p: 1 }).is_none());
+    }
+
+    #[test]
+    fn from_wire_drops_negative_day() {
+        assert!(GridSlot::from_wire(&Slot { s: 0, d: -1, p: 1 }).is_none());
+    }
+
+    #[test]
+    fn from_wire_keeps_saturday() {
+        let slot = GridSlot::from_wire(&Slot { s: 0, d: 5, p: 1 }).expect("土 is a column");
+        assert!(slot.is_saturday());
+    }
+
+    #[test]
+    fn from_wire_drops_period_outside_1_to_6() {
+        assert!(GridSlot::from_wire(&Slot { s: 0, d: 0, p: 0 }).is_none());
+        assert!(GridSlot::from_wire(&Slot { s: 0, d: 0, p: 7 }).is_none());
     }
 }

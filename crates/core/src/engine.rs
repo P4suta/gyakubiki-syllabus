@@ -8,7 +8,7 @@
 //! so the WASM layer only ever marshals **indices** across the boundary.
 
 use crate::bitset::BitSet;
-use crate::grid::{build_grid, Grid};
+use crate::grid::{build_grid, Grid, GridSlot};
 use crate::index::{CourseIndex, SemesterIndex};
 use crate::model::{Dictionaries, IndicesMap, ProcessedData};
 use crate::normalize;
@@ -53,7 +53,11 @@ pub struct Filters<'a> {
 /// The parsed dataset with its precomputed filter indices, ready to query.
 #[derive(Debug)]
 pub struct Engine {
+    /// The wire/view-model courses, handed to the UI as-is.
     courses: Vec<crate::model::Course>,
+    /// Each course's validated timetable (parallel to `courses`) — the domain
+    /// form the grid consumes, range-checked once here instead of per `grid` call.
+    timetables: Vec<Vec<GridSlot>>,
     dicts: Dictionaries,
     generated_at: String,
     semester_bitsets: Vec<BitSet>,
@@ -113,10 +117,17 @@ impl Engine {
             .iter()
             .position(|s| s == TSUUNEN_LABEL)
             .map(SemesterIndex::from);
-        let has_saturday = courses.iter().any(|c| c.slots.iter().any(|s| s.d == 5));
+
+        // Validate each course's wire slots into grid slots once, here.
+        let timetables: Vec<Vec<GridSlot>> = courses
+            .iter()
+            .map(|c| c.slots.iter().filter_map(GridSlot::from_wire).collect())
+            .collect();
+        let has_saturday = timetables.iter().flatten().any(|s| s.is_saturday());
 
         Ok(Self {
             courses,
+            timetables,
             dicts,
             generated_at,
             semester_bitsets: decode_dimension(&semester)?,
@@ -135,25 +146,26 @@ impl Engine {
             return Vec::new();
         }
 
+        // AND the running set with each filter dimension in turn. Pairing each
+        // dictionary with its own bitsets keeps a campus value from querying the
+        // semester vector.
+        let dimensions: [(&[String], &[BitSet], Option<&str>); 3] = [
+            (
+                &self.dicts.semesters,
+                &self.semester_bitsets,
+                filters.semester,
+            ),
+            (
+                &self.dicts.departments,
+                &self.department_bitsets,
+                filters.department,
+            ),
+            (&self.dicts.campuses, &self.campus_bitsets, filters.campus),
+        ];
         let mut bits = self.all_bits.clone();
-        bits = narrow(
-            bits,
-            &self.dicts.semesters,
-            &self.semester_bitsets,
-            filters.semester,
-        );
-        bits = narrow(
-            bits,
-            &self.dicts.departments,
-            &self.department_bitsets,
-            filters.department,
-        );
-        bits = narrow(
-            bits,
-            &self.dicts.campuses,
-            &self.campus_bitsets,
-            filters.campus,
-        );
+        for (dict, bitsets, selector) in dimensions {
+            bits = narrow(bits, dict, bitsets, selector);
+        }
 
         let candidates = bits.iter_ones().map(CourseIndex::new);
         if filters.query.is_empty() {
@@ -173,7 +185,9 @@ impl Engine {
             .and_then(|value| self.dicts.semesters.iter().position(|s| s == value))
             .map(SemesterIndex::from);
         build_grid(
-            course_indices.iter().map(|&i| (i, &self.courses[i.get()])),
+            course_indices
+                .iter()
+                .map(|&i| (i, self.timetables[i.get()].as_slice())),
             semester_index,
             self.tsuunen_index,
             self.has_saturday,
