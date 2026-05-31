@@ -48,10 +48,10 @@ pub struct SyllabusEngine {
 
 #[wasm_bindgen]
 impl SyllabusEngine {
-    /// Parse a v2 `data.json` payload (parsing happens here, in WASM).
+    /// Parse a v3 `data.json` payload (parsing happens here, in WASM).
     ///
     /// # Errors
-    /// Rejects raw KULAS responses, non-v2 documents, and malformed bitsets.
+    /// Rejects raw KULAS responses, non-v3 documents, and malformed bitsets.
     #[wasm_bindgen(js_name = fromJson)]
     pub fn from_json(json: &str) -> Result<SyllabusEngine, JsError> {
         let inner = Engine::from_json(json).map_err(|e| JsError::new(&e.to_string()))?;

@@ -6,6 +6,10 @@ license.workspace = true
 repository.workspace = true
 description = "Native CLI that builds data.json from raw KULAS JSON — the Rust port of the Go pipeline."
 
+[lib]
+name = "syllabus_cli"
+path = "src/lib.rs"
+
 [[bin]]
 name = "syllabus-cli"
 path = "src/main.rs"

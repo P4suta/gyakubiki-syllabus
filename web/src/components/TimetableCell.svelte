@@ -1,10 +1,10 @@
 <script lang="ts">
-import type { CourseV2 } from '../types/course'
+import type { Course } from '../types/course'
 import CourseCard from './CourseCard.svelte'
 
 interface Props {
-	courses: CourseV2[]
-	onselect: (course: CourseV2) => void
+	courses: Course[]
+	onselect: (course: Course) => void
 }
 
 let { courses, onselect }: Props = $props()

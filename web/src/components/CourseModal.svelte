@@ -1,9 +1,9 @@
 <script lang="ts">
 import { fade, fly } from 'svelte/transition'
-import type { CourseV2, Dictionaries } from '../types/course'
+import type { Course, Dictionaries } from '../types/course'
 
 interface Props {
-	course: CourseV2
+	course: Course
 	dicts: Dictionaries
 	onclose: () => void
 }

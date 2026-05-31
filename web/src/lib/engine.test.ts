@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import type { CourseV2 } from '../types/course'
+import type { Course } from '../types/course'
 import { assembleGrid, dayLabels, PERIODS } from './engine'
 
-function view(cd: string): CourseV2 {
+function view(cd: string): Course {
 	return {
 		cd,
 		nm: `科目${cd}`,

@@ -28,7 +28,7 @@ jobs:
 
       # convert: raw JSON → data.json (Rust pipeline; Go fully retired).
       - run: cargo build --release -p syllabus-cli
-      - run: ./target/release/syllabus-cli convert raw/*.json --v2 --compact -o web/public/data.json
+      - run: ./target/release/syllabus-cli convert raw/*.json --compact -o web/public/data.json
 
       # Rust core → WASM (the frontend imports the generated glue)
       - uses: taiki-e/install-action@v2

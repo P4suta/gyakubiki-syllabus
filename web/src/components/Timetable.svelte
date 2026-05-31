@@ -1,13 +1,13 @@
 <script lang="ts">
 import { type GridKey, PERIODS } from '../lib/engine'
-import type { CourseV2 } from '../types/course'
+import type { Course } from '../types/course'
 import CourseCard from './CourseCard.svelte'
 import TimetableCell from './TimetableCell.svelte'
 
 interface Props {
-	grid: Map<GridKey, CourseV2[]>
+	grid: Map<GridKey, Course[]>
 	days: readonly string[]
-	onselect: (course: CourseV2) => void
+	onselect: (course: Course) => void
 }
 
 let { grid, days, onselect }: Props = $props()

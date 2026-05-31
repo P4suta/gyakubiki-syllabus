@@ -1,0 +1,109 @@
+[
+  {
+    "kogiCd": "001",
+    "kogiNm": "微分積分学",
+    "tantoKyoin": "山田 太郎",
+    "jikanwari": "1学期: 月曜日１時限",
+    "kogiKaikojikiNm": "1学期",
+    "kogiKubunNm": "講義",
+    "sekininBushoNm": "理工学部",
+    "kochiNm": "朝倉キャンパス",
+    "gakusokuKamokuNm": "微分積分学",
+    "taishoGakka": "数学科",
+    "taishoNenji": "1年",
+    "kamokuBunrui": "専門",
+    "kamokuBunya": "数学"
+  },
+  {
+    "kogiCd": "001",
+    "kogiNm": "微分積分学",
+    "tantoKyoin": "山田 太郎",
+    "jikanwari": "1学期: 水曜日３時限",
+    "kogiKaikojikiNm": "1学期",
+    "kogiKubunNm": "講義",
+    "sekininBushoNm": "理工学部",
+    "kochiNm": "朝倉キャンパス"
+  },
+  {
+    "kogiCd": "002",
+    "kogiNm": "政治学概論",
+    "fukudai": "比較政治 & 国際関係",
+    "tantoKyoin": "小川　寛貴",
+    "jikanwari": "2学期: 火曜日２時限",
+    "kogiKaikojikiNm": "2学期",
+    "kogiKubunNm": "演習",
+    "sekininBushoNm": "人文社会科学部",
+    "kochiNm": "朝倉キャンパス",
+    "gakusokuKamokuNm": "政治学"
+  },
+  {
+    "kogiCd": "003",
+    "kogiNm": "海洋生物学",
+    "tantoKyoin": "佐藤 哲也",
+    "jikanwari": "通年: 木曜日４時限",
+    "kogiKaikojikiNm": "通年",
+    "kogiKubunNm": "実習",
+    "sekininBushoNm": "農林海洋科学部",
+    "kochiNm": "物部キャンパス"
+  },
+  {
+    "kogiCd": "004",
+    "kogiNm": "英語コミュニケーション",
+    "tantoKyoin": "Smith, John",
+    "jikanwari": "1学期: 金曜日５時限, 2学期: 金曜日５時限",
+    "kogiKaikojikiNm": "通年",
+    "kogiKubunNm": "演習",
+    "sekininBushoNm": "共通教育",
+    "kochiNm": "朝倉キャンパス"
+  },
+  {
+    "kogiCd": "005",
+    "kogiNm": "フィールド実習",
+    "tantoKyoin": "鈴木 一郎",
+    "jikanwari": "1学期: 集中講義",
+    "kogiKaikojikiNm": "1学期",
+    "kogiKubunNm": "実習",
+    "sekininBushoNm": "農林海洋科学部",
+    "kochiNm": "物部キャンパス"
+  },
+  {
+    "kogiCd": "006",
+    "kogiNm": "体育実技",
+    "tantoKyoin": "高橋 健",
+    "jikanwari": "1学期: 土曜日６時限",
+    "kogiKaikojikiNm": "1学期",
+    "kogiKubunNm": "実技",
+    "sekininBushoNm": "共通教育",
+    "kochiNm": "朝倉キャンパス"
+  },
+  {
+    "kogiCd": "007",
+    "kogiNm": "地域医療学",
+    "tantoKyoin": "田中 実",
+    "jikanwari": "2学期前半: 月曜日２時限",
+    "kogiKaikojikiNm": "2学期前半",
+    "kogiKubunNm": "講義",
+    "sekininBushoNm": "医学部 医学科",
+    "kochiNm": "岡豊キャンパス"
+  },
+  {
+    "kogiCd": "008",
+    "kogiNm": "プログラミング演習",
+    "tantoKyoin": "伊藤 桂",
+    "jikanwari": "1学期前半: 火曜日１時限",
+    "kogiKaikojikiNm": "1学期前半",
+    "kogiKubunNm": "演習",
+    "sekininBushoNm": "理工学部",
+    "kochiNm": "朝倉キャンパス"
+  },
+  {
+    "kogiCd": "009",
+    "kogiNm": "日曜講座",
+    "tantoKyoin": "",
+    "jikanwari": "1学期: 日曜日１時限",
+    "kogiKaikojikiNm": "1学期",
+    "kogiKubunNm": "講義",
+    "sekininBushoNm": "",
+    "kochiNm": ""
+  }
+]

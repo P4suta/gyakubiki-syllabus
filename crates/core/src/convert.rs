@@ -1,46 +1,94 @@
-//! Port of Go's `ConvertV2` (`internal/transform/v2.go`): raw KULAS courses →
-//! the optimized v2 `data.json` (dictionaries + per-dimension bitsets).
+//! Build the optimized `data.json` — dictionaries plus per-dimension bitsets —
+//! from raw KULAS courses (originally a port of Go's `ConvertV2`).
 //!
-//! The output is byte-identical to the Go pipeline (enforced by the `parity` CI
-//! gate), so this is a drop-in replacement for `syllabus-cli convert --v2`.
 //! `generated_at` is injected by the caller, keeping this function pure and its
-//! output deterministic for a given input.
+//! output deterministic for a given input; the byte-exact `golden_convert` test
+//! in `crates/cli` pins that determinism against the committed `data.json`.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap};
 
 use crate::bitset::BitSet;
 use crate::dict;
-use crate::model::{CourseV2, Dictionaries, IndicesMap, ProcessedDataV2, RawCourse, SlotV2};
-use crate::parser::{self, Slot};
+use crate::model::{Course, Dictionaries, IndicesMap, ProcessedData, RawCourse, Slot};
+use crate::parser::{self, ParsedSlot};
 use crate::text::search_text;
 
-/// The v2 payload plus any warnings raised while converting (empty course codes,
+/// The v3 payload plus any warnings raised while converting (empty course codes,
 /// unparsable jikanwari, …). Warnings are surfaced by the CLI; they never reach
 /// `data.json`.
 pub struct ConvertResult {
-    pub data: ProcessedDataV2,
+    pub data: ProcessedData,
     pub warnings: Vec<String>,
 }
 
-/// Convert raw KULAS courses into the v2 output, stamping `generated_at`
+/// The 通年 (year-long) semester label, whose courses appear under every other
+/// semester's filter.
+const TSUUNEN_LABEL: &str = "通年";
+
+/// Convert raw KULAS courses into the v3 output, stamping `generated_at`
 /// (an RFC 3339 string) into the payload.
+///
+/// Three phases: [`first_pass`] dedups courses and gathers the dictionary
+/// values, [`build_dictionaries`] sorts them into the wire dictionaries, and
+/// [`second_pass`] resolves each course's indices and builds the filter bitsets.
 #[must_use]
 pub fn convert_v2(raw: &[RawCourse], generated_at: String) -> ConvertResult {
+    let first = first_pass(raw);
+    let dicts = build_dictionaries(&first.dict_sets);
+    let dict_index = DictIndex::from(&dicts);
+    let (courses, indices) = second_pass(
+        raw,
+        first.courses,
+        &first.slots_per_course,
+        &dict_index,
+        &dicts,
+    );
+
+    ConvertResult {
+        data: ProcessedData {
+            version: 3,
+            generated_at,
+            total_raw: raw.len() as u32,
+            dicts,
+            indices,
+            courses,
+        },
+        warnings: first.warnings,
+    }
+}
+
+/// The dictionary value sets gathered in the first pass (before dedup chooses a
+/// canonical course), one [`BTreeSet`] per dimension for stable ordering.
+#[derive(Default)]
+struct DictSets {
+    semester: BTreeSet<String>,
+    department: BTreeSet<String>,
+    campus: BTreeSet<String>,
+    kubun: BTreeSet<String>,
+    kaikojiki: BTreeSet<String>,
+}
+
+/// The first pass output: deduped courses (index fields still 0, slots still
+/// empty), their parsed slots (parallel to `courses`), the gathered dictionary
+/// value sets, and any warnings.
+struct FirstPass {
+    courses: Vec<Course>,
+    slots_per_course: Vec<Vec<ParsedSlot>>,
+    dict_sets: DictSets,
+    warnings: Vec<String>,
+}
+
+/// First pass: walk every raw record, dedup by trimmed `kogiCd` (first wins,
+/// later occurrences merge their slots), gather the five dictionary value sets,
+/// and collect warnings. Each kept course is pushed with index fields = 0 and
+/// empty slots — [`second_pass`] fills those once the dictionaries exist.
+fn first_pass(raw: &[RawCourse]) -> FirstPass {
     let mut warnings = Vec::new();
-
-    // Dictionary value sets, collected across every raw record (before dedup),
-    // exactly as the Go first pass does.
-    let mut semester_set = BTreeSet::new();
-    let mut dept_set = BTreeSet::new();
-    let mut campus_set = BTreeSet::new();
-    let mut kubun_set = BTreeSet::new();
-    let mut kaikojiki_set = BTreeSet::new();
-
+    let mut dict_sets = DictSets::default();
     let mut seen: HashMap<String, usize> = HashMap::new();
-    let mut courses: Vec<CourseV2> = Vec::new();
-    let mut slots_per_course: Vec<Vec<Slot>> = Vec::new();
+    let mut courses: Vec<Course> = Vec::new();
+    let mut slots_per_course: Vec<Vec<ParsedSlot>> = Vec::new();
 
-    // --- First pass: dedup courses by code, collect dictionary values ---
     for (i, r) in raw.iter().enumerate() {
         let cd = r.kogi_cd.trim();
         if cd.is_empty() {
@@ -68,21 +116,21 @@ pub fn convert_v2(raw: &[RawCourse], generated_at: String) -> ConvertResult {
 
         for s in &parsed.slots {
             if !s.semester.is_empty() {
-                semester_set.insert(s.semester.clone());
+                dict_sets.semester.insert(s.semester.clone());
             }
         }
         let dept = r.sekinin_busho_nm.trim();
         if !dept.is_empty() {
-            dept_set.insert(dept.to_owned());
+            dict_sets.department.insert(dept.to_owned());
         }
-        campus_set.insert(campus_of(r).to_owned());
+        dict_sets.campus.insert(campus_of(r).to_owned());
         let kubun = r.kogi_kubun_nm.trim();
         if !kubun.is_empty() {
-            kubun_set.insert(kubun.to_owned());
+            dict_sets.kubun.insert(kubun.to_owned());
         }
         let kaikojiki = r.kogi_kaikojiki_nm.trim();
         if !kaikojiki.is_empty() {
-            kaikojiki_set.insert(kaikojiki.to_owned());
+            dict_sets.kaikojiki.insert(kaikojiki.to_owned());
         }
 
         // Duplicate code → merge its slots into the first occurrence and move on.
@@ -96,7 +144,7 @@ pub fn convert_v2(raw: &[RawCourse], generated_at: String) -> ConvertResult {
         let sub = trim_opt(&r.fukudai);
         let gakusoku = r.gakusoku_kamoku_nm.trim();
         let gaku = (!gakusoku.is_empty() && gakusoku != nm).then(|| gakusoku.to_owned());
-        courses.push(CourseV2 {
+        courses.push(Course {
             cd: cd.to_owned(),
             nm: nm.to_owned(),
             st: search_text(nm, sub.as_deref(), prof, cd, dept),
@@ -117,26 +165,59 @@ pub fn convert_v2(raw: &[RawCourse], generated_at: String) -> ConvertResult {
         slots_per_course.push(parsed.slots);
     }
 
-    // --- Dictionaries ---
-    let dicts = Dictionaries {
-        semesters: dict::sort_semesters(&semester_set),
-        departments: dict::sort_departments(&dept_set),
-        campuses: dict::sort_campuses(&campus_set),
-        kubun: dict::sort_kubun(&kubun_set),
-        kaikojiki: dict::sort_kaikojiki(&kaikojiki_set),
-    };
-    let semester_idx = index_map(&dicts.semesters);
-    let dept_idx = index_map(&dicts.departments);
-    let campus_idx = index_map(&dicts.campuses);
-    let kubun_idx = index_map(&dicts.kubun);
-    let kaikojiki_idx = index_map(&dicts.kaikojiki);
+    FirstPass {
+        courses,
+        slots_per_course,
+        dict_sets,
+        warnings,
+    }
+}
 
-    // --- Second pass: resolve dictionary indices and build bitsets ---
+/// Sort the gathered value sets into the wire dictionaries (each dimension has
+/// its own ordering rule — see [`crate::dict`]).
+fn build_dictionaries(sets: &DictSets) -> Dictionaries {
+    Dictionaries {
+        semesters: dict::sort_semesters(&sets.semester),
+        departments: dict::sort_departments(&sets.department),
+        campuses: dict::sort_campuses(&sets.campus),
+        kubun: dict::sort_kubun(&sets.kubun),
+        kaikojiki: dict::sort_kaikojiki(&sets.kaikojiki),
+    }
+}
+
+/// Label → index lookups for every dictionary, built once so the second pass can
+/// resolve each course's dimensions without re-scanning the dictionaries.
+struct DictIndex {
+    semester: HashMap<String, usize>,
+    department: HashMap<String, usize>,
+    campus: HashMap<String, usize>,
+    kubun: HashMap<String, usize>,
+    kaikojiki: HashMap<String, usize>,
+}
+
+impl From<&Dictionaries> for DictIndex {
+    fn from(dicts: &Dictionaries) -> Self {
+        Self {
+            semester: index_map(&dicts.semesters),
+            department: index_map(&dicts.departments),
+            campus: index_map(&dicts.campuses),
+            kubun: index_map(&dicts.kubun),
+            kaikojiki: index_map(&dicts.kaikojiki),
+        }
+    }
+}
+
+/// Second pass: resolve each course's `dept`/`campus`/`kbn`/`ki` and its slots,
+/// then build the per-dimension filter bitsets. 通年 courses are propagated into
+/// every other semester's bitset, the way the filter UI expects.
+fn second_pass(
+    raw: &[RawCourse],
+    mut courses: Vec<Course>,
+    slots_per_course: &[Vec<ParsedSlot>],
+    dict_index: &DictIndex,
+    dicts: &Dictionaries,
+) -> (Vec<Course>, IndicesMap) {
     let num_words = courses.len().div_ceil(64);
-    let mut sem_bits: BTreeMap<usize, BitSet> = BTreeMap::new();
-    let mut dept_bits: BTreeMap<usize, BitSet> = BTreeMap::new();
-    let mut campus_bits: BTreeMap<usize, BitSet> = BTreeMap::new();
-    let mut tsuunen_courses: Vec<usize> = Vec::new();
 
     // kogiCd → first raw index, so each course re-reads its canonical record.
     let mut raw_first: HashMap<&str, usize> = HashMap::new();
@@ -144,26 +225,31 @@ pub fn convert_v2(raw: &[RawCourse], generated_at: String) -> ConvertResult {
         raw_first.entry(r.kogi_cd.trim()).or_insert(i);
     }
 
+    // One bitset per semester dictionary index (positional, dense).
+    let mut sem_bits = vec![BitSet::with_words(num_words); dicts.semesters.len()];
+    let mut tsuunen_courses: Vec<usize> = Vec::new();
+
     for i in 0..courses.len() {
         let r = &raw[raw_first[courses[i].cd.as_str()]];
-        courses[i].dept = lookup(&dept_idx, r.sekinin_busho_nm.trim());
-        courses[i].campus = lookup(&campus_idx, campus_of(r));
-        courses[i].kbn = lookup(&kubun_idx, r.kogi_kubun_nm.trim());
-        courses[i].ki = lookup(&kaikojiki_idx, r.kogi_kaikojiki_nm.trim());
+        courses[i].dept = lookup(&dict_index.department, r.sekinin_busho_nm.trim());
+        courses[i].campus = lookup(&dict_index.campus, campus_of(r));
+        courses[i].kbn = lookup(&dict_index.kubun, r.kogi_kubun_nm.trim());
+        courses[i].ki = lookup(&dict_index.kaikojiki, r.kogi_kaikojiki_nm.trim());
 
         let mut slots = Vec::new();
         let mut has_tsuunen = false;
         for s in &slots_per_course[i] {
-            let (Some(&si), Some(di)) = (semester_idx.get(&s.semester), day_index(&s.day)) else {
+            let (Some(&si), Some(di)) = (dict_index.semester.get(&s.semester), day_index(&s.day))
+            else {
                 continue;
             };
-            slots.push(SlotV2 {
+            slots.push(Slot {
                 s: si as u32,
                 d: di,
                 p: s.period,
             });
-            set_bit(&mut sem_bits, si, i, num_words);
-            if s.semester == "通年" {
+            sem_bits[si].set(i);
+            if s.semester == TSUUNEN_LABEL {
                 has_tsuunen = true;
             }
         }
@@ -171,37 +257,34 @@ pub fn convert_v2(raw: &[RawCourse], generated_at: String) -> ConvertResult {
         if has_tsuunen {
             tsuunen_courses.push(i);
         }
-        set_bit(&mut dept_bits, courses[i].dept as usize, i, num_words);
-        set_bit(&mut campus_bits, courses[i].campus as usize, i, num_words);
     }
 
     // 通年 courses appear under every *other* semester's filter.
-    if let Some(&tsuunen_idx) = semester_idx.get("通年") {
-        for sem in sem_bits.keys().copied().collect::<Vec<_>>() {
+    if let Some(&tsuunen_idx) = dict_index.semester.get(TSUUNEN_LABEL) {
+        for (sem, bits) in sem_bits.iter_mut().enumerate() {
             if sem == tsuunen_idx {
                 continue;
             }
             for &course in &tsuunen_courses {
-                set_bit(&mut sem_bits, sem, course, num_words);
+                bits.set(course);
             }
         }
     }
 
-    ConvertResult {
-        data: ProcessedDataV2 {
-            version: 2,
-            generated_at,
-            total_raw: raw.len() as u32,
-            dicts,
-            indices: IndicesMap {
-                semester: encode(&sem_bits),
-                department: encode(&dept_bits),
-                campus: encode(&campus_bits),
-            },
-            courses,
-        },
-        warnings,
-    }
+    // dept/campus bitsets follow directly from the resolved index fields.
+    let dept_bits = dimension_bitsets(&courses, dicts.departments.len(), num_words, |c| {
+        c.dept as usize
+    });
+    let campus_bits = dimension_bitsets(&courses, dicts.campuses.len(), num_words, |c| {
+        c.campus as usize
+    });
+
+    let indices = IndicesMap {
+        semester: encode(&sem_bits),
+        department: encode(&dept_bits),
+        campus: encode(&campus_bits),
+    };
+    (courses, indices)
 }
 
 /// The campus label, defaulting empty values to `その他` (Go's behavior).
@@ -224,7 +307,7 @@ fn trim_opt(value: &Option<String>) -> Option<String> {
 }
 
 /// Append `new` slots not already present, deduplicating by value (Go's slot merge).
-fn merge_slots(existing: &mut Vec<Slot>, new: &[Slot]) {
+fn merge_slots(existing: &mut Vec<ParsedSlot>, new: &[ParsedSlot]) {
     for slot in new {
         if !existing.contains(slot) {
             existing.push(slot.clone());
@@ -262,27 +345,30 @@ fn day_index(day: &str) -> Option<i32> {
     }
 }
 
-/// Set course `course`'s bit in dimension `dict_idx`, creating the fixed-width
-/// bitset on first use (Go's `setBit`).
-fn set_bit(
-    bitsets: &mut BTreeMap<usize, BitSet>,
-    dict_idx: usize,
-    course: usize,
+/// Build a dimension's positional bitsets from already-resolved courses: each
+/// course sets its bit in the bucket its `project`ed dictionary index names.
+/// `dict_len` fixes the dense length; an index outside it — only reachable when
+/// the dictionary is empty and `lookup` fell back to 0 — is skipped, leaving no
+/// bucket rather than panicking.
+fn dimension_bitsets(
+    courses: &[Course],
+    dict_len: usize,
     num_words: usize,
-) {
+    project: impl Fn(&Course) -> usize,
+) -> Vec<BitSet> {
+    let mut bitsets = vec![BitSet::with_words(num_words); dict_len];
+    for (course, c) in courses.iter().enumerate() {
+        if let Some(bucket) = bitsets.get_mut(project(c)) {
+            bucket.set(course);
+        }
+    }
     bitsets
-        .entry(dict_idx)
-        .or_insert_with(|| BitSet::with_words(num_words))
-        .set(course);
 }
 
-/// Base64-encode each dimension's bitset, keyed by dictionary index as a string
-/// (Go's `encodeBitsets`).
-fn encode(bitsets: &BTreeMap<usize, BitSet>) -> BTreeMap<String, String> {
-    bitsets
-        .iter()
-        .map(|(idx, bits)| (idx.to_string(), bits.to_base64()))
-        .collect()
+/// Base64-encode a dimension's positional bitsets (vector index = dictionary
+/// index).
+fn encode(bitsets: &[BitSet]) -> Vec<String> {
+    bitsets.iter().map(BitSet::to_base64).collect()
 }
 
 #[cfg(test)]
@@ -290,7 +376,7 @@ mod tests {
     //! Ported from `internal/transform/v2_test.go`.
     use super::convert_v2;
     use crate::bitset::BitSet;
-    use crate::model::{ProcessedDataV2, RawCourse};
+    use crate::model::{ProcessedData, RawCourse};
 
     /// A raw course with the given code/name; other fields default to empty.
     fn raw(cd: &str, nm: &str) -> RawCourse {
@@ -301,7 +387,7 @@ mod tests {
         }
     }
 
-    fn convert(raw: &[RawCourse]) -> ProcessedDataV2 {
+    fn convert(raw: &[RawCourse]) -> ProcessedData {
         convert_v2(raw, "2026-05-31T00:00:00Z".to_owned()).data
     }
 
@@ -310,9 +396,9 @@ mod tests {
         dict.iter().position(|s| s == label).expect("label present")
     }
 
-    /// The bitset for dictionary index `idx` in a `{ "idx": base64 }` map.
-    fn bitset(map: &std::collections::BTreeMap<String, String>, idx: usize) -> BitSet {
-        BitSet::from_base64(&map[&idx.to_string()]).expect("valid base64")
+    /// The bitset for dictionary index `idx` in a positional `[base64]` vector.
+    fn bitset(encoded: &[String], idx: usize) -> BitSet {
+        BitSet::from_base64(&encoded[idx]).expect("valid base64")
     }
 
     #[test]
@@ -327,7 +413,7 @@ mod tests {
                 ..raw("002", "政治学概論")
             },
         ]);
-        assert_eq!(data.version, 2);
+        assert_eq!(data.version, 3);
         assert_eq!(data.total_raw, 2);
         assert_eq!(data.courses.len(), 2);
     }
@@ -475,10 +561,10 @@ mod tests {
     }
 
     #[test]
-    fn empty_input_is_valid_v2() {
+    fn empty_input_is_valid_v3() {
         let data = convert(&[]);
         assert_eq!(data.courses.len(), 0);
-        assert_eq!(data.version, 2);
+        assert_eq!(data.version, 3);
     }
 
     #[test]

@@ -1,4 +1,4 @@
-//! Dictionary ordering for the v2 output — a faithful port of the Go pipeline's
+//! Dictionary ordering for the v3 output — a faithful port of the Go pipeline's
 //! `sortSemesters` / `sortCampuses` / `sortDepartments` / `sortKubun` /
 //! `sortKaikojiki` (`internal/transform/{transform,v2}.go`).
 //!

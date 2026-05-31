@@ -7,13 +7,10 @@
 //! Parsing, bitset decoding and index construction all happen in [`Engine::from_json`],
 //! so the WASM layer only ever marshals **indices** across the boundary.
 
-use std::collections::{BTreeMap, HashMap};
-use std::hash::Hash;
-
 use crate::bitset::BitSet;
-use crate::grid::{build_grid, Grid};
-use crate::index::{CampusIndex, CourseIndex, DepartmentIndex, SemesterIndex};
-use crate::model::{Dictionaries, IndicesMap, ProcessedDataV2};
+use crate::grid::{build_grid, Grid, GridSlot};
+use crate::index::{CourseIndex, SemesterIndex};
+use crate::model::{Dictionaries, IndicesMap, ProcessedData};
 use crate::normalize;
 
 /// The semester label whose courses appear under every *other* semester filter.
@@ -22,19 +19,16 @@ const TSUUNEN_LABEL: &str = "通年";
 /// Errors that can arise while constructing an [`Engine`] from JSON.
 #[derive(Debug, thiserror::Error)]
 pub enum EngineError {
-    /// The input is a raw KULAS API response, not a converted v2 dataset.
-    #[error("KULAS の生レスポンスです。先に syllabus-cli convert --v2 で変換してください。")]
+    /// The input is a raw KULAS API response, not a converted v3 dataset.
+    #[error("KULAS の生レスポンスです。先に syllabus-cli convert で変換してください。")]
     RawKulasResponse,
-    /// No usable `version` field — not a syllabus-cli v2 output.
-    #[error("v2 フォーマットではありません（version フィールドが見つかりません）。")]
-    NotV2Format,
+    /// No usable `version` field — not a syllabus-cli v3 output.
+    #[error("v3 フォーマットではありません（version フィールドが見つかりません）。")]
+    NotV3Format,
     /// A `version` was present but unsupported.
-    #[error("version {0} は対応していません。version 2 が必要です。")]
+    #[error("version {0} は対応していません。version 3 が必要です。")]
     UnsupportedVersion(u64),
-    /// An `indices` map key was not a valid dictionary index.
-    #[error("インデックスのキー {0:?} が不正です。")]
-    InvalidIndexKey(String),
-    /// The JSON itself could not be parsed / did not match the v2 schema.
+    /// The JSON itself could not be parsed / did not match the v3 schema.
     #[error("JSON の解析に失敗しました: {0}")]
     Parse(#[from] serde_json::Error),
     /// A base64 bitset could not be decoded.
@@ -59,12 +53,16 @@ pub struct Filters<'a> {
 /// The parsed dataset with its precomputed filter indices, ready to query.
 #[derive(Debug)]
 pub struct Engine {
-    courses: Vec<crate::model::CourseV2>,
+    /// The wire/view-model courses, handed to the UI as-is.
+    courses: Vec<crate::model::Course>,
+    /// Each course's validated timetable (parallel to `courses`) — the domain
+    /// form the grid consumes, range-checked once here instead of per `grid` call.
+    timetables: Vec<Vec<GridSlot>>,
     dicts: Dictionaries,
     generated_at: String,
-    semester_bitsets: HashMap<SemesterIndex, BitSet>,
-    department_bitsets: HashMap<DepartmentIndex, BitSet>,
-    campus_bitsets: HashMap<CampusIndex, BitSet>,
+    semester_bitsets: Vec<BitSet>,
+    department_bitsets: Vec<BitSet>,
+    campus_bitsets: Vec<BitSet>,
     /// `1` bits for every course index, the starting point of an AND filter.
     all_bits: BitSet,
     /// The 通年 semester, if the dataset has it.
@@ -74,11 +72,11 @@ pub struct Engine {
 }
 
 impl Engine {
-    /// Parse a v2 `data.json` payload and build the queryable engine.
+    /// Parse a v3 `data.json` payload and build the queryable engine.
     ///
     /// # Errors
     /// Returns an [`EngineError`] if the text is a raw KULAS response, is not a
-    /// supported v2 document, or fails schema/bitset decoding.
+    /// supported v3 document, or fails schema/bitset decoding.
     pub fn from_json(json: &str) -> Result<Self, EngineError> {
         // A cheap structural pre-check gives friendly errors for the two common
         // "wrong file" cases before the full schema deserialization.
@@ -87,19 +85,19 @@ impl Engine {
             return Err(EngineError::RawKulasResponse);
         }
         match value.get("version").and_then(serde_json::Value::as_u64) {
-            Some(2) => {}
+            Some(3) => {}
             Some(other) => return Err(EngineError::UnsupportedVersion(other)),
-            None => return Err(EngineError::NotV2Format),
+            None => return Err(EngineError::NotV3Format),
         }
 
-        let data: ProcessedDataV2 = serde_json::from_value(value)?;
+        let data: ProcessedData = serde_json::from_value(value)?;
         Self::build(data)
     }
 
     /// Construct an engine from an already-deserialized payload (decoding the
     /// base64 bitsets and deriving the cached lookups).
-    fn build(data: ProcessedDataV2) -> Result<Self, EngineError> {
-        let ProcessedDataV2 {
+    fn build(data: ProcessedData) -> Result<Self, EngineError> {
+        let ProcessedData {
             dicts,
             indices,
             courses,
@@ -119,15 +117,22 @@ impl Engine {
             .iter()
             .position(|s| s == TSUUNEN_LABEL)
             .map(SemesterIndex::from);
-        let has_saturday = courses.iter().any(|c| c.slots.iter().any(|s| s.d == 5));
+
+        // Validate each course's wire slots into grid slots once, here.
+        let timetables: Vec<Vec<GridSlot>> = courses
+            .iter()
+            .map(|c| c.slots.iter().filter_map(GridSlot::from_wire).collect())
+            .collect();
+        let has_saturday = timetables.iter().flatten().any(|s| s.is_saturday());
 
         Ok(Self {
             courses,
+            timetables,
             dicts,
             generated_at,
-            semester_bitsets: decode_bitsets(&semester)?,
-            department_bitsets: decode_bitsets(&department)?,
-            campus_bitsets: decode_bitsets(&campus)?,
+            semester_bitsets: decode_dimension(&semester)?,
+            department_bitsets: decode_dimension(&department)?,
+            campus_bitsets: decode_dimension(&campus)?,
             all_bits,
             tsuunen_index,
             has_saturday,
@@ -141,25 +146,26 @@ impl Engine {
             return Vec::new();
         }
 
+        // AND the running set with each filter dimension in turn. Pairing each
+        // dictionary with its own bitsets keeps a campus value from querying the
+        // semester vector.
+        let dimensions: [(&[String], &[BitSet], Option<&str>); 3] = [
+            (
+                &self.dicts.semesters,
+                &self.semester_bitsets,
+                filters.semester,
+            ),
+            (
+                &self.dicts.departments,
+                &self.department_bitsets,
+                filters.department,
+            ),
+            (&self.dicts.campuses, &self.campus_bitsets, filters.campus),
+        ];
         let mut bits = self.all_bits.clone();
-        bits = narrow(
-            bits,
-            &self.dicts.semesters,
-            &self.semester_bitsets,
-            filters.semester,
-        );
-        bits = narrow(
-            bits,
-            &self.dicts.departments,
-            &self.department_bitsets,
-            filters.department,
-        );
-        bits = narrow(
-            bits,
-            &self.dicts.campuses,
-            &self.campus_bitsets,
-            filters.campus,
-        );
+        for (dict, bitsets, selector) in dimensions {
+            bits = narrow(bits, dict, bitsets, selector);
+        }
 
         let candidates = bits.iter_ones().map(CourseIndex::new);
         if filters.query.is_empty() {
@@ -179,7 +185,9 @@ impl Engine {
             .and_then(|value| self.dicts.semesters.iter().position(|s| s == value))
             .map(SemesterIndex::from);
         build_grid(
-            course_indices.iter().map(|&i| (i, &self.courses[i.get()])),
+            course_indices
+                .iter()
+                .map(|&i| (i, self.timetables[i.get()].as_slice())),
             semester_index,
             self.tsuunen_index,
             self.has_saturday,
@@ -189,7 +197,7 @@ impl Engine {
     /// The full course list, in index order (the WASM layer hands this to the UI
     /// once as a read-only view cache).
     #[must_use]
-    pub fn courses(&self) -> &[crate::model::CourseV2] {
+    pub fn courses(&self) -> &[crate::model::Course] {
         &self.courses
     }
 
@@ -214,26 +222,18 @@ impl Engine {
 
 /// AND a running bitset with one filter dimension.
 ///
-/// `None` (i.e. "all") leaves it untouched; a value that is absent from the
-/// dictionary, or whose bitset is missing, yields the empty set — mirroring the
-/// TS `semBits ? bits.and(semBits) : BitSet.allOnes(0)`. Generic over the
-/// dimension's index type so a campus value can't query the semester map.
-fn narrow<K>(
-    bits: BitSet,
-    dict: &[String],
-    bitsets: &HashMap<K, BitSet>,
-    selector: Option<&str>,
-) -> BitSet
-where
-    K: From<usize> + Eq + Hash,
-{
+/// `None` (i.e. "all") leaves it untouched; a value absent from the dictionary
+/// (or whose positional bitset is missing) yields the empty set — mirroring the
+/// TS `semBits ? bits.and(semBits) : BitSet.allOnes(0)`. The caller pairs each
+/// dictionary with its own bitsets, so a campus value can't query the semester
+/// vector.
+fn narrow(bits: BitSet, dict: &[String], bitsets: &[BitSet], selector: Option<&str>) -> BitSet {
     match selector {
         None => bits,
         Some(value) => match dict
             .iter()
             .position(|v| v == value)
-            .map(K::from)
-            .and_then(|index| bitsets.get(&index))
+            .and_then(|index| bitsets.get(index))
         {
             Some(dimension) => bits.and(dimension),
             None => BitSet::empty(),
@@ -241,20 +241,12 @@ where
     }
 }
 
-/// Decode a `{ "dictIndex": base64 }` map into `{ K: BitSet }`, where `K` is the
-/// dimension's typed index (inferred from the destination field).
-fn decode_bitsets<K>(encoded: &BTreeMap<String, String>) -> Result<HashMap<K, BitSet>, EngineError>
-where
-    K: From<usize> + Eq + Hash,
-{
+/// Decode a dimension's positional base64 bitsets (vector index = dictionary
+/// index).
+fn decode_dimension(encoded: &[String]) -> Result<Vec<BitSet>, EngineError> {
     encoded
         .iter()
-        .map(|(key, value)| {
-            let index = key
-                .parse::<usize>()
-                .map_err(|_| EngineError::InvalidIndexKey(key.clone()))?;
-            Ok((K::from(index), BitSet::from_base64(value)?))
-        })
+        .map(|value| BitSet::from_base64(value).map_err(EngineError::from))
         .collect()
 }
 
@@ -266,9 +258,8 @@ mod tests {
 
     use super::{Engine, Filters};
     use crate::index::CourseIndex;
-    use crate::model::{CourseV2, Dictionaries, IndicesMap, ProcessedDataV2, SlotV2};
+    use crate::model::{Course, Dictionaries, IndicesMap, ProcessedData, Slot};
     use base64::{engine::general_purpose::STANDARD, Engine as _};
-    use std::collections::BTreeMap;
 
     fn dicts() -> Dictionaries {
         Dictionaries {
@@ -281,14 +272,14 @@ mod tests {
     }
 
     /// Minimal course builder mirroring the TS `makeCourse`.
-    fn course(cd: &str, slots: &[(u32, i32, i32)], dept: u32, campus: u32, st: &str) -> CourseV2 {
-        CourseV2 {
+    fn course(cd: &str, slots: &[(u32, i32, i32)], dept: u32, campus: u32, st: &str) -> Course {
+        Course {
             cd: cd.into(),
             nm: "テスト講義".into(),
             sub: None,
             prof: "教員 太郎".into(),
             raw: String::new(),
-            slots: slots.iter().map(|&(s, d, p)| SlotV2 { s, d, p }).collect(),
+            slots: slots.iter().map(|&(s, d, p)| Slot { s, d, p }).collect(),
             ki: 0,
             kbn: 0,
             dept,
@@ -310,9 +301,10 @@ mod tests {
         STANDARD.encode(bytes)
     }
 
-    /// Port of the TS `buildTestIndices`: one `u64` word array per dictionary
-    /// value, with 通年 courses propagated into every other semester bitset.
-    fn build_test_indices(courses: &[CourseV2], dicts: &Dictionaries) -> IndicesMap {
+    /// Port of the TS `buildTestIndices`: one positional `u64` word array per
+    /// dictionary value, with 通年 courses propagated into every other semester
+    /// bitset.
+    fn build_test_indices(courses: &[Course], dicts: &Dictionaries) -> IndicesMap {
         let n = courses.len();
         let num_words = n.div_ceil(64).max(1);
         let set = |words: &mut [u64], ci: usize| words[ci / 64] |= 1u64 << (ci % 64);
@@ -325,7 +317,7 @@ mod tests {
             .map(|(ci, _)| ci)
             .collect();
 
-        let mut semester = BTreeMap::new();
+        let mut semester = Vec::new();
         for si in 0..dicts.semesters.len() {
             let mut words = vec![0u64; num_words];
             for (ci, c) in courses.iter().enumerate() {
@@ -338,11 +330,11 @@ mod tests {
                     set(&mut words, ci);
                 }
             }
-            semester.insert(si.to_string(), encode(&words));
+            semester.push(encode(&words));
         }
 
-        let dimension = |selector: &dyn Fn(&CourseV2) -> u32, len: usize| {
-            let mut map = BTreeMap::new();
+        let dimension = |selector: &dyn Fn(&Course) -> u32, len: usize| {
+            let mut bitsets = Vec::new();
             for di in 0..len {
                 let mut words = vec![0u64; num_words];
                 for (ci, c) in courses.iter().enumerate() {
@@ -350,9 +342,9 @@ mod tests {
                         set(&mut words, ci);
                     }
                 }
-                map.insert(di.to_string(), encode(&words));
+                bitsets.push(encode(&words));
             }
-            map
+            bitsets
         };
 
         IndicesMap {
@@ -362,11 +354,11 @@ mod tests {
         }
     }
 
-    fn engine_of(courses: Vec<CourseV2>) -> Engine {
+    fn engine_of(courses: Vec<Course>) -> Engine {
         let d = dicts();
         let indices = build_test_indices(&courses, &d);
-        Engine::build(ProcessedDataV2 {
-            version: 2,
+        Engine::build(ProcessedData {
+            version: 3,
             generated_at: "2026-05-31T00:00:00Z".into(),
             total_raw: courses.len() as u32,
             dicts: d,
@@ -377,7 +369,7 @@ mod tests {
     }
 
     /// The three-course fixture used by most filter cases.
-    fn sample() -> Vec<CourseV2> {
+    fn sample() -> Vec<Course> {
         vec![
             course(
                 "001",
@@ -744,6 +736,6 @@ mod tests {
     #[test]
     fn rejects_missing_version() {
         let err = Engine::from_json(r#"{"courses": []}"#).unwrap_err();
-        assert!(matches!(err, super::EngineError::NotV2Format));
+        assert!(matches!(err, super::EngineError::NotV3Format));
     }
 }

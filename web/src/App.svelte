@@ -6,7 +6,7 @@ import FilterBar from './components/FilterBar.svelte'
 import SearchBar from './components/SearchBar.svelte'
 import Timetable from './components/Timetable.svelte'
 import { SyllabusEngine } from './lib/engine'
-import type { CourseV2 } from './types/course'
+import type { Course } from './types/course'
 
 let loading = $state(true)
 let error = $state<string | null>(null)
@@ -16,7 +16,7 @@ let department = $state('all')
 let campus = $state('all')
 let searchText = $state('')
 let debouncedSearch = $state('')
-let selectedCourse: CourseV2 | null = $state(null)
+let selectedCourse: Course | null = $state(null)
 
 $effect(() => {
 	const value = searchText
