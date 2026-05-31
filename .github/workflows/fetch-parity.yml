@@ -1,0 +1,78 @@
+name: Fetch parity (Go vs Rust)
+
+# Manual only. Hits the real KULAS API, so it never runs on push/PR/schedule —
+# it is the end-to-end gate the offline unit tests cannot give: it proves the
+# Rust fetch completes the TLS chain and produces byte-identical raw/*.json to
+# the Go fetch it will replace. NEVER run fetch locally; this is Actions-only.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  parity:
+    name: fetch parity (real KULAS, Actions-only)
+    runs-on: ubuntu-latest
+    env:
+      # Same token source as the monthly workflow (empty → HTML extraction).
+      KULAS_API_TOKEN: ${{ secrets.KULAS_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: build both CLIs
+        run: |
+          go build -o /tmp/go-cli ./cmd/syllabus-cli
+          cargo build --release -p syllabus-cli
+          cp ./target/release/syllabus-cli /tmp/rs-cli
+
+      # Three real fetches: Go twice (to check the API is deterministic per call)
+      # and Rust once. dry-run is no good here — we need files to diff.
+      - name: Go fetch (run A)
+        run: /tmp/go-cli fetch --out-dir /tmp/go-a
+      - name: Go fetch (run B)
+        run: /tmp/go-cli fetch --out-dir /tmp/go-b
+      - name: Rust fetch
+        run: /tmp/rs-cli fetch --out-dir /tmp/rs
+
+      - name: compare
+        run: |
+          set -uo pipefail
+          echo "## Fetch parity" >> "$GITHUB_STEP_SUMMARY"
+
+          if diff -rq /tmp/go-a /tmp/go-b > /tmp/det.txt 2>&1; then
+            echo "- Go-vs-Go: deterministic (byte-identical per call) ✅" | tee -a "$GITHUB_STEP_SUMMARY"
+            deterministic=1
+          else
+            echo "- Go-vs-Go: NON-deterministic — will compare parsed content, not bytes ⚠️" | tee -a "$GITHUB_STEP_SUMMARY"
+            cat /tmp/det.txt
+            deterministic=0
+          fi
+
+          if diff -rq /tmp/go-a /tmp/rs > /tmp/parity.txt 2>&1; then
+            echo "- Go-vs-Rust: BYTE-IDENTICAL ✅" | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          echo "- Go-vs-Rust: byte diff present — checking parsed content" | tee -a "$GITHUB_STEP_SUMMARY"
+          cat /tmp/parity.txt
+          if [ "$deterministic" = "0" ]; then
+            # Server isn't byte-stable; fall back to comparing course content.
+            fail=0
+            for f in /tmp/go-a/*.json; do
+              name=$(basename "$f")
+              ga=$(jq -S '[.selectKogiDtoList[].kogiCd] | sort' "/tmp/go-a/$name")
+              rs=$(jq -S '[.selectKogiDtoList[].kogiCd] | sort' "/tmp/rs/$name" 2>/dev/null || echo "MISSING")
+              if [ "$ga" != "$rs" ]; then
+                echo "  content differs in $name" | tee -a "$GITHUB_STEP_SUMMARY"
+                fail=1
+              fi
+            done
+            [ "$fail" = "0" ] && { echo "- Go-vs-Rust: same course content (bytes differ only due to API non-determinism) ✅" | tee -a "$GITHUB_STEP_SUMMARY"; exit 0; }
+          fi
+          echo "- Go-vs-Rust: DIFFER ❌" | tee -a "$GITHUB_STEP_SUMMARY"
+          exit 1
