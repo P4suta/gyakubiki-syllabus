@@ -49,6 +49,21 @@ function resetFilters() {
 }
 </script>
 
+<!-- Shared bits: the "全て + each value" option list and the dropdown chevron,
+     each rendered by both the mobile sheet and the desktop bar below. -->
+{#snippet selectOptions(allLabel: string, items: string[])}
+	<option value="all">{allLabel}</option>
+	{#each items as item}
+		<option value={item}>{item}</option>
+	{/each}
+{/snippet}
+
+{#snippet chevron(className: string)}
+	<svg class={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+		<path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
+	</svg>
+{/snippet}
+
 <!-- ==================== Mobile: Compact bar ==================== -->
 <div class="glass-nav sticky top-0 z-50 border-b border-overlay-light px-3 py-2 sm:hidden">
 	<div class="flex items-center gap-2">
@@ -170,14 +185,9 @@ function resetFilters() {
 						bind:value={campus}
 						class="w-full appearance-none bg-overlay-subtle rounded-xl px-3 py-2.5 pr-8 text-body text-apple-text min-h-[44px] outline-none cursor-pointer focus:bg-surface-primary focus:ring-2 focus:ring-apple-blue/30"
 					>
-						<option value="all">全キャンパス</option>
-						{#each campuses as c}
-							<option value={c}>{c}</option>
-						{/each}
+						{@render selectOptions('全キャンパス', campuses)}
 					</select>
-					<svg class="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-apple-text/40 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
-						<path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
-					</svg>
+					{@render chevron('absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-apple-text/40 pointer-events-none')}
 				</div>
 			</div>
 
@@ -190,14 +200,9 @@ function resetFilters() {
 						bind:value={department}
 						class="w-full appearance-none bg-overlay-subtle rounded-xl px-3 py-2.5 pr-8 text-body text-apple-text min-h-[44px] outline-none cursor-pointer focus:bg-surface-primary focus:ring-2 focus:ring-apple-blue/30"
 					>
-						<option value="all">全部署</option>
-						{#each departments as d}
-							<option value={d}>{d}</option>
-						{/each}
+						{@render selectOptions('全部署', departments)}
 					</select>
-					<svg class="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-apple-text/40 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
-						<path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
-					</svg>
+					{@render chevron('absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-apple-text/40 pointer-events-none')}
 				</div>
 			</div>
 		</div>
@@ -254,14 +259,9 @@ function resetFilters() {
 				bind:value={campus}
 				class="appearance-none bg-overlay-subtle hover:bg-overlay-medium rounded-lg px-3 py-1.5 pr-7 text-caption text-apple-text outline-none transition-colors duration-200 focus:bg-surface-primary focus:ring-2 focus:ring-apple-blue/30 focus:shadow-sm max-w-40 cursor-pointer"
 			>
-				<option value="all">全キャンパス</option>
-				{#each campuses as c}
-					<option value={c}>{c}</option>
-				{/each}
+				{@render selectOptions('全キャンパス', campuses)}
 			</select>
-			<svg class="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-apple-text/40 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
-				<path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
-			</svg>
+			{@render chevron('absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-apple-text/40 pointer-events-none')}
 		</div>
 
 		<!-- Department filter -->
@@ -270,14 +270,9 @@ function resetFilters() {
 				bind:value={department}
 				class="appearance-none bg-overlay-subtle hover:bg-overlay-medium rounded-lg px-3 py-1.5 pr-7 text-caption text-apple-text outline-none transition-colors duration-200 focus:bg-surface-primary focus:ring-2 focus:ring-apple-blue/30 focus:shadow-sm max-w-48 cursor-pointer"
 			>
-				<option value="all">全部署</option>
-				{#each departments as d}
-					<option value={d}>{d}</option>
-				{/each}
+				{@render selectOptions('全部署', departments)}
 			</select>
-			<svg class="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-apple-text/40 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
-				<path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
-			</svg>
+			{@render chevron('absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-apple-text/40 pointer-events-none')}
 		</div>
 
 		<span class="text-caption text-apple-text/40 ml-auto tabular-nums tracking-tight">

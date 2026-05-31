@@ -20,6 +20,6 @@ let color = $derived(getColor(course.cd))
 		{course.nm}
 	</div>
 	<div class="text-micro sm:text-fine text-apple-text/50">
-		{course.prof?.split(',')[0]?.trim() ?? ''}
+		{course.prof.split(',')[0]?.trim() ?? ''}
 	</div>
 </button>
