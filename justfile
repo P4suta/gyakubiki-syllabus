@@ -18,36 +18,52 @@ convert: build
 inspect file:
     go run ./cmd/syllabus-cli inspect {{file}}
 
-# Web 側 dev server
-dev:
+# Rust core を WASM にビルドし web/src/wasm へ出力 (web ビルド/dev の前段依存)
+# 注意: wasm-pack の --out-dir は *crate ルート* (crates/wasm) 相対なので、
+# リポジトリ直下の web/src/wasm に出すには ../../ が必須 (engine.ts の import 先)。
+wasm-build:
+    wasm-pack build crates/wasm --target web --out-dir ../../web/src/wasm --out-name syllabus
+
+# Web 側 dev server (WASM を先にビルド)
+dev: wasm-build
     cd web && bun install && bun run dev
 
-# Web 側 production build
-web-build: convert
+# Web 側 production build (data.json + WASM を先に用意)
+web-build: convert wasm-build
     cd web && bun install --frozen-lockfile && bun run build
 
 # === テスト ===
 
-# 全テスト (Go + Web)
-test: test-go test-web
+# 全テスト (Rust + Go + Web)
+test: test-rust test-go test-web
+
+# Rust core の test (パリティの正解オラクル)
+test-rust:
+    cargo test
 
 # Go の test を -race 付きで
 test-go:
     go test -race ./...
 
-# Web 側のテスト + check
-test-web:
+# Web 側のテスト + check (WASM を先にビルド)
+test-web: wasm-build
     cd web && bun install --frozen-lockfile && bun run check && bun run test
 
 # === フォーマット・リント ===
 
-# 全部 format (Go + YAML + JSON など、まとめて自動修正)
+# 全部 format (Rust + Go + YAML + JSON など、まとめて自動修正)
 fmt:
+    cargo fmt
     gofumpt -w .
     -typos --write-changes 2>/dev/null || echo "(typos: install with 'cargo install typos-cli' or use just install-tools)"
 
 # 全 linter (CI と同じ)
-lint: lint-go lint-typos lint-actions lint-md
+lint: lint-rust lint-go lint-typos lint-actions lint-md
+
+# Rust の lint (clippy を警告=エラー扱い + fmt 検査)
+lint-rust:
+    cargo clippy --all-targets -- -D warnings
+    cargo fmt --check
 
 # Go の lint
 lint-go:

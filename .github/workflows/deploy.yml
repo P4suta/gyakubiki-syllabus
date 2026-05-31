@@ -30,6 +30,14 @@ jobs:
       - run: go build -o syllabus-cli ./cmd/syllabus-cli
       - run: ./syllabus-cli convert raw/*.json --compact --v2 -o web/public/data.json
 
+      # Rust core → WASM (the frontend imports the generated glue)
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-pack@0.13.1
+      # --out-dir は crate ルート (crates/wasm) 相対なので ../../ で repo 直下へ。
+      - run: wasm-pack build crates/wasm --target web --out-dir ../../web/src/wasm --out-name syllabus
+
       # Frontend: build
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile || bun install
