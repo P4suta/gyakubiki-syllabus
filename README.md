@@ -29,21 +29,21 @@
 
 ### 必要なもの
 
-- **Go** (`go.mod` 参照)
-- **Bun**
+- **Docker** (Dev Container — Rust 1.95 / wasm-pack / Bun を内包。`docker compose up -d` で起動)
 - **just** ([just-rs](https://github.com/casey/just) — タスクランナー)
+
+ロジックは Rust 単一コア (`crates/core` = データ変換・bitset・検索 / `crates/wasm` = ブラウザ向け WASM / `crates/cli` = `raw/` 取得・変換 CLI)。Web は薄い Svelte UI。
 
 ### よく使うコマンド
 
 `just` でコマンド一覧を表示できます。主なもの:
 
 ```bash
-just dev            # Web の dev server を起動
-just build          # Go バイナリをビルド
-just convert        # raw/ → web/public/data.json
-just test           # Go + Web のテストを通す
-just lint           # 全 linter (Go / typos / actionlint / markdown)
-just fmt            # 自動 format (gofumpt + typos --write-changes)
+just dev            # Web の dev server を起動 (WASM を先にビルド)
+just convert        # raw/ → web/public/data.json (Rust pipeline)
+just test           # Rust + Web のテストを通す
+just lint           # 全 linter (Rust / typos / actionlint / markdown)
+just fmt            # 自動 format (cargo fmt + typos --write-changes)
 just check          # CI と等価のチェック (lint + test)
 just install-tools  # 開発ツール一括 install
 just install-hooks  # lefthook で git hooks を有効化
@@ -55,8 +55,7 @@ just install-hooks  # lefthook で git hooks を有効化
 |---|---|---|
 | タスクランナー | `just` | `justfile` |
 | Git hooks | `lefthook` | `lefthook.yml` |
-| Go formatter | `gofumpt` (gofmt より厳格) | `.golangci.yml` |
-| Go meta-linter | `golangci-lint` v2 (`default: all`) | `.golangci.yml` |
+| Rust toolchain | `cargo fmt` / `clippy` (`-D warnings`) | `rust-toolchain.toml` |
 | Spell check | `typos` (Rust 製, 高速) | `.typos.toml` |
 | Actions lint | `actionlint` | — |
 | Markdown lint | `markdownlint-cli2` | `.markdownlint.yaml` |

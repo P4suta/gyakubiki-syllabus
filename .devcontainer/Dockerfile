@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 #
-# Dev Container image for gyakubiki-syllabus — a polyglot (Rust/WASM + Go + Bun)
-# toolchain kept entirely inside the container so the host stays clean.
+# Dev Container image for gyakubiki-syllabus — a Rust/WASM + Bun toolchain kept
+# entirely inside the container so the host stays clean.
 #
 # Design notes:
 # - Toolchains are baked read-only into the image; every *writable* cache lives
@@ -11,7 +11,6 @@
 #   (rootful Docker), so files written back to the bind mount stay host-owned.
 
 # ---- Pinned upstreams, copied in (reproducible, no curl-from-the-internet) ----
-FROM golang:1.26-bookworm AS go
 FROM oven/bun:1.2 AS bun
 
 # ---- Dev image ----
@@ -23,8 +22,6 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates curl git jq \
  && rm -rf /var/lib/apt/lists/*
 
-# Go — required by the build-time data pipeline (`just convert`, `just test-go`).
-COPY --from=go /usr/local/go /usr/local/go
 # Bun — frontend runtime + Vite.
 COPY --from=bun /usr/local/bin/bun /usr/local/bin/bun
 RUN ln -sf /usr/local/bin/bun /usr/local/bin/bunx
@@ -51,9 +48,7 @@ RUN groupadd -g ${GID} ${USER} \
 ENV RUSTUP_HOME=/usr/local/rustup \
     CARGO_HOME=/home/${USER}/.cargo \
     CARGO_TARGET_DIR=/home/${USER}/target \
-    GOPATH=/home/${USER}/go \
-    GOCACHE=/home/${USER}/.cache/go-build \
-    PATH=/home/${USER}/.cargo/bin:/usr/local/cargo/bin:/usr/local/go/bin:${PATH}
+    PATH=/home/${USER}/.cargo/bin:/usr/local/cargo/bin:${PATH}
 
 # Bake the wasm32 target and rustfmt/clippy into the image so the first
 # `cargo build`/lint is offline-fast and reproducible — crucial for the
@@ -65,8 +60,7 @@ RUN rustup component add rustfmt clippy \
 # Pre-create the writable cache dirs owned by dev so that *fresh* named volumes
 # mounted here inherit dev ownership (Docker seeds an empty volume from the
 # image dir's content & permissions). No runtime chown/entrypoint needed.
-RUN mkdir -p /home/${USER}/.cargo /home/${USER}/target /home/${USER}/go \
-        /home/${USER}/.cache/go-build /home/${USER}/.bun/install/cache \
+RUN mkdir -p /home/${USER}/.cargo /home/${USER}/target /home/${USER}/.bun/install/cache \
  && chown -R ${UID}:${GID} /home/${USER}
 
 USER ${USER}

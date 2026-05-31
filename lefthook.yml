@@ -7,7 +7,7 @@
 # Rust 系チェックだけは Dev Container 内で実行する: host の cargo で走らせると
 # target/ がホストに再生成されてしまうため (ホスト無汚染の原則)。
 # `docker compose run --rm` なのでコンテナの起動状態に依存しない (volume は共有され
-# キャッシュは効く)。host の lint ツール (typos/gofumpt 等) は mise 管理のまま。
+# キャッシュは効く)。host の lint ツール (typos/actionlint/markdownlint) は mise 管理のまま。
 
 pre-commit:
   parallel: true
@@ -18,10 +18,6 @@ pre-commit:
       fail_text: "rustfmt 違反あり。`just fmt` (コンテナ内) で修正してください"
     typos:
       run: typos
-    gofumpt:
-      glob: "*.go"
-      run: gofumpt -l {staged_files}
-      fail_text: "gofumpt 違反あり。`just fmt` で修正してください"
     actionlint:
       glob: ".github/workflows/*.{yml,yaml}"
       run: actionlint {staged_files}
@@ -30,16 +26,12 @@ pre-commit:
       run: markdownlint-cli2 {staged_files}
 
 pre-push:
-  parallel: false  # go test / golangci-lint / cargo は重いので順次
+  parallel: false  # cargo test / clippy は重いので順次
   commands:
     rust-test:
       run: docker compose run --rm -T dev cargo test
     rust-clippy:
       run: docker compose run --rm -T dev cargo clippy --all-targets -- -D warnings
-    go-test:
-      run: go test -race ./...
-    go-lint:
-      run: golangci-lint run
     typos-full:
       run: typos
     markdown-full:

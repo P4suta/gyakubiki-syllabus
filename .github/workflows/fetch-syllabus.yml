@@ -14,15 +14,6 @@ on:
         description: kaikoNendo を明示指定 (空なら現在年度を自動計算)
         type: string
         default: ''
-      log-level:
-        description: ログレベル (debug 推奨 / info / warn / error)
-        type: choice
-        options: [info, debug, warn, error]
-        default: info
-      debug-dump:
-        description: HTTP req/res と SignalR frame を artifact に保存 (root cause 分析用)
-        type: boolean
-        default: false
 
 permissions:
   contents: write   # main に raw/ を push するため
@@ -38,48 +29,28 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
-
-      - uses: actions/setup-go@v6
-        with:
-          go-version-file: go.mod
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
 
       - name: Build syllabus-cli
-        run: go build -o syllabus-cli ./cmd/syllabus-cli
+        run: cargo build --release -p syllabus-cli
 
       - name: Fetch syllabus
         env:
+          # 空なら HTML から entryContext を抽出 (通常)。検証用の上書きのみ。
           KULAS_API_TOKEN: ${{ secrets.KULAS_API_TOKEN }}
         run: |
-          args=(--out-dir raw/)
-          args+=(--log-level "${{ inputs.log-level || 'info' }}")
-          args+=(--log-format json)
+          args=(fetch --out-dir raw/)
           if [[ -n "${{ inputs.year }}" ]]; then
             args+=(--year "${{ inputs.year }}")
           fi
           if [[ "${{ inputs.dry-run }}" == "true" ]]; then
             args+=(--dry-run)
           fi
-          if [[ "${{ inputs.debug-dump }}" == "true" ]]; then
-            mkdir -p debug
-            args+=(--debug-dump-dir debug)
-          fi
-          ./syllabus-cli fetch "${args[@]}"
-
-      - name: Upload debug dump
-        # type: boolean の input は expression で boolean。'true' (string) との
-        # 比較は常に false → 以前 skip されていた。truthy 評価に直す。
-        if: ${{ always() && inputs.debug-dump }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: kulas-debug-dump
-          path: debug/
-          retention-days: 7
-          if-no-files-found: warn
+          ./target/release/syllabus-cli "${args[@]}"
 
       - name: Commit & push if changed
         id: commit
-        # 同上: type: boolean の input は truthy 評価で扱う。!inputs.dry-run は
-        # dry-run=true なら false (= step skip)、dry-run=false なら true (= 実行)。
+        # type: boolean の input は truthy 評価。dry-run=false のときだけ実行。
         if: ${{ !inputs.dry-run }}
         run: |
           git config user.name "github-actions[bot]"
