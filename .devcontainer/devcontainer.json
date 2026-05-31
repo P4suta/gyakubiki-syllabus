@@ -1,0 +1,19 @@
+{
+  "name": "gyakubiki-syllabus",
+  "dockerComposeFile": "../compose.yaml",
+  "service": "dev",
+  "workspaceFolder": "/workspace",
+  "remoteUser": "dev",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "rust-lang.rust-analyzer",
+        "tamasfe.even-better-toml",
+        "golang.go",
+        "svelte.svelte-vscode",
+        "biomejs.biome",
+        "nefrob.vscode-just"
+      ]
+    }
+  }
+}

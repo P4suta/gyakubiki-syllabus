@@ -1,0 +1,8 @@
+# Pins the Rust toolchain for host, Dev Container, and CI alike — the single
+# source of truth for the Rust side of the build (mirrors .mise.toml for Go/Bun).
+# rustup auto-installs this on the first `cargo` invocation in the workspace.
+[toolchain]
+channel = "1.95.0"
+components = ["rustfmt", "clippy"]
+targets = ["wasm32-unknown-unknown"]
+profile = "minimal"
