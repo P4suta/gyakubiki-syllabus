@@ -10,9 +10,9 @@ default:
 build:
     go build -o bin/syllabus-cli ./cmd/syllabus-cli
 
-# raw/ から web/public/data.json を生成
-convert: build
-    ./bin/syllabus-cli convert raw/*.json --v2 --compact -o web/public/data.json
+# raw/ から web/public/data.json を生成 (Rust pipeline)
+convert:
+    cargo run --release -q -p syllabus-cli -- convert raw/*.json --v2 --compact -o web/public/data.json
 
 # 生 JSON を inspect (使い方: just inspect raw/講義データ.json)
 inspect file:

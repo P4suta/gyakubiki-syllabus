@@ -23,15 +23,15 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      # Go CLI: raw JSON → data.json
-      - uses: actions/setup-go@v6
-        with:
-          go-version-file: go.mod
-      - run: go build -o syllabus-cli ./cmd/syllabus-cli
-      - run: ./syllabus-cli convert raw/*.json --compact --v2 -o web/public/data.json
+      # Rust toolchain — shared by the convert CLI and the WASM build below.
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      # convert: raw JSON → data.json (Rust pipeline; Go retired from this path,
+      # kept only behind the CI parity gate until the fetch layer is ported too).
+      - run: cargo build --release -p syllabus-cli
+      - run: ./target/release/syllabus-cli convert raw/*.json --v2 --compact -o web/public/data.json
 
       # Rust core → WASM (the frontend imports the generated glue)
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
       - uses: taiki-e/install-action@v2
         with:
           tool: wasm-pack@0.13.1
