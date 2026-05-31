@@ -7,10 +7,10 @@
 
 use serde::{Deserialize, Deserializer, Serialize};
 
-/// Top-level v2 payload. Deserialized by the consumer (the engine) and
+/// Top-level v3 payload. Deserialized by the consumer (the engine) and
 /// serialized by the producer (the native `convert` CLI).
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct ProcessedDataV2 {
+pub struct ProcessedData {
     pub version: u32,
     #[serde(rename = "generatedAt")]
     pub generated_at: String,
@@ -18,7 +18,7 @@ pub struct ProcessedDataV2 {
     pub total_raw: u32,
     pub dicts: Dictionaries,
     pub indices: IndicesMap,
-    pub courses: Vec<CourseV2>,
+    pub courses: Vec<Course>,
 }
 
 /// Lookup tables for the dictionary-indexed fields.
@@ -46,7 +46,7 @@ pub struct IndicesMap {
 
 /// A single time slot, using dictionary indices instead of strings.
 #[derive(Debug, Clone, Copy, Deserialize, Serialize)]
-pub struct SlotV2 {
+pub struct Slot {
     /// Index into `Dictionaries::semesters`.
     pub s: u32,
     /// Day index: 0=月, 1=火, 2=水, 3=木, 4=金, 5=土, 6=日.
@@ -55,17 +55,17 @@ pub struct SlotV2 {
     pub p: i32,
 }
 
-/// A course optimized for the frontend (v2). Serializable so the WASM layer can
+/// A course optimized for the frontend. Serializable so the WASM layer can
 /// hand a faithful view-model to the UI.
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct CourseV2 {
+pub struct Course {
     pub cd: String,
     pub nm: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sub: Option<String>,
     pub prof: String,
     pub raw: String,
-    pub slots: Vec<SlotV2>,
+    pub slots: Vec<Slot>,
     pub ki: u32,
     pub kbn: u32,
     pub dept: u32,

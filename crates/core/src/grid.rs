@@ -10,7 +10,7 @@
 use std::collections::{BTreeMap, HashSet};
 
 use crate::index::{CourseIndex, Day, Period, SemesterIndex};
-use crate::model::CourseV2;
+use crate::model::Course;
 
 /// Weekday columns always present (月‥金). Saturday (day 5) is added only when
 /// the dataset contains a Saturday slot — see [`build_grid`]'s `saturday`.
@@ -74,7 +74,7 @@ impl Grid {
 ///   under every semester filter (`None` when 通年 is absent).
 /// - `saturday` widens the day bound to include 土 (day 5).
 pub fn build_grid<'a>(
-    courses: impl IntoIterator<Item = (CourseIndex, &'a CourseV2)>,
+    courses: impl IntoIterator<Item = (CourseIndex, &'a Course)>,
     semester: Option<SemesterIndex>,
     tsuunen: Option<SemesterIndex>,
     saturday: bool,
@@ -124,18 +124,18 @@ mod tests {
 
     use super::{build_grid, Grid};
     use crate::index::{CourseIndex, Day, Period, SemesterIndex};
-    use crate::model::{CourseV2, SlotV2};
+    use crate::model::{Course, Slot};
 
     const TSUUNEN: Option<SemesterIndex> = Some(SemesterIndex::new(2));
 
-    fn course(cd: &str, slots: &[(u32, i32, i32)]) -> CourseV2 {
-        CourseV2 {
+    fn course(cd: &str, slots: &[(u32, i32, i32)]) -> Course {
+        Course {
             cd: cd.to_owned(),
             nm: "テスト講義".to_owned(),
             sub: None,
             prof: "教員".to_owned(),
             raw: String::new(),
-            slots: slots.iter().map(|&(s, d, p)| SlotV2 { s, d, p }).collect(),
+            slots: slots.iter().map(|&(s, d, p)| Slot { s, d, p }).collect(),
             ki: 0,
             kbn: 0,
             dept: 0,
@@ -150,7 +150,7 @@ mod tests {
     }
 
     /// Build over the whole `courses` slice, enumerating indices like the engine.
-    fn grid(courses: &[CourseV2], semester: Option<usize>) -> Grid {
+    fn grid(courses: &[Course], semester: Option<usize>) -> Grid {
         build_grid(
             courses
                 .iter()

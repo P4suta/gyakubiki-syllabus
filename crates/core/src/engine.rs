@@ -10,7 +10,7 @@
 use crate::bitset::BitSet;
 use crate::grid::{build_grid, Grid};
 use crate::index::{CourseIndex, SemesterIndex};
-use crate::model::{Dictionaries, IndicesMap, ProcessedDataV2};
+use crate::model::{Dictionaries, IndicesMap, ProcessedData};
 use crate::normalize;
 
 /// The semester label whose courses appear under every *other* semester filter.
@@ -53,7 +53,7 @@ pub struct Filters<'a> {
 /// The parsed dataset with its precomputed filter indices, ready to query.
 #[derive(Debug)]
 pub struct Engine {
-    courses: Vec<crate::model::CourseV2>,
+    courses: Vec<crate::model::Course>,
     dicts: Dictionaries,
     generated_at: String,
     semester_bitsets: Vec<BitSet>,
@@ -86,14 +86,14 @@ impl Engine {
             None => return Err(EngineError::NotV3Format),
         }
 
-        let data: ProcessedDataV2 = serde_json::from_value(value)?;
+        let data: ProcessedData = serde_json::from_value(value)?;
         Self::build(data)
     }
 
     /// Construct an engine from an already-deserialized payload (decoding the
     /// base64 bitsets and deriving the cached lookups).
-    fn build(data: ProcessedDataV2) -> Result<Self, EngineError> {
-        let ProcessedDataV2 {
+    fn build(data: ProcessedData) -> Result<Self, EngineError> {
+        let ProcessedData {
             dicts,
             indices,
             courses,
@@ -183,7 +183,7 @@ impl Engine {
     /// The full course list, in index order (the WASM layer hands this to the UI
     /// once as a read-only view cache).
     #[must_use]
-    pub fn courses(&self) -> &[crate::model::CourseV2] {
+    pub fn courses(&self) -> &[crate::model::Course] {
         &self.courses
     }
 
@@ -244,7 +244,7 @@ mod tests {
 
     use super::{Engine, Filters};
     use crate::index::CourseIndex;
-    use crate::model::{CourseV2, Dictionaries, IndicesMap, ProcessedDataV2, SlotV2};
+    use crate::model::{Course, Dictionaries, IndicesMap, ProcessedData, Slot};
     use base64::{engine::general_purpose::STANDARD, Engine as _};
 
     fn dicts() -> Dictionaries {
@@ -258,14 +258,14 @@ mod tests {
     }
 
     /// Minimal course builder mirroring the TS `makeCourse`.
-    fn course(cd: &str, slots: &[(u32, i32, i32)], dept: u32, campus: u32, st: &str) -> CourseV2 {
-        CourseV2 {
+    fn course(cd: &str, slots: &[(u32, i32, i32)], dept: u32, campus: u32, st: &str) -> Course {
+        Course {
             cd: cd.into(),
             nm: "テスト講義".into(),
             sub: None,
             prof: "教員 太郎".into(),
             raw: String::new(),
-            slots: slots.iter().map(|&(s, d, p)| SlotV2 { s, d, p }).collect(),
+            slots: slots.iter().map(|&(s, d, p)| Slot { s, d, p }).collect(),
             ki: 0,
             kbn: 0,
             dept,
@@ -290,7 +290,7 @@ mod tests {
     /// Port of the TS `buildTestIndices`: one positional `u64` word array per
     /// dictionary value, with 通年 courses propagated into every other semester
     /// bitset.
-    fn build_test_indices(courses: &[CourseV2], dicts: &Dictionaries) -> IndicesMap {
+    fn build_test_indices(courses: &[Course], dicts: &Dictionaries) -> IndicesMap {
         let n = courses.len();
         let num_words = n.div_ceil(64).max(1);
         let set = |words: &mut [u64], ci: usize| words[ci / 64] |= 1u64 << (ci % 64);
@@ -319,7 +319,7 @@ mod tests {
             semester.push(encode(&words));
         }
 
-        let dimension = |selector: &dyn Fn(&CourseV2) -> u32, len: usize| {
+        let dimension = |selector: &dyn Fn(&Course) -> u32, len: usize| {
             let mut bitsets = Vec::new();
             for di in 0..len {
                 let mut words = vec![0u64; num_words];
@@ -340,10 +340,10 @@ mod tests {
         }
     }
 
-    fn engine_of(courses: Vec<CourseV2>) -> Engine {
+    fn engine_of(courses: Vec<Course>) -> Engine {
         let d = dicts();
         let indices = build_test_indices(&courses, &d);
-        Engine::build(ProcessedDataV2 {
+        Engine::build(ProcessedData {
             version: 3,
             generated_at: "2026-05-31T00:00:00Z".into(),
             total_raw: courses.len() as u32,
@@ -355,7 +355,7 @@ mod tests {
     }
 
     /// The three-course fixture used by most filter cases.
-    fn sample() -> Vec<CourseV2> {
+    fn sample() -> Vec<Course> {
         vec![
             course(
                 "001",

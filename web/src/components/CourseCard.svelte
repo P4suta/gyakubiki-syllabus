@@ -1,9 +1,9 @@
 <script lang="ts">
 import { getColor } from '../lib/colors'
-import type { CourseV2 } from '../types/course'
+import type { Course } from '../types/course'
 
 interface Props {
-	course: CourseV2
+	course: Course
 	onclick: () => void
 }
 

@@ -8,7 +8,7 @@
 
 /// A parsed time slot: semester label, weekday label, and the 1-based period.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Slot {
+pub struct ParsedSlot {
     pub semester: String,
     pub day: String,
     pub period: i32,
@@ -18,7 +18,7 @@ pub struct Slot {
 /// not be parsed (collected rather than silently dropped, as in Go).
 #[derive(Debug, Default)]
 pub struct ParseResult {
-    pub slots: Vec<Slot>,
+    pub slots: Vec<ParsedSlot>,
     pub warnings: Vec<String>,
 }
 
@@ -41,7 +41,7 @@ pub fn parse_jikanwari(jikanwari: &str) -> ParseResult {
 
         let (semester, rest) = split_semester(part);
         match (find_day(rest), find_period(rest)) {
-            (Some(day), Some(period)) => result.slots.push(Slot {
+            (Some(day), Some(period)) => result.slots.push(ParsedSlot {
                 semester: semester.to_owned(),
                 day: day.to_string(),
                 period,
@@ -101,10 +101,10 @@ fn full_width_digit(c: char) -> Option<i32> {
 #[cfg(test)]
 mod tests {
     //! Ported from `internal/parser/parser_test.go`.
-    use super::{parse_jikanwari, Slot};
+    use super::{parse_jikanwari, ParsedSlot};
 
-    fn slot(semester: &str, day: &str, period: i32) -> Slot {
-        Slot {
+    fn slot(semester: &str, day: &str, period: i32) -> ParsedSlot {
+        ParsedSlot {
             semester: semester.to_owned(),
             day: day.to_owned(),
             period,
@@ -112,7 +112,7 @@ mod tests {
     }
 
     /// (name, input, want_slots, want_warnings)
-    fn cases() -> Vec<(&'static str, &'static str, Vec<Slot>, usize)> {
+    fn cases() -> Vec<(&'static str, &'static str, Vec<ParsedSlot>, usize)> {
         vec![
             (
                 "single slot",

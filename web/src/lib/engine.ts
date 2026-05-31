@@ -1,5 +1,5 @@
 import initWasm, { SyllabusEngine as WasmEngine } from '../wasm/syllabus.js'
-import type { CourseV2, Dictionaries } from '../types/course'
+import type { Course, Dictionaries } from '../types/course'
 
 /** A timetable cell key, `"<day label>-<period>"` (e.g. `"月-1"`). */
 export type GridKey = `${string}-${number}`
@@ -29,17 +29,17 @@ interface WasmGridResult {
 
 /**
  * Assemble the WASM grid (numeric day/period cells of course *indices*) into the
- * UI's `Map<GridKey, CourseV2[]>`, resolving indices against the view cache.
+ * UI's `Map<GridKey, Course[]>`, resolving indices against the view cache.
  *
  * Pure and WASM-free so it can be unit-tested directly; every day×period cell is
  * pre-seeded to `[]` to match the original `buildGrid` contract.
  */
 export function assembleGrid(
 	cells: WasmGridCell[],
-	views: readonly CourseV2[],
+	views: readonly Course[],
 	days: readonly string[],
-): Map<GridKey, CourseV2[]> {
-	const grid = new Map<GridKey, CourseV2[]>()
+): Map<GridKey, Course[]> {
+	const grid = new Map<GridKey, Course[]>()
 	for (const day of days) {
 		for (const period of PERIODS) {
 			grid.set(`${day}-${period}`, [])
@@ -65,14 +65,14 @@ export function assembleGrid(
  */
 export class SyllabusEngine {
 	readonly dicts: Dictionaries
-	readonly courses: readonly CourseV2[]
+	readonly courses: readonly Course[]
 	readonly generatedAt: string
 	readonly hasSaturday: boolean
 	readonly days: readonly string[]
 
 	private readonly wasm: WasmEngine
 
-	private constructor(wasm: WasmEngine, views: CourseV2[], dicts: Dictionaries) {
+	private constructor(wasm: WasmEngine, views: Course[], dicts: Dictionaries) {
 		this.wasm = wasm
 		this.courses = views
 		this.dicts = dicts
@@ -101,7 +101,7 @@ export class SyllabusEngine {
 
 		return new SyllabusEngine(
 			wasm,
-			wasm.allCourseViews() as CourseV2[],
+			wasm.allCourseViews() as Course[],
 			wasm.dicts() as Dictionaries,
 		)
 	}
@@ -115,7 +115,7 @@ export class SyllabusEngine {
 	grid(
 		indices: Uint32Array,
 		semester: string,
-	): { grid: Map<GridKey, CourseV2[]>; count: number } {
+	): { grid: Map<GridKey, Course[]>; count: number } {
 		const result = this.wasm.grid(indices, semester) as WasmGridResult
 		return {
 			grid: assembleGrid(result.cells, this.courses, this.days),

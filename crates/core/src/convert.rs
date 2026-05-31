@@ -9,15 +9,15 @@ use std::collections::{BTreeSet, HashMap};
 
 use crate::bitset::BitSet;
 use crate::dict;
-use crate::model::{CourseV2, Dictionaries, IndicesMap, ProcessedDataV2, RawCourse, SlotV2};
-use crate::parser::{self, Slot};
+use crate::model::{Course, Dictionaries, IndicesMap, ProcessedData, RawCourse, Slot};
+use crate::parser::{self, ParsedSlot};
 use crate::text::search_text;
 
 /// The v3 payload plus any warnings raised while converting (empty course codes,
 /// unparsable jikanwari, …). Warnings are surfaced by the CLI; they never reach
 /// `data.json`.
 pub struct ConvertResult {
-    pub data: ProcessedDataV2,
+    pub data: ProcessedData,
     pub warnings: Vec<String>,
 }
 
@@ -45,7 +45,7 @@ pub fn convert_v2(raw: &[RawCourse], generated_at: String) -> ConvertResult {
     );
 
     ConvertResult {
-        data: ProcessedDataV2 {
+        data: ProcessedData {
             version: 3,
             generated_at,
             total_raw: raw.len() as u32,
@@ -72,8 +72,8 @@ struct DictSets {
 /// empty), their parsed slots (parallel to `courses`), the gathered dictionary
 /// value sets, and any warnings.
 struct FirstPass {
-    courses: Vec<CourseV2>,
-    slots_per_course: Vec<Vec<Slot>>,
+    courses: Vec<Course>,
+    slots_per_course: Vec<Vec<ParsedSlot>>,
     dict_sets: DictSets,
     warnings: Vec<String>,
 }
@@ -86,8 +86,8 @@ fn first_pass(raw: &[RawCourse]) -> FirstPass {
     let mut warnings = Vec::new();
     let mut dict_sets = DictSets::default();
     let mut seen: HashMap<String, usize> = HashMap::new();
-    let mut courses: Vec<CourseV2> = Vec::new();
-    let mut slots_per_course: Vec<Vec<Slot>> = Vec::new();
+    let mut courses: Vec<Course> = Vec::new();
+    let mut slots_per_course: Vec<Vec<ParsedSlot>> = Vec::new();
 
     for (i, r) in raw.iter().enumerate() {
         let cd = r.kogi_cd.trim();
@@ -144,7 +144,7 @@ fn first_pass(raw: &[RawCourse]) -> FirstPass {
         let sub = trim_opt(&r.fukudai);
         let gakusoku = r.gakusoku_kamoku_nm.trim();
         let gaku = (!gakusoku.is_empty() && gakusoku != nm).then(|| gakusoku.to_owned());
-        courses.push(CourseV2 {
+        courses.push(Course {
             cd: cd.to_owned(),
             nm: nm.to_owned(),
             st: search_text(nm, sub.as_deref(), prof, cd, dept),
@@ -212,11 +212,11 @@ impl From<&Dictionaries> for DictIndex {
 /// every other semester's bitset, the way the filter UI expects.
 fn second_pass(
     raw: &[RawCourse],
-    mut courses: Vec<CourseV2>,
-    slots_per_course: &[Vec<Slot>],
+    mut courses: Vec<Course>,
+    slots_per_course: &[Vec<ParsedSlot>],
     dict_index: &DictIndex,
     dicts: &Dictionaries,
-) -> (Vec<CourseV2>, IndicesMap) {
+) -> (Vec<Course>, IndicesMap) {
     let num_words = courses.len().div_ceil(64);
 
     // kogiCd → first raw index, so each course re-reads its canonical record.
@@ -243,7 +243,7 @@ fn second_pass(
             else {
                 continue;
             };
-            slots.push(SlotV2 {
+            slots.push(Slot {
                 s: si as u32,
                 d: di,
                 p: s.period,
@@ -307,7 +307,7 @@ fn trim_opt(value: &Option<String>) -> Option<String> {
 }
 
 /// Append `new` slots not already present, deduplicating by value (Go's slot merge).
-fn merge_slots(existing: &mut Vec<Slot>, new: &[Slot]) {
+fn merge_slots(existing: &mut Vec<ParsedSlot>, new: &[ParsedSlot]) {
     for slot in new {
         if !existing.contains(slot) {
             existing.push(slot.clone());
@@ -351,10 +351,10 @@ fn day_index(day: &str) -> Option<i32> {
 /// the dictionary is empty and `lookup` fell back to 0 — is skipped, leaving no
 /// bucket rather than panicking.
 fn dimension_bitsets(
-    courses: &[CourseV2],
+    courses: &[Course],
     dict_len: usize,
     num_words: usize,
-    project: impl Fn(&CourseV2) -> usize,
+    project: impl Fn(&Course) -> usize,
 ) -> Vec<BitSet> {
     let mut bitsets = vec![BitSet::with_words(num_words); dict_len];
     for (course, c) in courses.iter().enumerate() {
@@ -376,7 +376,7 @@ mod tests {
     //! Ported from `internal/transform/v2_test.go`.
     use super::convert_v2;
     use crate::bitset::BitSet;
-    use crate::model::{ProcessedDataV2, RawCourse};
+    use crate::model::{ProcessedData, RawCourse};
 
     /// A raw course with the given code/name; other fields default to empty.
     fn raw(cd: &str, nm: &str) -> RawCourse {
@@ -387,7 +387,7 @@ mod tests {
         }
     }
 
-    fn convert(raw: &[RawCourse]) -> ProcessedDataV2 {
+    fn convert(raw: &[RawCourse]) -> ProcessedData {
         convert_v2(raw, "2026-05-31T00:00:00Z".to_owned()).data
     }
 

@@ -19,7 +19,7 @@
 //! that replaces the Go `internal/transform`):
 //! - [`parser`] — jikanwari → semester/day/period slots.
 //! - [`dict`] — dictionary ordering.
-//! - [`convert`] — raw courses → [`model::ProcessedDataV2`] ([`convert_v2`]).
+//! - [`convert`] — raw courses → [`model::ProcessedData`] ([`convert_v2`]).
 
 #![forbid(unsafe_code)]
 

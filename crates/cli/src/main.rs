@@ -13,7 +13,7 @@ use std::path::PathBuf;
 use anyhow::{bail, Context, Result};
 use chrono::SecondsFormat;
 use clap::{Args, Parser, Subcommand};
-use syllabus_core::{convert_v2, model::ProcessedDataV2};
+use syllabus_core::{convert_v2, model::ProcessedData};
 
 #[derive(Parser)]
 #[command(
@@ -87,7 +87,7 @@ fn convert(args: ConvertArgs) -> Result<()> {
 
 /// Serialize to JSON, then HTML-escape inside string values to match Go's
 /// `encoding/json` (which defaults to `SetEscapeHTML(true)`).
-fn encode(data: &ProcessedDataV2, compact: bool) -> Result<String> {
+fn encode(data: &ProcessedData, compact: bool) -> Result<String> {
     let json = if compact {
         serde_json::to_string(data)
     } else {
