@@ -2,9 +2,16 @@
 # https://github.com/crate-ci/typos
 
 [files]
+# External KULAS data (course titles/descriptions written by staff) contains real
+# typos we don't own — never spell-check the data, only our source.
 extend-exclude = [
   "raw/**",
+  "raw-details/**",
+  "dev-data/**",
+  "web/public/data.json",
+  "web/public/details/**",
   "crates/cli/assets/findpage_body.tmpl.json",
+  "crates/cli/tests/fixtures/**",
   "web/dist/**",
   "web/node_modules/**",
   "web/bun.lockb",
