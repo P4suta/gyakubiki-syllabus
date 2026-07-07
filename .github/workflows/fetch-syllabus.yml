@@ -62,7 +62,9 @@ jobs:
         if: ${{ !inputs.dry-run }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: bash .github/scripts/commit-signed.sh raw "chore(raw): syllabus grid refresh ($(date -u +%Y-%m-%d))"
+        run: |
+          bash .github/scripts/commit-signed.sh raw \
+            "chore(raw): syllabus grid refresh ($(date -u +%Y-%m-%d))"
 
       - name: Trigger deploy workflow
         if: ${{ steps.commit.outputs.changed == 'true' }}
