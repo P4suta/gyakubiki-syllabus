@@ -1,7 +1,7 @@
 //! HTTP client for the KULAS「シラバス参照」detail flow.
 //!
 //! Two requests per course, reusing findPage's session mechanism:
-//! 1. `POST …/SyllabusSanshoWebApi/initFind` → a per-request `guid`.
+//! 1. `POST …/SyllabusSanshoWebApi/initFindAndUpdate` → a per-request `guid`.
 //! 2. `GET  …/webmvc/SyllabusSansho?TYPE=0&GUID=<guid>` → the syllabus HTML.
 //!
 //! The session cookie + `entryContext` come from one GET of the sansho dashboard
@@ -17,7 +17,9 @@ use crate::fetch::{browser_entry_context, build_http_client, USER_AGENT};
 
 const SANSHO_PAGE_URL: &str =
     "https://kulas.kochi-u.ac.jp/cpsmart/public/dashboard/main/ja/simple/1900/3000280/wsl/SyllabusSansho";
-const INIT_FIND_URL: &str = "https://kulas.kochi-u.ac.jp/cpsmart/public/wsl/WebRoot/SystemD.Lead.Wsl.SyllabusSansho.App.SyllabusSanshoWebApi/initFind";
+// The endpoint method is `initFindAndUpdate` (not `initFind`); the server returns
+// HTTP 400 "service method … not found" for the latter.
+const INIT_FIND_URL: &str = "https://kulas.kochi-u.ac.jp/cpsmart/public/wsl/WebRoot/SystemD.Lead.Wsl.SyllabusSansho.App.SyllabusSanshoWebApi/initFindAndUpdate";
 const WEBMVC_URL: &str = "https://kulas.kochi-u.ac.jp/cpsmart/public/wsl/webmvc/SyllabusSansho";
 
 /// The identifiers that open one course's detail page.

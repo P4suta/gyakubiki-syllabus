@@ -65,20 +65,15 @@ jobs:
 
       - name: Commit progress
         # always(): commit what was fetched even if the crawl aborted or timed out.
+        # Signed via the GitHub API so the commit is Verified (a plain git push is
+        # rejected by the require-signed-commits ruleset).
         if: always()
         id: commit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          if [[ -n "$(git status --porcelain raw-details/)" ]]; then
-            git add raw-details/
-            git commit -m "chore(raw-details): syllabus detail crawl ($(date -u +%Y-%m-%d))"
-            git push
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-            echo "No changes."
-          fi
+          bash .github/scripts/commit-signed.sh raw-details \
+            "chore(raw-details): syllabus detail crawl ($(date -u +%Y-%m-%d))"
 
       - name: Trigger deploy
         if: steps.commit.outputs.changed == 'true'
