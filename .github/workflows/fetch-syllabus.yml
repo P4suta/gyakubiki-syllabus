@@ -23,8 +23,9 @@ on:
         default: ''
 
 permissions:
-  contents: write   # push raw/ to main
-  actions: write    # trigger deploy.yml via gh workflow run
+  contents: write        # create the auto/ data branch + commit
+  actions: write         # trigger deploy.yml via gh workflow run
+  pull-requests: write   # open + auto-merge the data PR into main
 
 concurrency:
   group: fetch-syllabus
@@ -55,15 +56,15 @@ jobs:
           fi
           ./target/release/syllabus-cli "${args[@]}"
 
-      - name: Commit & push if changed
+      - name: Commit & merge if changed
         id: commit
-        # Run only when dry-run is false. Signed via the GitHub API so the commit
-        # is Verified (a plain git push is rejected by require-signed-commits).
+        # Run only when dry-run is false. Data reaches the protected main via an
+        # auto-merged PR (rulesets never bypassed); the commit is signed/Verified.
         if: ${{ !inputs.dry-run }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          bash .github/scripts/commit-signed.sh raw \
+          bash .github/scripts/data-pr.sh raw \
             "chore(raw): syllabus grid refresh ($(date -u +%Y-%m-%d))"
 
       - name: Trigger deploy workflow

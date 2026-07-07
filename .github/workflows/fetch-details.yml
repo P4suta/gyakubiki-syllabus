@@ -29,6 +29,7 @@ on:
 permissions:
   contents: write
   actions: write
+  pull-requests: write
 
 concurrency:
   group: fetch-details
@@ -64,15 +65,15 @@ jobs:
           ./target/release/syllabus-cli "${args[@]}"
 
       - name: Commit progress
-        # always(): commit what was fetched even if the crawl aborted or timed out.
-        # Signed via the GitHub API so the commit is Verified (a plain git push is
-        # rejected by the require-signed-commits ruleset).
+        # always(): land what was fetched even if the crawl aborted or timed out.
+        # Data reaches the protected main via an auto-merged PR (main's rulesets are
+        # never bypassed); the commit is signed/Verified via the GitHub API.
         if: always()
         id: commit
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          bash .github/scripts/commit-signed.sh raw-details \
+          bash .github/scripts/data-pr.sh raw-details \
             "chore(raw-details): syllabus detail crawl ($(date -u +%Y-%m-%d))"
 
       - name: Trigger deploy
