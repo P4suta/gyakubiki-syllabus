@@ -1,9 +1,10 @@
 # lefthook Git hooks manager. Enable with `just install-hooks`.
 # https://github.com/evilmartians/lefthook
 #
-# Hooks mirror CI so failures surface before the PR. Rust checks run inside the
-# Dev Container (`docker compose run --rm`) to keep target/ off the host; the lint
-# tools (typos/actionlint/markdownlint) run on the host via mise.
+# Hooks mirror CI so failures surface locally, not in Actions. Rust/WASM/web
+# checks run inside the Dev Container (`docker compose run --rm`) to keep target/
+# and node_modules off the host; the lint tools (typos/actionlint/markdownlint)
+# run on the host via mise.
 
 pre-commit:
   parallel: true
@@ -22,12 +23,25 @@ pre-commit:
       run: markdownlint-cli2 {staged_files}
 
 pre-push:
-  parallel: false  # cargo test / clippy are heavy; run them sequentially
+  parallel: false # cargo / wasm / web are heavy; run them sequentially
   commands:
-    rust-test:
-      run: docker compose run --rm -T dev cargo test
-    rust-clippy:
-      run: docker compose run --rm -T dev cargo clippy --all-targets -- -D warnings
+    # Every Rust CI gate in one container: fmt, clippy, tests, and the FIELD_SPEC
+    # sync check (generated TS + docs/syllabus-fields.md must not be stale).
+    rust:
+      run: >-
+        docker compose run --rm -T dev bash -c "cargo fmt --check
+        && cargo clippy --all-targets -- -D warnings
+        && cargo test
+        && cargo run -q -p syllabus-cli -- gen-field-docs --check"
+      fail_text: "Rust checks failed (fmt/clippy/test/gen-field-docs); see `just check` / `just gen-field-docs`"
+    # Mirrors the CI "Web (check / test)" job: build the wasm glue first, then
+    # svelte-check/tsc and vitest.
+    web:
+      run: >-
+        docker compose run --rm -T dev bash -c "wasm-pack build crates/wasm
+        --target web --out-dir ../../web/src/wasm --out-name syllabus
+        && cd web && bun install --frozen-lockfile && bun run check && bun run test"
+      fail_text: "Web checks failed (svelte-check/tsc/vitest)"
     typos-full:
       run: typos
     markdown-full:
