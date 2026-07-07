@@ -50,12 +50,17 @@ ENV RUSTUP_HOME=/usr/local/rustup \
     CARGO_TARGET_DIR=/home/${USER}/target \
     PATH=/home/${USER}/.cargo/bin:/usr/local/cargo/bin:${PATH}
 
-# Bake the wasm32 target and rustfmt/clippy into the image so the first
-# `cargo build`/lint is offline-fast and reproducible — crucial for the
+# Bake the wasm32 target and rustfmt/clippy/llvm-tools into the image so the first
+# `cargo build`/lint/coverage is offline-fast and reproducible — crucial for the
 # ephemeral `docker compose run --rm` containers the git hooks use.
 # (image is 1.95.0, matching rust-toolchain.toml.)
-RUN rustup component add rustfmt clippy \
+RUN rustup component add rustfmt clippy llvm-tools-preview \
  && rustup target add wasm32-unknown-unknown
+
+# cargo-llvm-cov so the pre-push hook can run the same coverage gate as CI.
+# Installed to /usr/local (root-owned) so the runtime cargo-cache volume mount
+# over /home/dev/.cargo doesn't hide it.
+RUN cargo install cargo-llvm-cov --locked --root /usr/local
 
 # Pre-create the writable cache dirs owned by dev so that *fresh* named volumes
 # mounted here inherit dev ownership (Docker seeds an empty volume from the
