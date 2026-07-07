@@ -23,9 +23,8 @@ on:
         default: ''
 
 permissions:
-  contents: write        # create the auto/ data branch + commit
-  actions: write         # trigger deploy.yml via gh workflow run
-  pull-requests: write   # open + auto-merge the data PR into main
+  contents: write   # commit raw/ to the data branch
+  actions: write    # trigger deploy.yml via gh workflow run
 
 concurrency:
   group: fetch-syllabus
@@ -42,6 +41,9 @@ jobs:
       - name: Build syllabus-cli
         run: cargo build --release -p syllabus-cli
 
+      - name: Sync data branch into the worktree
+        run: bash .github/scripts/sync-data.sh
+
       - name: Fetch syllabus
         env:
           # Empty (the norm) extracts entryContext from the HTML; set only to override for testing.
@@ -56,15 +58,15 @@ jobs:
           fi
           ./target/release/syllabus-cli "${args[@]}"
 
-      - name: Commit & merge if changed
+      - name: Commit if changed
         id: commit
-        # Run only when dry-run is false. Data reaches the protected main via an
-        # auto-merged PR (rulesets never bypassed); the commit is signed/Verified.
+        # Run only when dry-run is false. Signed commit straight to the `data`
+        # branch (no PR/checks/approval); main stays untouched and fully protected.
         if: ${{ !inputs.dry-run }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          bash .github/scripts/data-pr.sh raw \
+          bash .github/scripts/commit-data.sh raw \
             "chore(raw): syllabus grid refresh ($(date -u +%Y-%m-%d))"
 
       - name: Trigger deploy workflow
