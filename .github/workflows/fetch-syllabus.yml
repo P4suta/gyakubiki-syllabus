@@ -57,14 +57,14 @@ jobs:
 
       - name: Commit if changed
         id: commit
-        # Run only when dry-run is false. Signed commit straight to main
-        # (createCommitOnBranch; main no longer requires status checks).
+        # Run only when dry-run is false. Signed commit straight to main via the
+        # GitHub API (main no longer requires status checks).
         if: ${{ !inputs.dry-run }}
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          bash .github/scripts/commit-signed.sh raw \
-            "chore(raw): syllabus grid refresh ($(date -u +%Y-%m-%d))"
+          ./target/release/syllabus-cli commit --path raw \
+            --message "chore(raw): syllabus grid refresh ($(date -u +%Y-%m-%d))"
 
       - name: Trigger deploy workflow
         if: ${{ steps.commit.outputs.changed == 'true' }}

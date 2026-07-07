@@ -107,13 +107,102 @@ pub fn run(args: FetchDetailsArgs) -> Result<()> {
         report.elapsed,
         report.aborted,
     );
+
+    let attempted = report.fetched + report.skipped.len();
+    if !report.diagnostics.is_empty() || report.aborted {
+        let path = write_diagnostics(&report)?;
+        let (headline, hint) = diagnose(&report);
+        ui::diagnosis(&headline, hint.as_deref(), &path);
+    }
+
     if report.aborted {
         anyhow::bail!(
-            "circuit breaker tripped: aborted after {} consecutive server refusals",
+            "circuit breaker tripped after {} consecutive server refusals — see the diagnosis above",
             args.max_consecutive_blocks
         );
     }
+    // A crawl that attempted real work but saved nothing is a silent systemic
+    // failure (bad endpoint, blocked, changed HTML). Make it loud, not a green 0.
+    if report.fetched == 0 && attempted >= 3 {
+        anyhow::bail!(
+            "fetched 0 of {attempted} attempted courses — systemic failure; see the diagnosis above and diagnostics/fetch-details.md"
+        );
+    }
     Ok(())
+}
+
+/// A short verdict + an actionable hint, inferred from the captured failures.
+fn diagnose(report: &CrawlReport) -> (String, Option<String>) {
+    let attempted = report.fetched + report.skipped.len();
+    let headline = format!(
+        "{} fetched · {} skipped of {attempted} attempted",
+        report.fetched,
+        report.skipped.len()
+    );
+    let blob = report
+        .diagnostics
+        .iter()
+        .map(|(_, d)| d.as_str())
+        .collect::<Vec<_>>()
+        .join("\n")
+        .to_lowercase();
+    let has = |needle: &str| report.skipped.iter().any(|(_, w)| w.contains(needle));
+    let hint = if blob.contains("service method") || blob.contains("not found") {
+        Some("The sansho API path/method may have changed — compare the captured body with INIT_FIND_URL / WEBMVC_URL in fetch_details/client.rs.")
+    } else if has("HTTP 403") || has("HTTP 429") {
+        Some("The server is rate-limiting or blocking us — raise --sleep-ms and retry later; the circuit breaker already backed off.")
+    } else if blob.contains("no guid") {
+        Some("initFind returned no guid — the request params or entryContext are likely stale/wrong.")
+    } else if blob.contains("empty html") {
+        Some("webmvc returned empty HTML — the guid or session may be invalid.")
+    } else {
+        None
+    };
+    (headline, hint.map(str::to_owned))
+}
+
+/// Persist captured failure context to `diagnostics/fetch-details.md` (uploaded as
+/// a CI artifact) so a failure is root-causable without an expensive re-run.
+fn write_diagnostics(report: &CrawlReport) -> Result<PathBuf> {
+    let dir = PathBuf::from("diagnostics");
+    fs::create_dir_all(&dir).context("failed to create diagnostics directory")?;
+    let path = dir.join("fetch-details.md");
+    let attempted = report.fetched + report.skipped.len();
+    let (headline, hint) = diagnose(report);
+
+    let mut md = String::new();
+    md.push_str("# fetch-details diagnostics\n\n");
+    md.push_str(&format!(
+        "- **fetched**: {}\n- **skipped**: {}\n- **attempted**: {attempted}\n- **aborted**: {}\n- **elapsed**: {:?}\n\n",
+        report.fetched,
+        report.skipped.len(),
+        report.aborted,
+        report.elapsed,
+    ));
+    md.push_str(&format!("## verdict\n\n{headline}\n\n"));
+    if let Some(h) = hint {
+        md.push_str(&format!("> **hint** — {h}\n\n"));
+    }
+
+    md.push_str("## captured failures (with response bodies)\n\n");
+    for (cd, diag) in &report.diagnostics {
+        md.push_str(&format!("### course `{cd}`\n\n```\n{diag}\n```\n\n"));
+    }
+
+    // Full skip tally, so nothing is hidden by the capture cap.
+    md.push_str("## all skip reasons\n\n");
+    let mut tally: HashMap<&str, usize> = HashMap::new();
+    for (_, why) in &report.skipped {
+        *tally.entry(why.as_str()).or_default() += 1;
+    }
+    let mut rows: Vec<(&str, usize)> = tally.into_iter().collect();
+    rows.sort_by_key(|&(_, n)| std::cmp::Reverse(n));
+    for (why, n) in rows {
+        md.push_str(&format!("- {n}× {why}\n"));
+    }
+
+    fs::write(&path, md).with_context(|| format!("failed to write {}", path.display()))?;
+    Ok(path)
 }
 
 /// Load and merge every `*.json` under `dir` (the raw findPage pages).
@@ -273,9 +362,15 @@ struct CrawlOpts {
 struct CrawlReport {
     fetched: usize,
     skipped: Vec<(String, String)>,
+    /// Rich, self-explaining context for the first few failures (status + response
+    /// body), captured so a failure is diagnosable without an expensive re-run.
+    diagnostics: Vec<(String, String)>,
     aborted: bool,
     elapsed: Duration,
 }
+
+/// How many failures to capture in full (body + context) before just counting.
+const MAX_DIAGNOSTICS: usize = 8;
 
 impl CrawlReport {
     fn print(&self) {
@@ -309,6 +404,7 @@ fn crawl_with_clock(
 ) -> CrawlReport {
     let mut fetched = 0usize;
     let mut skipped = Vec::new();
+    let mut diagnostics: Vec<(String, String)> = Vec::new();
     let mut consecutive_blocks = 0u32;
     // Emit a progress line every N courses so a long run is observable live in the
     // Actions log (step logs only finalize on completion otherwise).
@@ -335,6 +431,14 @@ fn crawl_with_clock(
             }
             Err(err) => {
                 let blocking = err.is_blocking();
+                // Capture rich context for the first few failures; spotlight the
+                // very first so the cause is right there when the log is opened.
+                if diagnostics.len() < MAX_DIAGNOSTICS {
+                    if diagnostics.is_empty() {
+                        ui::spotlight(&course.cd, &err.diagnostic());
+                    }
+                    diagnostics.push((course.cd.clone(), err.diagnostic()));
+                }
                 skipped.push((course.cd.clone(), err.to_string()));
                 if blocking {
                     consecutive_blocks += 1;
@@ -342,6 +446,7 @@ fn crawl_with_clock(
                         return CrawlReport {
                             fetched,
                             skipped,
+                            diagnostics,
                             aborted: true,
                             elapsed: elapsed(),
                         };
@@ -361,6 +466,7 @@ fn crawl_with_clock(
     CrawlReport {
         fetched,
         skipped,
+        diagnostics,
         aborted: false,
         elapsed: elapsed(),
     }
@@ -413,6 +519,7 @@ mod tests {
         DetailError::Http {
             status,
             retry_after: None,
+            body: String::new(),
         }
     }
 
@@ -489,6 +596,48 @@ mod tests {
         // --only narrows to specific codes before the limit applies.
         let only = filter_courses(all(), Some("002,004"), &HashMap::new(), false, 0);
         assert_eq!(cds(&only), ["002", "004"]);
+    }
+
+    fn report_with(
+        fetched: usize,
+        skipped: Vec<(String, String)>,
+        diagnostics: Vec<(String, String)>,
+        aborted: bool,
+    ) -> CrawlReport {
+        CrawlReport {
+            fetched,
+            skipped,
+            diagnostics,
+            aborted,
+            elapsed: Duration::ZERO,
+        }
+    }
+
+    #[test]
+    fn diagnose_flags_a_changed_endpoint() {
+        let report = report_with(
+            0,
+            vec![("001".into(), "HTTP 400".into())],
+            vec![(
+                "001".into(),
+                "HTTP 400 — response body:\nservice method not found".into(),
+            )],
+            false,
+        );
+        let (headline, hint) = diagnose(&report);
+        assert!(headline.contains("0 fetched"), "{headline}");
+        assert!(hint.unwrap().contains("API path/method may have changed"));
+    }
+
+    #[test]
+    fn diagnose_flags_rate_limiting() {
+        let report = report_with(
+            0,
+            vec![("001".into(), "HTTP 429".into())],
+            vec![("001".into(), "HTTP 429 (empty body)".into())],
+            true,
+        );
+        assert!(diagnose(&report).1.unwrap().contains("rate-limiting"));
     }
 
     #[test]

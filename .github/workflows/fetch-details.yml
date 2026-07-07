@@ -63,17 +63,28 @@ jobs:
           fi
           ./target/release/syllabus-cli "${args[@]}"
 
+      - name: Upload diagnostics
+        # always(): on a failure/abort the CLI writes diagnostics/ with the failed
+        # responses — grab it so the run can be root-caused without a re-run.
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fetch-details-diagnostics
+          path: diagnostics/
+          if-no-files-found: ignore
+          retention-days: 30
+
       - name: Commit progress
         # always(): land what was fetched even if the crawl aborted or timed out.
-        # Signed commit straight to main (createCommitOnBranch; main no longer
-        # requires status checks, so a direct data commit is allowed).
+        # Signed commit straight to main via the GitHub API (main no longer requires
+        # status checks, so a direct data commit is allowed).
         if: always()
         id: commit
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          bash .github/scripts/commit-signed.sh raw-details \
-            "chore(raw-details): syllabus detail crawl ($(date -u +%Y-%m-%d))"
+          ./target/release/syllabus-cli commit --path raw-details \
+            --message "chore(raw-details): syllabus detail crawl ($(date -u +%Y-%m-%d))"
 
       - name: Trigger deploy
         if: steps.commit.outputs.changed == 'true'

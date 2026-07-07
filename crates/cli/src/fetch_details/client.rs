@@ -38,10 +38,13 @@ pub struct CourseRef {
 #[derive(Debug)]
 pub enum DetailError {
     /// Non-2xx HTTP — carries the status so 403/429/5xx trip the circuit breaker,
-    /// plus any `Retry-After` the server asked us to wait (honored on retry).
+    /// any `Retry-After` the server asked us to wait, and the response **body**
+    /// (redacted, truncated) — the smoking gun that a re-run shouldn't be needed to
+    /// see.
     Http {
         status: u16,
         retry_after: Option<Duration>,
+        body: String,
     },
     /// Network/transport error — worth a bounded retry.
     Transient(anyhow::Error),
@@ -88,6 +91,34 @@ impl DetailError {
             DetailError::Http { retry_after, .. } => *retry_after,
             _ => None,
         }
+    }
+    /// A rich, self-explaining description for diagnostics: HTTP errors carry the
+    /// actual server response body, so the failure is legible without a re-run.
+    pub fn diagnostic(&self) -> String {
+        match self {
+            DetailError::Http { status, body, .. } if !body.trim().is_empty() => {
+                format!("HTTP {status} — response body:\n{body}")
+            }
+            DetailError::Http { status, .. } => format!("HTTP {status} (empty body)"),
+            DetailError::Transient(e) => format!("network/transport error: {e:#}"),
+            DetailError::Fatal(e) => format!("unusable response: {e:#}"),
+        }
+    }
+}
+
+/// Truncate a captured body to a diagnostics-friendly size (keep the head; that's
+/// where framework error messages live).
+fn snippet(body: &str) -> String {
+    const MAX: usize = 1200;
+    let body = body.trim();
+    if body.len() <= MAX {
+        body.to_owned()
+    } else {
+        let mut end = MAX;
+        while !body.is_char_boundary(end) {
+            end -= 1;
+        }
+        format!("{}… ({} bytes total)", &body[..end], body.len())
     }
 }
 
@@ -158,6 +189,15 @@ impl SanshoClient {
         })
     }
 
+    /// Replace the session token in captured text with a placeholder, so response
+    /// bodies are safe to surface as diagnostics / CI artifacts.
+    fn redact(&self, s: &str) -> String {
+        match self.entry_context.get("token").and_then(Value::as_str) {
+            Some(t) if !t.is_empty() => s.replace(t, "[TOKEN]"),
+            _ => s.to_owned(),
+        }
+    }
+
     /// `initFind` → `guid` for the given course.
     fn init_find(&self, course: &CourseRef) -> Result<String, DetailError> {
         let body = json!({
@@ -185,12 +225,9 @@ impl SanshoClient {
             .map_err(|e| DetailError::Transient(e.into()))?;
         let status = response.status();
         let retry_after = parse_retry_after(response.headers());
-        // Only a 2xx carries a body worth parsing; read it, then classify.
-        let text = if status.is_success() {
-            response.text().map_err(|e| DetailError::Fatal(e.into()))?
-        } else {
-            String::new()
-        };
+        // Always read the body (redacted) — on a 2xx it carries the guid, on a
+        // non-2xx it carries the server's error message we want in diagnostics.
+        let text = self.redact(&response.text().unwrap_or_default());
         classify_init_find(status.as_u16(), &text, retry_after)
     }
 
@@ -209,11 +246,7 @@ impl SanshoClient {
             .map_err(|e| DetailError::Transient(e.into()))?;
         let status = response.status();
         let retry_after = parse_retry_after(response.headers());
-        let html = if status.is_success() {
-            response.text().map_err(|e| DetailError::Fatal(e.into()))?
-        } else {
-            String::new()
-        };
+        let html = self.redact(&response.text().unwrap_or_default());
         classify_html(status.as_u16(), &html, retry_after)
     }
 }
@@ -232,6 +265,7 @@ fn classify_init_find(
         return Err(DetailError::Http {
             status,
             retry_after,
+            body: snippet(body),
         });
     }
     let value: Value = serde_json::from_str(body).map_err(|e| DetailError::Fatal(e.into()))?;
@@ -259,6 +293,7 @@ fn classify_html(
         return Err(DetailError::Http {
             status,
             retry_after,
+            body: snippet(html),
         });
     }
     if html.trim().is_empty() {
@@ -279,11 +314,12 @@ mod tests {
     use super::{classify_html, classify_init_find, parse_retry_after, DetailError};
     use std::time::Duration;
 
-    /// Test helper: an `Http` error with no `Retry-After`.
+    /// Test helper: an `Http` error with no `Retry-After` and no body.
     fn http(status: u16) -> DetailError {
         DetailError::Http {
             status,
             retry_after: None,
+            body: String::new(),
         }
     }
 
@@ -401,5 +437,14 @@ mod tests {
             classify_html(429, "<html>ok</html>", None),
             Err(DetailError::Http { status: 429, .. })
         ));
+    }
+
+    #[test]
+    fn http_error_captures_body_for_diagnosis() {
+        // The whole point of failure observability: the server's message survives
+        // in the error so a failure is legible without a re-run.
+        let e = classify_init_find(400, "service method not found", None).unwrap_err();
+        assert!(matches!(e, DetailError::Http { status: 400, .. }));
+        assert!(e.diagnostic().contains("service method not found"));
     }
 }

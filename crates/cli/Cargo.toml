@@ -23,7 +23,7 @@ anyhow = "1"
 chrono = "0.4"
 # fetch: blocking HTTP with a cookie jar. native-tls lets the embedded KULAS
 # intermediate CA complete the chain; gzip decompresses responses transparently.
-reqwest = { version = "0.13", default-features = false, features = ["blocking", "cookies", "native-tls", "gzip"] }
+reqwest = { version = "0.13", default-features = false, features = ["blocking", "cookies", "native-tls", "gzip", "json"] }
 regex = "1"
 base64 = "0.22"
 # detail scraping: parse the KULAS "シラバス参照" HTML (server-rendered tables).
