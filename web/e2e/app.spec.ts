@@ -8,6 +8,9 @@ async function enter(page: import('@playwright/test').Page) {
 	await page.getByRole('button', { name: /利用する/ }).click()
 	// Wait for the disclaimer to finish fading out before interacting/shooting.
 	await expect(page.getByRole('heading', { name: 'ご利用にあたって' })).toBeHidden()
+	// The default semester is now date-derived; pin it so tests are run-date
+	// independent. 微分積分学 (1学期) and 心理学概論 (通年) both show under 1学期.
+	await page.getByRole('button', { name: '1学期', exact: true }).click()
 }
 
 test('loads the timetable grid with courses', async ({ page }) => {

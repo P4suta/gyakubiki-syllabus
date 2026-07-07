@@ -6,6 +6,7 @@ import FilterBar from './components/FilterBar.svelte'
 import SearchBar from './components/SearchBar.svelte'
 import Timetable from './components/Timetable.svelte'
 import { SyllabusEngine } from './lib/engine'
+import { defaultSemester } from './lib/semester'
 import type { Course } from './types/course'
 
 let loading = $state(true)
@@ -36,9 +37,8 @@ let displayCount = $derived(layout ? layout.count : 0)
 onMount(async () => {
 	try {
 		engine = await SyllabusEngine.create()
-		if (engine.dicts.semesters.length > 0) {
-			semester = engine.dicts.semesters[0]
-		}
+		// Default to the term in session now (falls back to「全て」off-season).
+		semester = defaultSemester(engine.dicts.semesters)
 	} catch (e) {
 		error = e instanceof Error ? e.message : 'データの読み込みに失敗しました'
 	} finally {
