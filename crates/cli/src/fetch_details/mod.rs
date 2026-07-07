@@ -9,6 +9,7 @@
 //! changed since the previous crawl are refetched.
 
 mod client;
+mod ui;
 
 use std::collections::HashMap;
 use std::fs;
@@ -76,15 +77,11 @@ pub fn run(args: FetchDetailsArgs) -> Result<()> {
     })?;
 
     let selected = select_courses(all, &args);
-    eprintln!(
-        "fetch-details: {} courses selected (out={})",
-        selected.len(),
-        args.out_dir.display()
-    );
     if selected.is_empty() {
-        eprintln!("nothing to fetch (all up to date, or 0 after filtering)");
+        eprintln!("fetch-details: nothing to fetch (all up to date, or 0 after filtering)");
         return Ok(());
     }
+    ui::header(selected.len(), args.sleep_ms, args.jitter_ms, &args.out_dir);
 
     let token = resolve_token_override(args.token.as_deref());
     let client = SanshoClient::new(&selected[0], token.as_deref())
@@ -104,6 +101,12 @@ pub fn run(args: FetchDetailsArgs) -> Result<()> {
         write_detail(&out_dir, detail)
     });
     report.print();
+    ui::step_summary(
+        report.fetched,
+        &report.skipped,
+        report.elapsed,
+        report.aborted,
+    );
     if report.aborted {
         anyhow::bail!(
             "circuit breaker tripped: aborted after {} consecutive server refusals",
@@ -271,19 +274,12 @@ struct CrawlReport {
     fetched: usize,
     skipped: Vec<(String, String)>,
     aborted: bool,
+    elapsed: Duration,
 }
 
 impl CrawlReport {
     fn print(&self) {
-        eprintln!(
-            "fetch-details summary: fetched={} skipped={} aborted={}",
-            self.fetched,
-            self.skipped.len(),
-            self.aborted
-        );
-        for (cd, why) in &self.skipped {
-            eprintln!("  skip {cd}: {why}");
-        }
+        ui::summary(self.fetched, &self.skipped, self.elapsed, self.aborted);
     }
 }
 
@@ -314,6 +310,9 @@ fn crawl_with_clock(
     let mut fetched = 0usize;
     let mut skipped = Vec::new();
     let mut consecutive_blocks = 0u32;
+    // Emit a progress line every N courses so a long run is observable live in the
+    // Actions log (step logs only finalize on completion otherwise).
+    const PROGRESS_EVERY: usize = 25;
 
     for (i, course) in courses.iter().enumerate() {
         if opts.max_run.is_some_and(|max| elapsed() >= max) {
@@ -344,6 +343,7 @@ fn crawl_with_clock(
                             fetched,
                             skipped,
                             aborted: true,
+                            elapsed: elapsed(),
                         };
                     }
                 } else {
@@ -351,12 +351,18 @@ fn crawl_with_clock(
                 }
             }
         }
+
+        let done = i + 1;
+        if done % PROGRESS_EVERY == 0 || done == courses.len() {
+            ui::progress(done, courses.len(), fetched, skipped.len(), elapsed());
+        }
     }
 
     CrawlReport {
         fetched,
         skipped,
         aborted: false,
+        elapsed: elapsed(),
     }
 }
 
