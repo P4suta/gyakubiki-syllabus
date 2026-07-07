@@ -1,15 +1,12 @@
 //! Strongly-typed indices for the domain layer.
 //!
-//! The wire DTOs in [`crate::model`] keep raw integer indices, faithful to the
-//! JSON. But everywhere a value *means* "a position into a particular table" we
-//! wrap it, so the type system rejects mixing a course position with a
-//! dictionary position — or a department with a campus. The wrappers are
-//! zero-cost; the `usize`/`u32` conversions live only at the edges (JSON in,
-//! WASM out).
+//! Wrapping each "position into a particular table" lets the type system reject
+//! mixing a course position with a dictionary position — or a department with a
+//! campus. The wrappers are zero-cost; `usize`/`u32` conversions live only at
+//! the edges (JSON in, WASM out).
 
 /// A course's position in the dataset — the unit the filter/grid boundary
-/// speaks. The whole "indices-out" design hands these around and resolves them
-/// against the course `Vec` only at the very end.
+/// speaks, resolved against the course `Vec` only at the very end.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct CourseIndex(usize);
 

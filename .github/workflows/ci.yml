@@ -26,6 +26,34 @@ jobs:
         run: cargo clippy --all-targets -- -D warnings
       - name: fmt
         run: cargo fmt --check
+      # FIELD_SPEC drives both the generated TS and docs; fail if they are stale.
+      - name: field spec generated files up to date
+        run: cargo run -q -p syllabus-cli -- gen-field-docs --check
+
+  coverage:
+    name: Coverage (llvm-cov)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          components: llvm-tools-preview
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov
+      # Native coverage only (the wasm crate's #[wasm_bindgen] surface isn't
+      # exercised natively). Collect once, then report/enforce from the same data.
+      - name: collect coverage
+        run: cargo llvm-cov --workspace --exclude syllabus-wasm --no-report
+      - name: report + enforce threshold
+        run: |
+          cargo llvm-cov report --summary-only >> "$GITHUB_STEP_SUMMARY"
+          cargo llvm-cov report --lcov --output-path lcov.info
+          cargo llvm-cov report --fail-under-lines 80
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coverage-lcov
+          path: lcov.info
 
   typos:
     name: typos (spell check)
@@ -72,8 +100,12 @@ jobs:
           tool: wasm-pack@0.13.1
       - name: build wasm
         working-directory: ${{ github.workspace }}
-        # --out-dir は crate ルート (crates/wasm) 相対なので ../../ で repo 直下へ。
+        # --out-dir is relative to the crate root (crates/wasm), hence ../../.
         run: wasm-pack build crates/wasm --target web --out-dir ../../web/src/wasm --out-name syllabus
+      - name: wasm boundary tests (node)
+        working-directory: ${{ github.workspace }}
+        # Exercise the JsValue shapes the frontend depends on (camelCase keys, …).
+        run: wasm-pack test --node crates/wasm
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile
       - run: bun run check

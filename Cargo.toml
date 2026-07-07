@@ -1,8 +1,9 @@
-# Rust workspace for the syllabus core (Phase 1: WASM; Phase 2: native reuse).
-# Coexists with the Go module at the repo root during the migration.
+# Rust workspace for the syllabus core, shared by the WASM viewer and the native CLI.
 [workspace]
 resolver = "2"
 members = ["crates/core", "crates/wasm", "crates/cli"]
+# The cargo-fuzz crate is its own workspace (nightly-only); keep it out of ours.
+exclude = ["crates/cli/fuzz"]
 
 [workspace.package]
 edition = "2021"

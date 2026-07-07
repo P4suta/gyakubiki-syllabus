@@ -1,44 +1,39 @@
-# KULAS findPage API 仕様メモ
+# KULAS findPage API spec
 
-`syllabus-cli fetch` が呼び出す KULAS シラバス検索 API の仕様。
+Spec for the KULAS syllabus search API that `syllabus-cli fetch` calls.
 
-## エンドポイント
+## Endpoint
 
 ```http
 POST https://kulas.kochi-u.ac.jp/cpsmart/public/wsl/WebRoot/SystemD.Lead.Gkm.Com.KogiKensaku.App.KogiKensakuWebApi/findPage
 ```
 
-## セッション確立フロー
+## Session flow
 
-KULAS は GUEST ユーザーでもセッション cookie + token を要求する。
-両方とも **検索ページの 1 回の GET** で揃う。
+KULAS requires a session cookie plus a token even for the GUEST user. Both come from **a single GET of the search page**.
 
 1. **GET** `https://kulas.kochi-u.ac.jp/cpsmart/public/dashboard/main/ja/Simple/1900/3000120/wsl/SyllabusKensaku`
-   - レスポンス: HTML (~120KB)
-   - `Set-Cookie: CPSMART_PUBLIC_AUTH=...; GCLB=...` を取得
-   - HTML 内 inline script `cpSmartVueStartup('dash-app-main', '<ver>', true, '<base64>')` の
-     第 4 引数を base64 デコード → JSON 化 → `.token` を抽出 (64 文字 hex)
-2. **POST** findPage（上記）
-   - Cookie: `CPSMART_PUBLIC_AUTH`, `GCLB`
-   - body: JSON（後述）
-   - body 内の `tempData.entryContext.token` に上で抽出した token を埋める
+   - Response: HTML (~120KB)
+   - Read `Set-Cookie: CPSMART_PUBLIC_AUTH=...; GCLB=...`
+   - In the inline script `cpSmartVueStartup('dash-app-main', '<ver>', true, '<base64>')`, base64-decode the 4th argument into JSON (the `entryContext`, containing the 64-char hex `token`).
+2. **POST** findPage (above)
+   - Cookies: `CPSMART_PUBLIC_AUTH`, `GCLB`
+   - body: JSON (below)
+   - Replace the body's `tempData.entryContext` with the extracted object.
 
-### token 抽出ロジック (実装: `crates/cli/src/fetch/token.rs`)
+### Token extraction (implementation: `crates/cli/src/fetch/token.rs`)
 
-> 注意: token (entryContext.token) 単体ではなく、HTML から **entryContext 全体**
-> (cpClientPid / userId 等のセッション識別子込み) を抽出し、findPage body の
-> `tempData.entryContext` を毎回それで差し替える。token だけ差し替えた古い
-> entryContext は「Token 不正 (400)」で拒否される。
+> Note: extract the **entire `entryContext`** (including session identifiers such as `cpClientPid` / `userId`), not just `entryContext.token`, and replace the findPage body's `tempData.entryContext` with it wholesale. findPage validates the token against the rest of the context, so an old `entryContext` with only the token swapped is rejected as "Token invalid (400)".
 
-```go
-var cpSmartVueStartupRe = regexp.MustCompile(
-    `cpSmartVueStartup\(\s*'dash-app-main'\s*,\s*'[^']+'\s*,\s*\w+\s*,\s*'([A-Za-z0-9+/=]+)'`)
+The regex captures the base64 4th argument of the `dash-app-main` startup call:
+
+```text
+cpSmartVueStartup\(\s*'dash-app-main'\s*,\s*'[^']+'\s*,\s*\w+\s*,\s*'([A-Za-z0-9+/=]+)'
 ```
 
-`dash-app-main` 以外の component (`dash-header` / `dash-watcher` etc.) の base64 は別の
-token を持つので必ず `dash-app-main` に絞る。
+Other components (`dash-header`, `dash-watcher`, etc.) carry different tokens, so the match is pinned to `dash-app-main`. The decoded JSON must have a non-empty `token` field or extraction fails.
 
-## リクエストヘッダ
+## Request headers
 
 ```http
 accept: */*
@@ -46,22 +41,22 @@ accept-language: ja
 content-type: application/json
 origin: https://kulas.kochi-u.ac.jp
 referer: https://kulas.kochi-u.ac.jp/cpsmart/public/dashboard/main/ja/Simple/1900/3000120/wsl/SyllabusKensaku
-user-agent: <Chrome 系の現実的な UA>
+user-agent: <realistic Chrome-family UA>
 ```
 
-## リクエスト body
+## Request body
 
-巨大（約 60KB の整形 JSON）。`crates/cli/assets/findpage_body.tmpl.json` にテンプレートとして保存し、`{{.PageNo}}` / `{{.KaikoNendo}}` を差し替えたうえで `tempData.entryContext` を実行時に丸ごと差し替える：
+Large (~60KB of formatted JSON). Stored as a template at `crates/cli/assets/findpage_body.tmpl.json`; substitute `{{.PageNo}}` / `{{.KaikoNendo}}`, then replace `tempData.entryContext` wholesale at runtime:
 
-| プレースホルダ | 場所 | 内容 |
+| Placeholder | Location | Content |
 |---|---|---|
-| `{{.PageNo}}` | `methodParams.kensakuJoken.pageNo` および `methodParams.kensakuJoken.values.pageNo` | 1, 2, 3, ... |
-| `{{.KaikoNendo}}` | `methodParams.kensakuJoken.values.kaikoNendo.values[0]` および `tempData.entryContext.shoriNendo` | `"2026"` 等。年度 |
-| `{{.Token}}` | `tempData.entryContext.token` | 検索ページ HTML から抽出した token |
+| `{{.PageNo}}` | `methodParams.kensakuJoken.pageNo` and `methodParams.kensakuJoken.values.pageNo` | 1, 2, 3, ... |
+| `{{.KaikoNendo}}` | `methodParams.kensakuJoken.values.kaikoNendo.values[0]` and `tempData.entryContext.shoriNendo` | e.g. `"2026"`. Academic year |
+| `{{.Token}}` | `tempData.entryContext.token` | token extracted from the search-page HTML |
 
-それ以外の数百フィールドは検索条件のスキーマ宣言（空 values）で、KULAS 側が body 全体を要求するため温存する。
+The remaining hundreds of fields are search-condition schema declarations (empty values); KULAS requires the full body, so they are kept as-is.
 
-## レスポンス
+## Response
 
 ```json
 {
@@ -69,54 +64,77 @@ user-agent: <Chrome 系の現実的な UA>
   "maxPageNo": 8,
   "total": 3850,
   "pageSize": 500,
-  "selectKogiDtoList": [ ... 500 件の RawCourse ... ]
+  "selectKogiDtoList": [ ... 500 RawCourse entries ... ]
 }
 ```
 
-ページごとに `pageNo` を 1..maxPageNo で叩く。レスポンスフィールド定義は `docs/kulas-api-fields.md` を参照。
+Request each `pageNo` from 1 to `maxPageNo`. Response field definitions: see `docs/kulas-api-fields.md`.
 
-## 保存ファイル名規約（既存踏襲）
+## Saved file names
 
-| pageNo | ファイル名 |
+| pageNo | File name |
 |---|---|
 | 1 | `raw/講義データ.json` |
-| 2 以降 | `raw/講義データ-{pageNo:02d}.json` |
+| 2+ | `raw/講義データ-{pageNo:02d}.json` |
 
-## 既知の制約
+## Known constraints
 
-- ログイン認証は不要（GUEST ユーザー）
-- 国内大学システムが GitHub Actions runner の IP を弾く可能性は未検証。初回 `workflow_dispatch` の `dry-run` で 200 が返るか必ず確認すること。
-- `kaikoNendo` は毎年更新が必要。デフォルトは「現在年 (4月以降) または前年 (1-3月)」のロジックで自動計算し、`--year` フラグで上書き可能にする。
+- No login required (GUEST user).
+- Whether the university system blocks GitHub Actions runner IPs is untested. Always confirm a 200 via a `dry-run` on the first `workflow_dispatch`.
+- `kaikoNendo` needs a yearly update. It defaults to "current year (from April) or previous year (Jan–Mar)" and can be overridden with `--year`.
 
-## TLS chain について
+## Politeness / responsible access
 
-KULAS (IIS 10) は TLS handshake で **leaf 証明書のみ送信**し中間 CA を配信しない。
-Chrome / Firefox は AIA fetching で chain を補完するが、HTTP クライアント
-(reqwest + native-tls / 旧 Go `crypto/tls` も同様) は補完しないため
-`certificate signed by unknown authority` 系で fail する。
+We only access syllabus data the university publishes openly (no login, GUEST user),
+and treat access as a courtesy. The crawl is engineered to stay well under any
+reasonable load and to be identifiable rather than anonymous:
 
-対応として `crates/cli/assets/kulas_ca.pem` に中間 CA (`NII Open Domain CA - G7 RSA`)
-を bundle し、`crates/cli/src/fetch/client.rs` で reqwest の `add_root_certificate`
-に積んでいる (旧 Go の `SystemCertPool` + `AppendCertsFromPEM` と同じ chain 補完)。
-Root CA (`Security Communication RootCA2`) はシステム標準 bundle に含まれるので追加不要。
+- **Single source, no evasion.** All traffic comes from one GitHub Actions runner.
+  We do not rotate IPs or otherwise hide — a single, predictable, contactable source
+  is the point.
+- **Identified User-Agent.** `USER_AGENT` (`crates/cli/src/fetch/client.rs`) keeps a
+  browser-compatible prefix but appends `gyakubiki-syllabus/1.0 (+<repo URL>)`, so an
+  operator who notices the traffic can reach the project and contact us.
+- **Detail crawl is gentle** (`fetch-details`): strictly sequential (no parallelism),
+  3-5 s jittered sleep between courses, exponential backoff on retries (honoring the
+  server's `Retry-After`), and a circuit breaker that aborts after a few consecutive
+  server refusals so a block never turns into hammering.
+- **Incremental + capped + off-peak.** Only courses whose grid `lastUpdate` changed
+  are refetched; a per-run `--limit` spreads any large backlog over many days; runs
+  are scheduled for JST early morning.
+- **Grid fetch is seasonal** (`fetch-syllabus`): daily in Mar/Apr/Sep/Oct, weekly
+  otherwise — frequent when freshness matters, quiet the rest of the year.
 
-### 中間 CA の有効期限と更新手順
+### robots.txt
 
-現行 bundle の有効期限: **2029-05-29** (確認: `openssl x509 -in crates/cli/assets/kulas_ca.pem -noout -dates`)
+`https://kulas.kochi-u.ac.jp/robots.txt` returns **404 (Not Found)** as of 2026-07-07
+(checked manually; note robots.txt is per-host, so the crawl target `kulas.kochi-u.ac.jp`
+is what matters, not `www.kochi-u.ac.jp`). Per RFC 9309 an absent robots.txt means no
+crawl restrictions are declared, so there is no `Disallow` to honor. Re-check if the
+host starts serving one.
 
-期限切れまたは KULAS の証明書 chain が更新されて fetch が再び
-`unknown authority` で fail し始めたら、以下で再取得:
+## TLS chain
+
+KULAS (IIS 10) sends **only the leaf certificate** during the TLS handshake and does not serve the intermediate CA. Chrome / Firefox complete the chain via AIA fetching, but the HTTP client does not, so it would fail with `certificate signed by unknown authority`.
+
+To handle this, the intermediate CA (`NII Open Domain CA - G7 RSA`) is bundled at `crates/cli/assets/kulas_ca.pem` and added via reqwest's `add_root_certificate` in `crates/cli/src/fetch/client.rs`. The root CA (`Security Communication RootCA2`) is in the system bundle, so it needs no addition.
+
+### Intermediate CA expiry and renewal
+
+Current bundle expiry: **2029-05-29** (check: `openssl x509 -in crates/cli/assets/kulas_ca.pem -noout -dates`).
+
+When it expires, or KULAS's chain changes and fetch starts failing with `unknown authority` again, re-fetch:
 
 ```sh
-# 1. 現行 leaf 証明書の AIA URL を確認
+# 1. Find the AIA URL of the current leaf certificate
 openssl s_client -connect kulas.kochi-u.ac.jp:443 \
   -servername kulas.kochi-u.ac.jp </dev/null 2>/dev/null \
   | openssl x509 -noout -text | grep -A1 'Authority Information Access'
 
-# 2. CA Issuers URL から DER を取得
-curl -sS -o /tmp/intermediate.cer "<上で得た URL>"
+# 2. Fetch the DER from the CA Issuers URL
+curl -sS -o /tmp/intermediate.cer "<URL from above>"
 
-# 3. PEM に変換して上書き
+# 3. Convert to PEM and overwrite
 openssl x509 -inform DER -in /tmp/intermediate.cer -outform PEM \
   -out crates/cli/assets/kulas_ca.pem
 ```

@@ -1,4 +1,4 @@
-# typos: 高速 spell-checker (Rust 製) の設定
+# typos spell-checker config.
 # https://github.com/crate-ci/typos
 
 [files]
@@ -14,7 +14,7 @@ extend-exclude = [
 ]
 
 [default]
-# KULAS の API は ローマ字命名なので、誤判定が起こりやすい単語を許可
+# KULAS uses romaji field names, so allow the ones typos flags as misspellings.
 extend-ignore-identifiers-re = [
   "[Kk]ogi[A-Z][a-zA-Z]*",
   "[Kk]aiko[A-Z][a-zA-Z]*",
@@ -48,7 +48,7 @@ extend-ignore-identifiers-re = [
 ]
 
 [default.extend-words]
-# KULAS 関連の固有名詞・略称
+# KULAS proper nouns and abbreviations.
 fukudai = "fukudai"
 KULAS = "KULAS"
 kulas = "kulas"

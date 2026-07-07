@@ -1,7 +1,5 @@
-# mise: 開発ツールのバージョン管理
+# Dev tool versions. `mise install` sets them all up.
 # https://mise.jdx.dev/
-#
-# `mise install` で一括 install。`just install-tools` の代替。
 
 [tools]
 bun = "latest"
@@ -9,8 +7,9 @@ just = "latest"
 lefthook = "latest"
 typos = "latest"
 actionlint = "latest"
-# WASM ビルダ。Rust 本体は rust-toolchain.toml が唯一の真実の源 (channel + wasm32 target)。
+# WASM builder; the Rust toolchain itself is pinned by rust-toolchain.toml.
 wasm-pack = "0.13.1"
 
-# npm backend (bun ではなく npm 経由のほうが mise の cache が効く)
+# npm backend caches better under mise than the bun backend.
 "npm:markdownlint-cli2" = "latest"
+node = "latest"

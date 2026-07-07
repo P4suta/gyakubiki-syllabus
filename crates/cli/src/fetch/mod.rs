@@ -1,4 +1,4 @@
-//! `fetch` subcommand — port of Go's `internal/fetch` + `cmd/syllabus-cli/fetch.go`.
+//! `fetch` subcommand.
 //!
 //! Downloads every findPage page from KULAS, validates the pagination, and
 //! writes each page's raw JSON to `raw/` verbatim (no re-serialization). The
@@ -6,7 +6,9 @@
 //! offline; the live client lives in [`client`].
 
 mod client;
-mod token;
+pub(crate) mod token;
+
+pub(crate) use client::{browser_entry_context, build_http_client, USER_AGENT};
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -27,19 +29,19 @@ pub trait PageFetcher {
 
 #[derive(Args)]
 pub struct FetchArgs {
-    /// raw JSON の出力ディレクトリ。
+    /// Output directory for raw JSON.
     #[arg(long = "out-dir", default_value = "raw")]
     out_dir: PathBuf,
-    /// kaikoNendo (空なら現在年度を自動計算)。
+    /// kaikoNendo (auto-computed from the current academic year when empty).
     #[arg(long)]
     year: Option<String>,
-    /// KULAS API token を上書き (空なら HTML 抽出、KULAS_API_TOKEN env でも可)。
+    /// Override the KULAS API token (extract from HTML when empty; KULAS_API_TOKEN env also works).
     #[arg(long)]
     token: Option<String>,
-    /// page 1 の total 件数の最小ガード (これを下回ると fail)。
+    /// Minimum guard for page 1's total count (fails below this).
     #[arg(long = "min-total", default_value_t = 1500)]
     min_total: i32,
-    /// 取得して件数のみ報告、ファイル書き込みなし。
+    /// Fetch and report counts only, without writing files.
     #[arg(long = "dry-run")]
     dry_run: bool,
 }
@@ -60,7 +62,7 @@ pub fn run(args: FetchArgs) -> Result<()> {
     );
 
     let client = Client::new(&kaiko_nendo, token_override.as_deref())
-        .context("client 初期化に失敗 (TLS/session/token のいずれか)")?;
+        .context("failed to initialize client (TLS, session, or token)")?;
 
     let result = fetch_all(
         &Options {
@@ -177,9 +179,8 @@ struct PageWrite {
     changed: bool,
 }
 
-/// Download every page, validate the pagination, and write raw JSON — port of
-/// Go's `All`, split into fetch/validate, write, and cleanup so the orchestrator
-/// reads top-down and each step is testable on its own.
+/// Download every page, validate the pagination, and write raw JSON. Split into
+/// fetch/validate, write, and cleanup so each step is testable on its own.
 fn fetch_all(opts: &Options, fetcher: &impl PageFetcher) -> Result<FetchResult> {
     let fetched = fetch_and_validate(opts, fetcher)?;
     if opts.dry_run {
@@ -199,14 +200,13 @@ fn fetch_all(opts: &Options, fetcher: &impl PageFetcher) -> Result<FetchResult> 
 /// Touches no filesystem, so it is unit-testable with a fake fetcher.
 fn fetch_and_validate(opts: &Options, fetcher: &impl PageFetcher) -> Result<FetchedPages> {
     let first_bytes = fetcher.fetch_page(1)?;
-    let first =
-        parse_meta(&first_bytes).context("page 1 のレスポンスを JSON として解析できません")?;
+    let first = parse_meta(&first_bytes).context("cannot parse page 1 response as JSON")?;
     if first.max_page_no < 1 {
-        bail!("page 1 の maxPageNo が無効です (= {})", first.max_page_no);
+        bail!("page 1 has an invalid maxPageNo (= {})", first.max_page_no);
     }
     if first.total < opts.min_total {
         bail!(
-            "page 1 の total が閾値を下回っています ({} < {}) — API 不調の可能性",
+            "page 1 total is below the threshold ({} < {}) — the API may be unhealthy",
             first.total,
             opts.min_total
         );
@@ -221,7 +221,7 @@ fn fetch_and_validate(opts: &Options, fetcher: &impl PageFetcher) -> Result<Fetc
         eprintln!("fetching page {page_no} of {}", first.max_page_no);
         let bytes = fetcher.fetch_page(page_no)?;
         let meta = parse_meta(&bytes)
-            .with_context(|| format!("page {page_no} のレスポンスを JSON として解析できません"))?;
+            .with_context(|| format!("cannot parse page {page_no} response as JSON"))?;
         validate_page(&meta, page_no, first.max_page_no)?;
         pages.push(RawPage {
             page_no,
@@ -243,13 +243,13 @@ fn fetch_and_validate(opts: &Options, fetcher: &impl PageFetcher) -> Result<Fetc
 fn validate_page(meta: &PageMeta, expected_page: i32, first_max: i32) -> Result<()> {
     if meta.page_no != expected_page {
         bail!(
-            "page {expected_page} を要求したが pageNo={} が返ってきました",
+            "requested page {expected_page} but got pageNo={}",
             meta.page_no
         );
     }
     if meta.max_page_no != first_max {
         bail!(
-            "page {expected_page} で maxPageNo が変化 ({} → {})",
+            "maxPageNo changed on page {expected_page} ({} → {})",
             first_max,
             meta.max_page_no
         );
@@ -257,7 +257,7 @@ fn validate_page(meta: &PageMeta, expected_page: i32, first_max: i32) -> Result<
     let list_len = meta.list_len();
     if expected_page < first_max && list_len != meta.page_size {
         bail!(
-            "中間 page {expected_page} の件数が不足 (listLen={list_len}, pageSize={})",
+            "middle page {expected_page} is short (listLen={list_len}, pageSize={})",
             meta.page_size
         );
     }
@@ -268,7 +268,7 @@ fn validate_page(meta: &PageMeta, expected_page: i32, first_max: i32) -> Result<
 /// from what was already on disk.
 fn write_pages(out_dir: &Path, fetched: &FetchedPages) -> Result<Vec<PageWrite>> {
     fs::create_dir_all(out_dir)
-        .with_context(|| format!("出力ディレクトリの作成に失敗 {}", out_dir.display()))?;
+        .with_context(|| format!("failed to create output directory {}", out_dir.display()))?;
     fetched
         .pages
         .iter()
@@ -276,7 +276,7 @@ fn write_pages(out_dir: &Path, fetched: &FetchedPages) -> Result<Vec<PageWrite>>
             let path = out_dir.join(raw_file_name(p.page_no));
             let changed = file_changed(&path, &p.bytes);
             fs::write(&path, &p.bytes)
-                .with_context(|| format!("ファイル書き込みに失敗 {}", path.display()))?;
+                .with_context(|| format!("failed to write file {}", path.display()))?;
             Ok(PageWrite {
                 page_no: p.page_no,
                 changed,
@@ -289,8 +289,8 @@ fn parse_meta(bytes: &[u8]) -> Result<PageMeta> {
     serde_json::from_slice(bytes).map_err(anyhow::Error::from)
 }
 
-/// On-disk file name for a page: page 1 keeps the legacy unsuffixed name; pages
-/// 2+ get a zero-padded suffix (Go's `RawFileName`).
+/// On-disk file name for a page: page 1 is unsuffixed; pages 2+ get a
+/// zero-padded suffix.
 fn raw_file_name(page_no: i32) -> String {
     if page_no == 1 {
         "講義データ.json".to_owned()
@@ -307,12 +307,11 @@ fn file_changed(path: &Path, new_content: &[u8]) -> bool {
 }
 
 /// Remove `講義データ-NN.json` files whose page number exceeds `max_page_no`
-/// (left over from a longer previous run) — Go's `cleanupStalePages`.
+/// (left over from a longer previous run).
 fn cleanup_stale_pages(out_dir: &Path, max_page_no: i32) -> Result<Vec<String>> {
     let pattern = regex::Regex::new(r"^講義データ-(\d{2})\.json$").expect("valid regex");
     let mut cleaned = Vec::new();
-    for entry in fs::read_dir(out_dir).context("出力ディレクトリの読み取りに失敗")?
-    {
+    for entry in fs::read_dir(out_dir).context("failed to read output directory")? {
         let entry = entry?;
         if entry.file_type()?.is_dir() {
             continue;
@@ -332,7 +331,7 @@ fn cleanup_stale_pages(out_dir: &Path, max_page_no: i32) -> Result<Vec<String>> 
 }
 
 /// Academic year for now (UTC): Japan's year starts in April, so Jan–Mar belongs
-/// to the previous year. Matches Go's `currentKaikoNendo`.
+/// to the previous year.
 fn current_kaiko_nendo() -> i32 {
     let now = chrono::Utc::now();
     if now.month() < 4 {
@@ -385,15 +384,15 @@ fn write_step_summary(result: &FetchResult, dry_run: bool, changed: usize) {
     let Ok(path) = std::env::var("GITHUB_STEP_SUMMARY") else {
         return;
     };
-    let mode = if dry_run { "dry-run" } else { "通常実行" };
+    let mode = if dry_run { "dry-run" } else { "normal run" };
     let mut md = format!(
-        "## Fetch syllabus result ({mode})\n\n- 取得件数: **{}** / 全 {} ページ\n",
+        "## Fetch syllabus result ({mode})\n\n- Fetched: **{}** across {} pages\n",
         result.total, result.max_page_no
     );
     if !dry_run {
-        md.push_str(&format!("- 変更ファイル: {changed}\n"));
+        md.push_str(&format!("- Changed files: {changed}\n"));
     }
-    md.push_str("\n| page | 件数 | ファイル | 変更 |\n|---|---|---|---|\n");
+    md.push_str("\n| page | items | file | changed |\n|---|---|---|---|\n");
     for p in &result.pages {
         let mark = if !dry_run && p.changed { "✓" } else { "—" };
         md.push_str(&format!(
@@ -402,7 +401,7 @@ fn write_step_summary(result: &FetchResult, dry_run: bool, changed: usize) {
         ));
     }
     if !result.cleaned.is_empty() {
-        md.push_str(&format!("\n古いファイルを削除: {:?}\n", result.cleaned));
+        md.push_str(&format!("\nStale files removed: {:?}\n", result.cleaned));
     }
     use std::io::Write;
     if let Ok(mut f) = fs::OpenOptions::new().append(true).create(true).open(path) {
@@ -412,8 +411,7 @@ fn write_step_summary(result: &FetchResult, dry_run: bool, changed: usize) {
 
 #[cfg(test)]
 mod tests {
-    //! Orchestration parity, ported from `internal/fetch/fetch_test.go`. No
-    //! sockets — a fake fetcher returns canned page bytes.
+    //! Orchestration tests: no sockets — a fake fetcher returns canned page bytes.
     use super::*;
     use std::collections::HashMap;
 

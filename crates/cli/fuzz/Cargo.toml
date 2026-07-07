@@ -1,0 +1,34 @@
+# Out-of-workspace cargo-fuzz crate (its own `[workspace]` keeps it out of the
+# main build). Run with a nightly toolchain:
+#   cargo +nightly fuzz run fuzz_parse_jikanwari
+#   cargo +nightly fuzz run fuzz_parse_sansho_html
+[package]
+name = "syllabus-cli-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+syllabus-core = { path = "../../core" }
+syllabus-cli = { path = "../.." }
+
+[[bin]]
+name = "fuzz_parse_jikanwari"
+path = "fuzz_targets/fuzz_parse_jikanwari.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_parse_sansho_html"
+path = "fuzz_targets/fuzz_parse_sansho_html.rs"
+test = false
+doc = false
+bench = false
+
+# Own workspace root so the main workspace never tries to build the fuzz crate.
+[workspace]

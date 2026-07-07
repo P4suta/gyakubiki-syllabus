@@ -1,12 +1,8 @@
-//! Extract the `entryContext` (and its `token`) from the search-page HTML — a
-//! port of, and extension to, Go's `extractTokenFromHTML`
-//! (`internal/fetch/html_token.go`).
+//! Extract the `entryContext` (and its `token`) from the search-page HTML.
 //!
 //! The whole `entryContext` matters, not just the token: findPage validates the
 //! token against the rest of the session context (`cpClientPid`, `userId`, …),
-//! so the body must carry the *current* session's full context, not a stale
-//! captured one. We therefore return the entire object and let the client inject
-//! it into the request.
+//! so we return the entire object for the client to inject into the request.
 
 use std::sync::LazyLock;
 
@@ -27,25 +23,24 @@ static CP_SMART_VUE_STARTUP: LazyLock<regex::Regex> = LazyLock::new(|| {
 ///
 /// Locate the `dash-app-main` startup call, base64-decode its 4th argument,
 /// parse the JSON, and return it. Errors if the script is missing, the base64 or
-/// JSON is malformed, or the `token` field is empty (the same guard Go applied).
+/// JSON is malformed, or the `token` field is empty.
 pub fn extract_entry_context(html: &str) -> Result<Value> {
     let captures = CP_SMART_VUE_STARTUP.captures(html).context(
-        "cpSmartVueStartup('dash-app-main', ...) inline script が見つかりません (HTML 構造変更の可能性)",
+        "cpSmartVueStartup('dash-app-main', ...) inline script not found (the HTML structure may have changed)",
     )?;
     let decoded = STANDARD
         .decode(&captures[1])
-        .context("entryContext の base64 デコードに失敗")?;
+        .context("failed to base64-decode entryContext")?;
     let context: Value =
-        serde_json::from_slice(&decoded).context("entryContext の JSON パースに失敗")?;
+        serde_json::from_slice(&decoded).context("failed to parse entryContext as JSON")?;
     match context.get("token").and_then(Value::as_str) {
         Some(token) if !token.is_empty() => Ok(context),
-        _ => bail!("entryContext.token が空、または存在しません"),
+        _ => bail!("entryContext.token is empty or missing"),
     }
 }
 
 #[cfg(test)]
 mod tests {
-    //! Ported from `internal/fetch/fetch_test.go` (TestExtractTokenFromHTML*).
     use super::extract_entry_context;
 
     fn token_of(html: &str) -> Option<String> {

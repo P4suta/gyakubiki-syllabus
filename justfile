@@ -1,85 +1,101 @@
 set shell := ["bash", "-cu"]
 
-# Default: list available recipes
+# List recipes.
 default:
     @just --list --unsorted
 
-# === ビルド・実行 ===
+# === Build / run ===
 
-# raw/ から web/public/data.json を生成 (Rust pipeline)
+# raw/ (+ raw-details/ when present) → web/public/data.json + details/.
 convert:
-    cargo run --release -q -p syllabus-cli -- convert raw/*.json --compact -o web/public/data.json
+    cargo run --release -q -p syllabus-cli -- convert raw/*.json --compact --details-dir raw-details -o web/public/data.json
 
-# Rust core を WASM にビルドし web/src/wasm へ出力 (web ビルド/dev の前段依存)
-# 注意: wasm-pack の --out-dir は *crate ルート* (crates/wasm) 相対なので、
-# リポジトリ直下の web/src/wasm に出すには ../../ が必須 (engine.ts の import 先)。
+# Generate FIELD_SPEC artifacts (TS for the frontend, docs/syllabus-fields.md).
+gen-field-docs:
+    cargo run -q -p syllabus-cli -- gen-field-docs
+
+# Rust core → WASM into web/src/wasm (--out-dir is crate-root relative, hence ../../).
 wasm-build:
     wasm-pack build crates/wasm --target web --out-dir ../../web/src/wasm --out-name syllabus
 
-# Web 側 dev server (WASM を先にビルド)
+# Dev server (builds WASM first).
 dev: wasm-build
     cd web && bun install && bun run dev
 
-# Web 側 production build (data.json + WASM を先に用意)
+# Synthesize a KULAS-free dummy dataset into dev-data/ (--count/--seed to vary).
+gen-sample *ARGS:
+    cargo run -q -p syllabus-cli -- gen-sample {{ARGS}}
+
+# Build data.json + details from the dummy dataset, then run dev (no KULAS access).
+dev-sample: wasm-build gen-sample
+    cargo run -q -p syllabus-cli -- convert dev-data/sample-raw.json --compact --details-dir dev-data/sample-details --details-out web/public/details -o web/public/data.json
+    cd web && bun install && bun run dev
+
+# Production web build.
 web-build: convert wasm-build
     cd web && bun install --frozen-lockfile && bun run build
 
-# === テスト ===
+# Crawl KULAS detail pages into raw-details/ (Actions runs this; pass args for local dry runs).
+fetch-details *ARGS:
+    cargo run --release -q -p syllabus-cli -- fetch-details {{ARGS}}
 
-# 全テスト (Rust + Web)
-test: test-rust test-web
+# === Test ===
 
-# Rust core の test
+test: test-rust test-wasm test-web
+
 test-rust:
     cargo test
 
-# Web 側のテスト + check (WASM を先にビルド)
+# WASM boundary tests (JsValue shapes) in Node — needs wasm-pack.
+test-wasm:
+    wasm-pack test --node crates/wasm
+
 test-web: wasm-build
     cd web && bun install --frozen-lockfile && bun run check && bun run test
 
-# === フォーマット・リント ===
+# Native line coverage (excludes the wasm-bindgen surface, not run natively).
+cov:
+    cargo llvm-cov --workspace --exclude syllabus-wasm --summary-only
 
-# 全部 format (Rust + YAML + JSON など、まとめて自動修正)
+# Continuous fuzzing (nightly + cargo-fuzz). Pass a target, e.g. `just fuzz fuzz_parse_jikanwari`.
+fuzz TARGET *ARGS:
+    cd crates/cli/fuzz && cargo +nightly fuzz run {{TARGET}} -- -max_total_time=60 {{ARGS}}
+
+# === Format / lint ===
+
 fmt:
     cargo fmt
-    -typos --write-changes 2>/dev/null || echo "(typos: install with 'cargo install typos-cli' or use just install-tools)"
+    -typos --write-changes 2>/dev/null || echo "(typos: cargo install typos-cli, or just install-tools)"
 
-# 全 linter (CI と同じ)
 lint: lint-rust lint-typos lint-actions lint-md
 
-# Rust の lint (clippy を警告=エラー扱い + fmt 検査)
 lint-rust:
     cargo clippy --all-targets -- -D warnings
     cargo fmt --check
 
-# typos check
 lint-typos:
     typos
 
-# GitHub Actions workflow lint
 lint-actions:
     actionlint
 
-# Markdown lint (web/ は別管理なので除外)
 lint-md:
     markdownlint-cli2 "**/*.md" "#node_modules" "#web/**"
 
-# CI と等価のチェックを全部 (lefthook pre-push と同じ範囲)
+# CI-equivalent checks (matches lefthook pre-push).
 check: lint test
 
-# === セットアップ ===
+# === Setup ===
 
-# 開発ツール一括 install (mise 経由を推奨)
 install-tools:
     @if command -v mise > /dev/null; then \
       mise install; \
     else \
-      echo "→ mise が入っていません: https://mise.jdx.dev/ を install してから再実行"; \
+      echo "→ mise not found: install from https://mise.jdx.dev/ and retry"; \
       echo "  (fallback) cargo install typos-cli"; \
       echo "  (fallback) bun install -g markdownlint-cli2"; \
       exit 1; \
     fi
 
-# git hooks (pre-commit / pre-push) を install
 install-hooks:
     lefthook install

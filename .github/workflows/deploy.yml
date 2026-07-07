@@ -23,18 +23,16 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # Rust toolchain — shared by the convert CLI and the WASM build below.
       - uses: actions-rust-lang/setup-rust-toolchain@v1
 
-      # convert: raw JSON → data.json (Rust pipeline; Go fully retired).
+      # convert: raw JSON (+ raw-details/ when present) → data.json + details/.
       - run: cargo build --release -p syllabus-cli
-      - run: ./target/release/syllabus-cli convert raw/*.json --compact -o web/public/data.json
+      - run: ./target/release/syllabus-cli convert raw/*.json --compact --details-dir raw-details -o web/public/data.json
 
-      # Rust core → WASM (the frontend imports the generated glue)
+      # Rust core → WASM (the frontend imports the generated glue).
       - uses: taiki-e/install-action@v2
         with:
           tool: wasm-pack@0.13.1
-      # --out-dir は crate ルート (crates/wasm) 相対なので ../../ で repo 直下へ。
       - run: wasm-pack build crates/wasm --target web --out-dir ../../web/src/wasm --out-name syllabus
 
       # Frontend: build
@@ -52,7 +50,7 @@ jobs:
 
       # Deploy
       - uses: actions/configure-pages@v6
-      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v4 + upload-artifact v7 (Node 24)
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v4
         with:
           path: web/dist
       - id: deployment

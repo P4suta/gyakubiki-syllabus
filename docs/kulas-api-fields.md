@@ -1,174 +1,174 @@
-# KULAS API レスポンスフィールド一覧
+# KULAS API response fields
 
-高知大学シラバスシステム（KULAS）のAPIレスポンス `selectKogiDtoList` 内の各フィールドを解説する。
+Describes each field inside `selectKogiDtoList` in the KULAS (Kochi University syllabus system) API response.
 
-## ページネーション（トップレベル）
+## Pagination (top level)
 
-| フィールド | 型 | 説明 |
+| Field | Type | Description |
 |-----------|-----|------|
-| `pageNo` | int | 現在のページ番号 |
-| `maxPageNo` | int | 最大ページ番号 |
-| `total` | int | 検索結果の全件数 |
-| `pageSize` | int | 1ページあたりの件数（通常500） |
+| `pageNo` | int | Current page number |
+| `maxPageNo` | int | Last page number |
+| `total` | int | Total number of results |
+| `pageSize` | int | Results per page (usually 500) |
 
-## 講義レコードフィールド
+## Course record fields
 
-### ★ 現在使用中（逆引きシラバスで利用）
+### Currently used (by gyakubiki-syllabus)
 
-| フィールド | 型 | 例 | 説明 |
+| Field | Type | Example | Description |
 |-----------|-----|-----|------|
-| `kogiCd` | string | `"12345"` | 授業コード。一意識別子 |
-| `kogiNm` | string | `"プログラミング入門"` | 科目名 |
-| `fukudai` | string? | `"（情報科学）"` | 副題。nullの場合あり |
-| `tantoKyoin` | string | `"山田 太郎, 鈴木 花子"` | 担当教員。カンマ区切りで複数名 |
-| `jikanwari` | string | `"1学期: 水曜日１時限"` | 時間割文字列。パーサーで構造化 |
-| `kogiKaikojikiNm` | string | `"1学期"` | 開講時期の名称 |
-| `kogiKubunNm` | string | `"講義"` | 講義区分（講義/演習/実験/実習/実技） |
-| `sekininBushoNm` | string | `"共通教育"` | 開講責任部署の名称 |
-| `kochiNm` | string | `"朝倉キャンパス"` | 校地（キャンパス）名称 |
-| `gakusokuKamokuNm` | string | `"プログラミング入門"` | 学則上の科目名。99.2%がkogiNmと同一 |
-| `taishoGakka` | string? | `"全学部共通"` | 対象学科 |
-| `taishoNenji` | string? | `"1年"` | 対象年次 |
-| `kamokuBunrui` | string? | `"専門"` | 科目分類 |
-| `kamokuBunya` | string? | `"情報"` | 科目分野 |
+| `kogiCd` | string | `"12345"` | Course code. Unique identifier |
+| `kogiNm` | string | `"プログラミング入門"` | Course name |
+| `fukudai` | string? | `"（情報科学）"` | Subtitle. May be null |
+| `tantoKyoin` | string | `"山田 太郎, 鈴木 花子"` | Instructors. Comma-separated for multiple |
+| `jikanwari` | string | `"1学期: 水曜日１時限"` | Timetable string. Structured by the parser |
+| `kogiKaikojikiNm` | string | `"1学期"` | Term name |
+| `kogiKubunNm` | string | `"講義"` | Course type (lecture/seminar/experiment/practicum/practical) |
+| `sekininBushoNm` | string | `"共通教育"` | Offering department name |
+| `kochiNm` | string | `"朝倉キャンパス"` | Campus name |
+| `gakusokuKamokuNm` | string | `"プログラミング入門"` | Official course name. Same as `kogiNm` in most cases |
+| `taishoGakka` | string? | `"全学部共通"` | Target department |
+| `taishoNenji` | string? | `"1年"` | Target year |
+| `kamokuBunrui` | string? | `"専門"` | Course classification |
+| `kamokuBunya` | string? | `"情報"` | Course field |
 
-### コード系（名称フィールドと対応）
+### Codes (paired with name fields)
 
-| フィールド | 型 | 例 | 対応する名称 |
+| Field | Type | Example | Paired name |
 |-----------|-----|-----|-------------|
-| `gakusokuKamokuCd` | string | `"K99001"` | 学則科目コード |
-| `sekininBushoCd` | string | `"000xxx"` | 責任部署コード |
-| `kochiCd` | string | `"01"` | 校地コード（01=朝倉, 02=物部, 03=岡豊） |
-| `kogiKaikojikiCd` | string | `"2"` | 開講時期コード |
-| `kogiKubunCd` | string | `"01"` | 講義区分コード（01=講義, 02=演習, etc.） |
-| `daihyoKyoinCd` | string | `"k00012345"` | 代表教員コード |
-| `daihyoKyoinNm` | string | `"山田 太郎"` | 代表教員名。tantoKyoinの最初の教員 |
+| `gakusokuKamokuCd` | string | `"K99001"` | Official course code |
+| `sekininBushoCd` | string | `"000xxx"` | Department code |
+| `kochiCd` | string | `"01"` | Campus code (01=Asakura, 02=Monobe, 03=Oko) |
+| `kogiKaikojikiCd` | string | `"2"` | Term code |
+| `kogiKubunCd` | string | `"01"` | Course type code (01=lecture, 02=seminar, etc.) |
+| `daihyoKyoinCd` | string | `"k00012345"` | Representative instructor code |
+| `daihyoKyoinNm` | string | `"山田 太郎"` | Representative instructor. First of `tantoKyoin` |
 
-### 時間割関連（補助）
+### Timetable (auxiliary)
 
-| フィールド | 型 | 例 | 説明 |
+| Field | Type | Example | Description |
 |-----------|-----|-----|------|
-| `daihyoYobiNm` | string | `"水曜日"` | 代表曜日。jikanwariの最初の曜日 |
-| `daihyoJigenNm` | string | `"１時限"` | 代表時限。jikanwariの最初の時限 |
-| `yobi` | string | `"水曜日"` | 曜日（daihyoYobiNmと同じことが多い） |
-| `jigen` | string | `"１時限"` | 時限（daihyoJigenNmと同じことが多い） |
+| `daihyoYobiNm` | string | `"水曜日"` | Representative weekday. First weekday in `jikanwari` |
+| `daihyoJigenNm` | string | `"１時限"` | Representative period. First period in `jikanwari` |
+| `yobi` | string | `"水曜日"` | Weekday (often same as `daihyoYobiNm`) |
+| `jigen` | string | `"１時限"` | Period (often same as `daihyoJigenNm`) |
 
-### 履修・管理フラグ
+### Enrollment / management flags
 
-| フィールド | 型 | 例 | 説明 |
+| Field | Type | Example | Description |
 |-----------|-----|-----|------|
-| `select` | bool | `false` | UI選択状態（クライアント用） |
-| `isOpened` | bool | `false` | UI展開状態（クライアント用） |
-| `rishuKarteFlg` | string | `"0"` | 履修カルテフラグ |
-| `chusenTaishoFlg` | string | `"0"` | 抽選対象フラグ |
-| `nendoKeizokuFlg` | string | `"0"` | 年度継続フラグ |
-| `lockFlg` | string | `"0"` | ロックフラグ |
-| `lockFlgNm` | string | `"しない"` | ロックフラグ名称 |
-| `webkogiSeisekiKyokaFlg` | string | `"1"` | Web成績許可フラグ |
-| `webkogiSeisekiKyokaFlgNm` | string | `"する"` | Web成績許可フラグ名称 |
-| `webrishuTaishogaiFlg` | string | `"0"` | Web履修対象外フラグ |
-| `webrishuTaishogaiFlgNm` | string | `"対象"` | Web履修対象外フラグ名称 |
-| `webrishuTorikeshifukaFlg` | string | `"0"` | Web履修取消不可フラグ |
-| `webrishuTorikeshifukaFlgNm` | string | `"取り消し可能"` | Web履修取消不可フラグ名称 |
-| `gpcaKeisanTaishoFlg` | string | `"1"` | GPA計算対象フラグ |
-| `gpcaKeisanTaishoFlgNm` | string | `"対象"` | GPA計算対象フラグ名称 |
-| `kokaiFlg` | string | `"1"` | 公開フラグ |
-| `kokaiFlgNm` | string | `"公開"` | 公開フラグ名称 |
-| `daihyoKogiFlg` | int | `0` | 代表講義フラグ |
-| `sagyoKanryoFlg` | int | `1` | 作業完了フラグ |
-| `sagyoKanryoFlgNm` | string | `"完了"` | 作業完了フラグ名称 |
-| `torokuType` | string | `"1"` | 登録タイプ |
+| `select` | bool | `false` | UI selection state (client-side) |
+| `isOpened` | bool | `false` | UI expansion state (client-side) |
+| `rishuKarteFlg` | string | `"0"` | Enrollment record flag |
+| `chusenTaishoFlg` | string | `"0"` | Lottery-eligible flag |
+| `nendoKeizokuFlg` | string | `"0"` | Year-continuation flag |
+| `lockFlg` | string | `"0"` | Lock flag |
+| `lockFlgNm` | string | `"しない"` | Lock flag name |
+| `webkogiSeisekiKyokaFlg` | string | `"1"` | Web grade permission flag |
+| `webkogiSeisekiKyokaFlgNm` | string | `"する"` | Web grade permission flag name |
+| `webrishuTaishogaiFlg` | string | `"0"` | Web enrollment-excluded flag |
+| `webrishuTaishogaiFlgNm` | string | `"対象"` | Web enrollment-excluded flag name |
+| `webrishuTorikeshifukaFlg` | string | `"0"` | Web enrollment cancel-not-allowed flag |
+| `webrishuTorikeshifukaFlgNm` | string | `"取り消し可能"` | Web enrollment cancel-not-allowed flag name |
+| `gpcaKeisanTaishoFlg` | string | `"1"` | GPA calculation-eligible flag |
+| `gpcaKeisanTaishoFlgNm` | string | `"対象"` | GPA calculation-eligible flag name |
+| `kokaiFlg` | string | `"1"` | Publish flag |
+| `kokaiFlgNm` | string | `"公開"` | Publish flag name |
+| `daihyoKogiFlg` | int | `0` | Representative-course flag |
+| `sagyoKanryoFlg` | int | `1` | Work-complete flag |
+| `sagyoKanryoFlgNm` | string | `"完了"` | Work-complete flag name |
+| `torokuType` | string | `"1"` | Registration type |
 
-### シラバス内容
+### Syllabus content
 
-| フィールド | 型 | 説明 |
+| Field | Type | Description |
 |-----------|-----|------|
-| `keyword` | string? | キーワード |
-| `gakushuMokuhyo` | string? | 学習目標 |
-| `gairyaku` | string? | 概略 |
-| `shosai` | string? | 詳細 |
-| `jugyoKeishiki` | string? | 授業形式 |
-| `hyokaHoho` | string? | 評価方法 |
-| `text` | string? | テキスト |
-| `textIsbn` | string? | テキストISBN |
-| `sankoBunken` | string? | 参考文献 |
-| `officeHour` | string? | オフィスアワー |
-| `gakuseiMessage` | string? | 学生へのメッセージ |
-| `junbiGakushu` | string? | 準備学習 |
+| `keyword` | string? | Keywords |
+| `gakushuMokuhyo` | string? | Learning objectives |
+| `gairyaku` | string? | Summary |
+| `shosai` | string? | Details |
+| `jugyoKeishiki` | string? | Class format |
+| `hyokaHoho` | string? | Grading method |
+| `text` | string? | Textbook |
+| `textIsbn` | string? | Textbook ISBN |
+| `sankoBunken` | string? | References |
+| `officeHour` | string? | Office hours |
+| `gakuseiMessage` | string? | Message to students |
+| `junbiGakushu` | string? | Preparatory study |
 | `url` | string? | URL |
-| `sanshoUrl` | string? | 参照URL |
+| `sanshoUrl` | string? | Reference URL |
 
-### 成績・入力パターン
+### Grading / input patterns
 
-| フィールド | 型 | 例 | 説明 |
+| Field | Type | Example | Description |
 |-----------|-----|-----|------|
-| `nyuryokuKikanPatternCd` | string | `"0000001"` | 入力期間パターンコード |
-| `nyuryokuKikanPatternNm` | string | `"標準パターン"` | 入力期間パターン名称 |
-| `tsuisaishiKikanPatternCd` | string | `"0000001"` | 追再試期間パターンコード |
-| `tsuisaishiKikanPatternNm` | string | `"標準パターン"` | 追再試期間パターン名称 |
-| `kogiseisekiShikenshubetsuPatternCd` | string | `"0000004"` | 成績試験種別パターンコード |
-| `kogiseisekiShikenshubetsuPatternNm` | string | `"素点入力パターン"` | 成績試験種別パターン名称 |
-| `tsuisaishikanriMode` | string | `"1"` | 追再試管理モード |
-| `tsuisaishikanriModeNm` | string | `"成績絞込無・申請管理無"` | 追再試管理モード名称 |
-| `shikenanketoTaishoFlgNm` | string | `"対象外"` | 試験案件対象フラグ名称 |
-| `kogiseisekiShikenhohoNm` | string? | null | 成績試験方法名称 |
-| `shikenshubetsuRyokinPatternCd` | string? | null | 試験種別料金パターンコード |
+| `nyuryokuKikanPatternCd` | string | `"0000001"` | Input-period pattern code |
+| `nyuryokuKikanPatternNm` | string | `"標準パターン"` | Input-period pattern name |
+| `tsuisaishiKikanPatternCd` | string | `"0000001"` | Makeup/re-exam period pattern code |
+| `tsuisaishiKikanPatternNm` | string | `"標準パターン"` | Makeup/re-exam period pattern name |
+| `kogiseisekiShikenshubetsuPatternCd` | string | `"0000004"` | Grade exam-type pattern code |
+| `kogiseisekiShikenshubetsuPatternNm` | string | `"素点入力パターン"` | Grade exam-type pattern name |
+| `tsuisaishikanriMode` | string | `"1"` | Makeup/re-exam management mode |
+| `tsuisaishikanriModeNm` | string | `"成績絞込無・申請管理無"` | Makeup/re-exam management mode name |
+| `shikenanketoTaishoFlgNm` | string | `"対象外"` | Exam-survey eligibility flag name |
+| `kogiseisekiShikenhohoNm` | string? | null | Grade exam-method name |
+| `shikenshubetsuRyokinPatternCd` | string? | null | Exam-type fee pattern code |
 
-### その他メタ情報
+### Other metadata
 
-| フィールド | 型 | 例 | 説明 |
+| Field | Type | Example | Description |
 |-----------|-----|-----|------|
-| `kaikoNendo` | string | `"2026"` | 開講年度 |
-| `kanaKogiNm` | string? | null | 科目名カナ |
-| `kogiRnm` | string? | null | 科目名略称 |
-| `chuyaKubunCd` | string? | null | 昼夜区分コード |
-| `chuyaKubunNm` | string? | null | 昼夜区分名称 |
-| `kogiJiyuCd` | string? | null | 講義事由コード |
-| `kogiJiyuNm` | string? | null | 講義事由名称 |
-| `rishu` | string? | null | 履修情報 |
-| `biko1`, `biko2` | string? | null | 備考1, 2 |
-| `kogiGroup` | string? | null | 講義グループ |
-| `kogiGroupCd` | string? | null | 講義グループコード |
-| `kogiGroupNm` | string? | null | 講義グループ名称 |
-| `yotoCd` | string? | null | 用途コード |
-| `syllabusKanren` | string? | null | シラバス関連 |
-| `syllabusKomokuPatternId` | string | `"4"` | シラバス項目パターンID |
-| `syllabusKomokuPatternNm` | string | `"【学部】2024年度以降..."` | シラバス項目パターン名称 |
-| `sosaKyoin` | string? | null | 操作教員 |
-| `sosaNichiji` | string? | null | 操作日時 |
-| `lastUpdate` | string | `"20260310175914381"` | 最終更新タイムスタンプ |
-| `lastUser` | string | `"k00012345"` | 最終更新ユーザー |
-| `kyoinSosaStatusNm` | string | `"更新した"` | 教員操作状態 |
-| `daihyoNumberingCd` | string | `""` | 代表ナンバリングコード |
-| `shozokubetsuNumberingCd` | string? | null | 所属別ナンバリングコード |
-| `kyoinShimei` | string? | null | 教員氏名 |
-| `kyointantoKubunNm` | string? | null | 教員担当区分名称 |
-| `sokaikoJikansu` | int | `0` | 総開講時間数 |
-| `kogiKaisu` | int | `0` | 講義回数 |
-| `shippitsuTantoKyoin` | string? | null | 執筆担当教員 |
-| `kamokuKaiso1` | string? | null | 科目階層1 |
-| `nyuryokuKanryoFlg` | string | `"1"` | 入力完了フラグ |
-| `nyuryokuKanryoFlgNm` | string | `"完了"` | 入力完了フラグ名称 |
-| `kJitsumuKeiken` | string? | null | 実務経験 |
-| `kOfficeHour` | string? | null | オフィスアワー（k接頭） |
-| `kYobi` | string? | null | 予備 |
-| `kKoji` | string? | null | 告示 |
-| `kBasho` | string? | null | 場所 |
-| `kBiko1`〜`kBiko10` | string? | null | 備考1〜10 |
+| `kaikoNendo` | string | `"2026"` | Academic year |
+| `kanaKogiNm` | string? | null | Course name in kana |
+| `kogiRnm` | string? | null | Course name abbreviation |
+| `chuyaKubunCd` | string? | null | Day/night division code |
+| `chuyaKubunNm` | string? | null | Day/night division name |
+| `kogiJiyuCd` | string? | null | Course reason code |
+| `kogiJiyuNm` | string? | null | Course reason name |
+| `rishu` | string? | null | Enrollment info |
+| `biko1`, `biko2` | string? | null | Remarks 1, 2 |
+| `kogiGroup` | string? | null | Course group |
+| `kogiGroupCd` | string? | null | Course group code |
+| `kogiGroupNm` | string? | null | Course group name |
+| `yotoCd` | string? | null | Purpose code |
+| `syllabusKanren` | string? | null | Syllabus relation |
+| `syllabusKomokuPatternId` | string | `"4"` | Syllabus item pattern ID |
+| `syllabusKomokuPatternNm` | string | `"【学部】2024年度以降..."` | Syllabus item pattern name |
+| `sosaKyoin` | string? | null | Operating instructor |
+| `sosaNichiji` | string? | null | Operation timestamp |
+| `lastUpdate` | string | `"20260310175914381"` | Last-update timestamp |
+| `lastUser` | string | `"k00012345"` | Last-update user |
+| `kyoinSosaStatusNm` | string | `"更新した"` | Instructor operation status |
+| `daihyoNumberingCd` | string | `""` | Representative numbering code |
+| `shozokubetsuNumberingCd` | string? | null | Per-affiliation numbering code |
+| `kyoinShimei` | string? | null | Instructor full name |
+| `kyointantoKubunNm` | string? | null | Instructor role name |
+| `sokaikoJikansu` | int | `0` | Total teaching hours |
+| `kogiKaisu` | int | `0` | Number of sessions |
+| `shippitsuTantoKyoin` | string? | null | Authoring instructor |
+| `kamokuKaiso1` | string? | null | Course hierarchy 1 |
+| `nyuryokuKanryoFlg` | string | `"1"` | Input-complete flag |
+| `nyuryokuKanryoFlgNm` | string | `"完了"` | Input-complete flag name |
+| `kJitsumuKeiken` | string? | null | Practical experience |
+| `kOfficeHour` | string? | null | Office hours (k-prefixed) |
+| `kYobi` | string? | null | Reserved |
+| `kKoji` | string? | null | Notice |
+| `kBasho` | string? | null | Location |
+| `kBiko1`–`kBiko10` | string? | null | Remarks 1–10 |
 
-### 配当関連
+### Assignment
 
-| フィールド | 型 | 説明 |
+| Field | Type | Description |
 |-----------|-----|------|
-| `haitoShozokuCdStart` | string? | 配当所属コード（開始） |
-| `haitoShozokuCdEnd` | string? | 配当所属コード（終了） |
-| `haitoGakunen` | string? | 配当学年 |
-| `haitoSemester` | string? | 配当セメスター |
-| `haitoClassCdStart` | string? | 配当クラスコード（開始） |
-| `haitoClassCdEnd` | string? | 配当クラスコード（終了） |
+| `haitoShozokuCdStart` | string? | Assigned affiliation code (start) |
+| `haitoShozokuCdEnd` | string? | Assigned affiliation code (end) |
+| `haitoGakunen` | string? | Assigned grade |
+| `haitoSemester` | string? | Assigned semester |
+| `haitoClassCdStart` | string? | Assigned class code (start) |
+| `haitoClassCdEnd` | string? | Assigned class code (end) |
 
-### ヘッダー項目
+### Header items
 
-| フィールド | 型 | 説明 |
+| Field | Type | Description |
 |-----------|-----|------|
-| `headerKomoku1`〜`headerKomoku4` | string? | カスタムヘッダー項目1〜4 |
+| `headerKomoku1`–`headerKomoku4` | string? | Custom header items 1–4 |

@@ -1,13 +1,11 @@
-# markdownlint-cli2 設定
+# markdownlint-cli2 config.
 # https://github.com/DavidAnson/markdownlint
 
-# 既定の rule set
 default: true
 
-# 個別 rule 調整
-MD013: false  # 行長制限 — 日本語混在で意味が薄い
-MD033: false  # inline HTML 許可
-MD041: false  # 先頭が H1 でなくても OK
-MD060: false  # table style (compact / aligned) はどちらも valid
+MD013: false  # no line-length limit (weak signal with mixed-width text)
+MD033: false  # allow inline HTML
+MD041: false  # first line need not be an H1
+MD060: false  # both compact and aligned table styles are fine
 MD024:
-  siblings_only: true  # 同階層内で重複見出し禁止のみ
+  siblings_only: true  # forbid duplicate headings only within a section

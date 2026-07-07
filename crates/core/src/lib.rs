@@ -1,25 +1,9 @@
-//! Pure, platform-agnostic core for the gyakubiki-syllabus viewer.
+//! Pure, platform-agnostic core for the gyakubiki-syllabus viewer: no WASM or DOM
+//! dependency, so it compiles to WASM for the browser and runs natively in the CLI.
 //!
-//! This crate is the single source of truth for the runtime logic that used to
-//! live in the TypeScript frontend (`web/src/lib`) and the Go pipeline. It
-//! deliberately has **no** WASM or DOM dependency, so it both compiles to WASM
-//! for the browser and runs natively in the `convert` CLI.
-//!
-//! Layering:
-//! - [`model`] — faithful DTOs for the v3 JSON wire format (`data.json`).
-//! - [`index`] — strongly-typed domain indices (course / dictionary / grid).
-//! - [`text`] — query/haystack normalization (shared by producer and consumer).
-//! - [`bitset`] — the compact filter index primitive.
-//!
-//! Consumer side (read `data.json`, answer the UI):
-//! - [`grid`] — the timetable layout (display-agnostic cells).
-//! - [`engine`] — the domain layer tying it all together ([`Engine`]).
-//!
-//! Producer side (build `data.json` from raw KULAS JSON — the native pipeline
-//! that replaces the Go `internal/transform`):
-//! - [`parser`] — jikanwari → semester/day/period slots.
-//! - [`dict`] — dictionary ordering.
-//! - [`convert`] — raw courses → [`model::ProcessedData`] ([`convert_v2`]).
+//! The producer side (`convert` CLI) builds `data.json` from raw KULAS JSON; the
+//! consumer side ([`Engine`]) reads it back and answers the UI's filter/grid
+//! queries. [`model`] is the v3 wire format the two sides share.
 
 #![forbid(unsafe_code)]
 

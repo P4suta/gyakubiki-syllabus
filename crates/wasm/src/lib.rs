@@ -2,9 +2,9 @@
 //!
 //! The boundary is deliberately **indices-out**: the dataset lives once in WASM
 //! linear memory, `filter`/`grid` return only course *indices*, and the rich
-//! view-models cross the boundary exactly once via [`SyllabusEngine::all_course_views`].
-//! The JS side keeps a read-only cache and resolves indices against it, so no
-//! per-query data marshaling happens.
+//! view-models cross the boundary once via [`SyllabusEngine::all_course_views`].
+//! The JS side caches those and resolves indices against them, so no per-query
+//! data marshaling happens.
 
 #![forbid(unsafe_code)]
 
@@ -130,6 +130,12 @@ impl SyllabusEngine {
     #[wasm_bindgen(js_name = generatedAt)]
     pub fn generated_at(&self) -> String {
         self.inner.generated_at().to_owned()
+    }
+
+    /// The dataset's academic year (`kaikoNendo`), for the official deep link.
+    #[wasm_bindgen(js_name = year)]
+    pub fn year(&self) -> String {
+        self.inner.year().to_owned()
     }
 }
 

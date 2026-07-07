@@ -27,7 +27,68 @@ export interface Course {
 	nen?: string
 	bunrui?: string
 	bunya?: string
+	pat?: string // syllabusKomokuPatternId, for the official syllabus deep link
+	unit?: string // credits (from syllabus detail)
+	dm?: string // delivery mode: onsite | online | ondemand | hybrid
+	ev?: string[] // assessment summary for the card, e.g. ["attendance:40","exam:60"]
 	st: string // searchText
+}
+
+// --- Full syllabus detail (lazy-loaded from details/{cd}.json) ---
+// Mirrors the Rust `SanshoDetail` emitted by `syllabus-cli`.
+
+export interface Delivery {
+	mode: string
+	raw?: string
+	isMedia?: boolean
+}
+
+export interface EvalRow {
+	item: string
+	weight?: number
+	type: string // exam | report | attendance | presentation | quiz | other
+}
+
+export interface Eval {
+	rows: EvalRow[]
+	note?: string
+}
+
+export interface PlanItem {
+	n: number
+	text: string
+}
+
+export interface OfficeHour {
+	name?: string
+	day?: string
+	time?: string
+	place?: string
+}
+
+export interface Labelled {
+	label: string
+	text: string
+}
+
+export interface CourseDetail {
+	cd: string
+	unit?: string
+	delivery?: Delivery
+	eval?: Eval
+	summary?: string
+	aims?: string
+	goals?: string[]
+	plan?: PlanItem[]
+	textbooks?: string
+	prereq?: string
+	prep?: string
+	officeHour?: OfficeHour[]
+	keywords?: string[]
+	teachers?: string[]
+	numbering?: string[]
+	sdgs?: string[]
+	extra?: Labelled[]
 }
 
 export interface Dictionaries {

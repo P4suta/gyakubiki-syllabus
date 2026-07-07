@@ -1,0 +1,87 @@
+name: Fetch syllabus details
+
+# Crawls the KULAS「シラバス参照」detail pages into raw-details/. Runs only here
+# (never locally). Daily, but capped per run (--limit) and incremental: each
+# course is written as it is fetched and unchanged courses are skipped, so a large
+# backlog is spread over many short off-peak sessions rather than one long one.
+# A partial run is committed (if: always()) and a later run continues.
+
+on:
+  schedule:
+    # UTC 20:00 = JST 05:00 (low-traffic early morning), 1h after the grid refresh
+    # so this run sees the fresh lastUpdate values.
+    - cron: '0 20 * * *'
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: Max courses to fetch this run (0 = all; e.g. backfill)
+        type: string
+        default: '300'
+      only:
+        description: Fetch only these course codes (comma-separated)
+        type: string
+        default: ''
+      sleep-ms:
+        description: Base sleep between requests (ms)
+        type: string
+        default: '3000'
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: fetch-details
+  cancel-in-progress: false
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Build syllabus-cli
+        run: cargo build --release -p syllabus-cli
+
+      - name: Fetch details
+        env:
+          KULAS_API_TOKEN: ${{ secrets.KULAS_API_TOKEN }}
+        run: |
+          # --max-secs is a conservative safety valve below the job timeout so the
+          # commit step always runs and a later run resumes (if: always()). The
+          # daily --limit keeps a normal run to ~15-25 min; most days it fetches ~0
+          # (nothing changed) and exits fast.
+          limit="${{ inputs.limit || '300' }}"
+          args=(fetch-details --out-dir raw-details/ --sleep-ms "${{ inputs.sleep-ms || '3000' }}" --jitter-ms 2000 --max-secs 3000)
+          if [[ "$limit" != "0" && -n "$limit" ]]; then
+            args+=(--limit "$limit")
+          fi
+          if [[ -n "${{ inputs.only }}" ]]; then
+            args+=(--only "${{ inputs.only }}")
+          fi
+          ./target/release/syllabus-cli "${args[@]}"
+
+      - name: Commit progress
+        # always(): commit what was fetched even if the crawl aborted or timed out.
+        if: always()
+        id: commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if [[ -n "$(git status --porcelain raw-details/)" ]]; then
+            git add raw-details/
+            git commit -m "chore(raw-details): syllabus detail crawl ($(date -u +%Y-%m-%d))"
+            git push
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No changes."
+          fi
+
+      - name: Trigger deploy
+        if: steps.commit.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run deploy.yml --ref main

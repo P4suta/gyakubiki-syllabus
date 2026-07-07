@@ -2,28 +2,17 @@
 
 /// Normalize a string so a query matches the precomputed search haystack (`st`).
 ///
-/// Converts the full-width space (U+3000) to an ASCII space, then lowercases —
-/// the same two steps, in the same order, as the Go haystack builder
-/// `buildSearchTextV2` in `internal/transform/v2.go` (which bakes `st`).
-///
-/// The match is exact over the ASCII and Japanese text this dataset contains.
-/// It is *not* guaranteed byte-for-byte across the full Unicode range: Go's
-/// `strings.ToLower` uses simple case mapping, whereas Rust's `to_lowercase`
-/// applies the full mapping (e.g. Greek final sigma `Σ`→`ς`, dotted `İ`), so a
-/// query in those exotic scripts could fold differently than the haystack did.
-///
-/// The haystack is normalized once at data-generation time; only the query is
-/// normalized here, at search time.
+/// Converts the full-width space (U+3000) to an ASCII space, then lowercases.
+/// The haystack (`st`) is normalized the same way at data-generation time; only
+/// the query is normalized here, at search time — so both share one definition.
 #[must_use]
 pub fn normalize(input: &str) -> String {
     input.replace('\u{3000}', " ").to_lowercase()
 }
 
-/// Build a course's search haystack and [`normalize`] it — the port of Go's
-/// `buildSearchTextV2`. The parts (name, optional subtitle, instructor, code,
-/// department) are joined with ASCII spaces and run through [`normalize`], so the
-/// producer's haystack and the consumer's query share one definition of
-/// "normalized". Inputs are expected already trimmed, as in the Go pipeline.
+/// Build a course's search haystack and [`normalize`] it. The parts (name,
+/// optional subtitle, instructor, code, department) are joined with ASCII spaces.
+/// Inputs are expected already trimmed.
 #[must_use]
 pub fn search_text(
     name: &str,
@@ -79,5 +68,43 @@ mod tests {
             search_text("English", Some("Communication"), "Smith", "004", "理工学部"),
             "english communication smith 004 理工学部"
         );
+    }
+
+    use proptest::prelude::*;
+
+    proptest! {
+        /// Normalizing an already-normalized string is a no-op (the query and the
+        /// haystack must land on the same canonical form).
+        #[test]
+        fn normalize_is_idempotent(s in ".*") {
+            let once = normalize(&s);
+            prop_assert_eq!(normalize(&once), once);
+        }
+
+        /// The canonical form contains no full-width space and no ASCII uppercase —
+        /// the two things that would otherwise make a query miss the haystack.
+        #[test]
+        fn normalized_output_has_no_fullwidth_space_or_ascii_upper(s in ".*") {
+            let full_width_space = '\u{3000}';
+            let out = normalize(&s);
+            prop_assert!(!out.contains(full_width_space));
+            prop_assert!(!out.bytes().any(|b| b.is_ascii_uppercase()));
+        }
+
+        /// `search_text` is exactly `normalize` of the space-joined parts — the
+        /// contract the search relies on (haystack and query share `normalize`).
+        #[test]
+        fn search_text_is_normalize_of_the_join(
+            name in "[\\p{Han}a-zA-Z0-9]{0,10}",
+            instr in "[\\p{Han}a-zA-Z0-9]{0,10}",
+            code in "[a-zA-Z0-9]{0,8}",
+            dept in "[\\p{Han}a-zA-Z0-9]{0,10}",
+        ) {
+            let st = search_text(&name, None, &instr, &code, &dept);
+            let joined = normalize(&[name.as_str(), instr.as_str(), code.as_str(), dept.as_str()].join(" "));
+            prop_assert_eq!(&st, &joined);
+            // A normalized query drawn from one part is found in the haystack.
+            prop_assert!(st.contains(&normalize(&instr)));
+        }
     }
 }

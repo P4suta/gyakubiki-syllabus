@@ -1,23 +1,30 @@
-name: Fetch syllabus monthly
+name: Fetch syllabus grid
+
+# The grid fetch (findPage) is light (~8 pages, no per-request sleep, ~15 min), so
+# running it often costs the server almost nothing. Freshness matters most right
+# before a term starts (syllabi are published/updated in Mar-Apr and Sep-Oct), so
+# the schedule is seasonal: daily in the busy months, weekly otherwise. This keeps
+# lastUpdate current, which the daily fetch-details crawl then picks up.
 
 on:
   schedule:
-    # UTC 月初 19:00 = JST 月 2 日 04:00 (≒ 月初の早朝に取得)
-    - cron: '0 19 1 * *'
+    # 19:00 UTC = 04:00 JST (1h before the detail crawl at JST 05:00).
+    - cron: '0 19 * 3,4,9,10 *'            # busy months (Mar/Apr/Sep/Oct): daily
+    - cron: '0 19 * 1,2,5,6,7,8,11,12 0'   # quiet months: Sundays only (weekly)
   workflow_dispatch:
     inputs:
       dry-run:
-        description: 取得して件数のみ報告、commit しない
+        description: Fetch and report counts only, without committing
         type: boolean
         default: false
       year:
-        description: kaikoNendo を明示指定 (空なら現在年度を自動計算)
+        description: Set kaikoNendo explicitly (empty = auto-compute current year)
         type: string
         default: ''
 
 permissions:
-  contents: write   # main に raw/ を push するため
-  actions: write    # gh workflow run deploy.yml をトリガーするため
+  contents: write   # push raw/ to main
+  actions: write    # trigger deploy.yml via gh workflow run
 
 concurrency:
   group: fetch-syllabus
@@ -36,7 +43,7 @@ jobs:
 
       - name: Fetch syllabus
         env:
-          # 空なら HTML から entryContext を抽出 (通常)。検証用の上書きのみ。
+          # Empty (the norm) extracts entryContext from the HTML; set only to override for testing.
           KULAS_API_TOKEN: ${{ secrets.KULAS_API_TOKEN }}
         run: |
           args=(fetch --out-dir raw/)
@@ -50,14 +57,14 @@ jobs:
 
       - name: Commit & push if changed
         id: commit
-        # type: boolean の input は truthy 評価。dry-run=false のときだけ実行。
+        # Run only when dry-run is false.
         if: ${{ !inputs.dry-run }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           if [[ -n "$(git status --porcelain raw/)" ]]; then
             git add raw/
-            git commit -m "chore(raw): monthly syllabus refresh ($(date -u +%Y-%m-%d))"
+            git commit -m "chore(raw): syllabus grid refresh ($(date -u +%Y-%m-%d))"
             git push
             echo "changed=true" >> "$GITHUB_OUTPUT"
           else

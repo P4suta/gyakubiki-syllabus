@@ -1,9 +1,5 @@
 //! A compact bitset over `u64` words, used as the precomputed filter index.
-//!
-//! The producer (Go `encodeBitsets` in `internal/transform/v2.go`) serializes
-//! `[]uint64` as little-endian bytes and base64 (`StdEncoding`). We decode the
-//! exact same bytes back into `u64` words, so the bit semantics match the Go
-//! producer and the former TS consumer (`web/src/lib/bitset.ts`).
+//! Words are serialized as little-endian bytes then standard base64.
 
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 
@@ -23,7 +19,7 @@ pub struct BitSet {
 impl BitSet {
     const BITS_PER_WORD: usize = u64::BITS as usize;
 
-    /// Decode a base64 little-endian bitset produced by the Go pipeline.
+    /// Decode a base64 little-endian bitset.
     ///
     /// # Errors
     /// Returns [`DecodeError`] if `encoded` is not valid standard base64.
@@ -40,10 +36,8 @@ impl BitSet {
         Ok(Self { words })
     }
 
-    /// Encode the way the Go pipeline's `encodeBitsets` does — each `u64` word as
-    /// little-endian bytes, then standard base64. The exact inverse of
-    /// [`from_base64`], and byte-identical to the Go producer, so a decoded set
-    /// re-encodes to the same string.
+    /// Encode each `u64` word as little-endian bytes, then standard base64 — the
+    /// inverse of [`from_base64`].
     #[must_use]
     pub fn to_base64(&self) -> String {
         let mut bytes = Vec::with_capacity(self.words.len() * Self::BITS_PER_WORD / 8);
@@ -53,8 +47,7 @@ impl BitSet {
         STANDARD.encode(bytes)
     }
 
-    /// The empty set — no words, so every membership test is `false` and an
-    /// [`and`](Self::and) against it collapses to empty.
+    /// The empty set: every membership test is `false`.
     #[must_use]
     pub fn empty() -> Self {
         Self::default()
@@ -77,10 +70,8 @@ impl BitSet {
 
     /// Create an all-zero set wide enough for `num_words` 64-bit words.
     ///
-    /// The producer sizes this to `n.div_ceil(64)` for `n` courses and keeps
-    /// every word in [`to_base64`], so a dimension stays fixed-width — matching
-    /// Go's `encodeBitsets`, which emits `len(words)*8` bytes regardless of which
-    /// bits are set.
+    /// [`to_base64`] keeps every word, so a dimension stays fixed-width
+    /// regardless of which bits are set.
     #[must_use]
     pub fn with_words(num_words: usize) -> Self {
         Self {
@@ -107,8 +98,8 @@ impl BitSet {
 
     /// Return a new bitset that is the bitwise AND of `self` and `other`.
     ///
-    /// Like the original TS implementation, the result is truncated to the
-    /// shorter operand; bits beyond it are zero in at least one operand anyway.
+    /// Truncated to the shorter operand; bits beyond it are zero in at least one
+    /// operand anyway.
     #[must_use]
     pub fn and(&self, other: &Self) -> Self {
         let words = self
@@ -162,7 +153,7 @@ mod tests {
     use super::BitSet;
     use base64::{engine::general_purpose::STANDARD, Engine as _};
 
-    /// Encode raw little-endian bytes the way the Go pipeline does, for tests.
+    /// Base64-encode raw little-endian bytes for test fixtures.
     fn b64(bytes: &[u8]) -> String {
         STANDARD.encode(bytes)
     }
@@ -260,8 +251,94 @@ mod tests {
 
     #[test]
     fn with_words_is_fixed_width_even_when_empty() {
-        // No bits set, but two reserved words => 16 little-endian bytes, like Go.
+        // No bits set, but two reserved words => 16 little-endian bytes.
         let bs = BitSet::with_words(2);
         assert_eq!(bs.to_base64(), b64(&[0u8; 16]));
+    }
+
+    use proptest::prelude::*;
+    use std::collections::BTreeSet;
+
+    /// A bitset of `num_words` words with an arbitrary set of in-range bits, plus
+    /// the word count so tests can build a matching `all_ones`.
+    fn any_bitset() -> impl Strategy<Value = (BitSet, usize)> {
+        (1usize..8).prop_flat_map(|nw| {
+            let cap = nw * 64;
+            prop::collection::vec(0..cap, 0..32).prop_map(move |positions| {
+                let mut bs = BitSet::with_words(nw);
+                for p in positions {
+                    bs.set(p);
+                }
+                (bs, nw)
+            })
+        })
+    }
+
+    /// Two bitsets of the *same* width (so `and` is a clean intersection).
+    fn two_same_width() -> impl Strategy<Value = (BitSet, BitSet)> {
+        (1usize..8).prop_flat_map(|nw| {
+            let cap = nw * 64;
+            (
+                prop::collection::vec(0..cap, 0..32),
+                prop::collection::vec(0..cap, 0..32),
+            )
+                .prop_map(move |(pa, pb)| {
+                    let mut a = BitSet::with_words(nw);
+                    let mut b = BitSet::with_words(nw);
+                    for p in pa {
+                        a.set(p);
+                    }
+                    for p in pb {
+                        b.set(p);
+                    }
+                    (a, b)
+                })
+        })
+    }
+
+    proptest! {
+        /// base64 is a lossless round-trip, width included (the wire contract with
+        /// the Go/JS consumer).
+        #[test]
+        fn base64_round_trips((bs, _nw) in any_bitset()) {
+            let decoded = BitSet::from_base64(&bs.to_base64()).unwrap();
+            prop_assert_eq!(decoded, bs);
+        }
+
+        /// The two "which bits are set" paths agree, and positions are ascending.
+        #[test]
+        fn count_matches_iter_and_is_sorted((bs, _nw) in any_bitset()) {
+            let ones: Vec<usize> = bs.iter_ones().collect();
+            prop_assert_eq!(bs.count_ones() as usize, ones.len());
+            prop_assert!(ones.windows(2).all(|w| w[0] < w[1]));
+        }
+
+        /// AND is commutative, idempotent, and `all_ones` of the same width is its
+        /// identity.
+        #[test]
+        fn and_is_commutative_idempotent_with_identity((bs, nw) in any_bitset()) {
+            prop_assert_eq!(bs.and(&bs), bs.clone()); // idempotent
+            let all = BitSet::all_ones(nw * 64);
+            prop_assert_eq!(bs.and(&all), bs.clone()); // identity
+            prop_assert_eq!(all.and(&bs), bs); // commutes with identity
+        }
+
+        /// AND equals set intersection of the two operands' positions.
+        #[test]
+        fn and_equals_intersection((a, b) in two_same_width()) {
+            let got: Vec<usize> = a.and(&b).iter_ones().collect();
+            let sa: BTreeSet<usize> = a.iter_ones().collect();
+            let sb: BTreeSet<usize> = b.iter_ones().collect();
+            let want: Vec<usize> = sa.intersection(&sb).copied().collect();
+            prop_assert_eq!(got, want);
+        }
+
+        /// Decoding never panics on arbitrary input — valid base64 decodes, other
+        /// strings return an error.
+        #[test]
+        fn from_base64_never_panics(bytes in prop::collection::vec(any::<u8>(), 0..64), junk in ".*") {
+            prop_assert!(BitSet::from_base64(&STANDARD.encode(&bytes)).is_ok());
+            let _ = BitSet::from_base64(&junk);
+        }
     }
 }

@@ -80,6 +80,6 @@ onMount(async () => {
 		<Timetable {grid} days={engine.days} onselect={(c) => { selectedCourse = c }} />
 	</div>
 	{#if selectedCourse}
-		<CourseModal course={selectedCourse} dicts={engine.dicts} onclose={() => { selectedCourse = null }} />
+		<CourseModal course={selectedCourse} dicts={engine.dicts} year={engine.year} onclose={() => { selectedCourse = null }} />
 	{/if}
 {/if}

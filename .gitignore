@@ -13,10 +13,20 @@ web/node_modules/
 web/dist/
 web/.svelte-kit/
 
+# Playwright E2E
+web/test-results/
+web/playwright-report/
+web/blob-report/
+web/.playwright/
+
 # Data files (CIで生成)
 data.json
 web/public/data.json
 web/public/test-data.json
+web/public/details/
+
+# Local dummy dataset (gen-sample output; regenerate with `just dev-sample`)
+dev-data/
 
 # OS
 .DS_Store
