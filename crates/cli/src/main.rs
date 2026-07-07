@@ -12,7 +12,7 @@ use clap::{Args, Parser, Subcommand};
 
 use syllabus_cli::convert::render_data_json;
 use syllabus_cli::detail::SanshoDetail;
-use syllabus_cli::{banner, fetch, fetch_details, fields, gen_sample, io, term};
+use syllabus_cli::{banner, commit, fetch, fetch_details, fields, gen_sample, io, term};
 
 #[derive(Parser)]
 #[command(
@@ -33,6 +33,8 @@ enum Command {
     Fetch(fetch::FetchArgs),
     /// Fetch KULAS syllabus detail pages and update `raw-details/`.
     FetchDetails(fetch_details::FetchDetailsArgs),
+    /// Commit changed files to the current branch (signed, via the GitHub API; CI only).
+    Commit(commit::CommitArgs),
     /// Generate the display-spec doc / TS from FIELD_SPEC (--check verifies only).
     GenFieldDocs(GenFieldDocsArgs),
     /// Synthesize a dummy dataset (raw + details) for local UI development.
@@ -90,6 +92,7 @@ fn dispatch() -> Result<()> {
         Command::Convert(args) => convert(args),
         Command::Fetch(args) => fetch::run(args),
         Command::FetchDetails(args) => fetch_details::run(args),
+        Command::Commit(args) => commit::run(args),
         Command::GenFieldDocs(args) => fields::generate(&args.root, args.check),
         Command::GenSample(args) => gen_sample::run(args),
     }

@@ -7,6 +7,7 @@
 //! - [`io`] — read and parse the raw input files `convert` ingests.
 
 pub mod banner;
+pub mod commit;
 pub mod convert;
 pub mod detail;
 pub mod fetch;

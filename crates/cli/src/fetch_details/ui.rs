@@ -177,6 +177,38 @@ pub fn summary(fetched: usize, skipped: &[(String, String)], elapsed: Duration, 
     eprintln!();
 }
 
+/// A framed, front-and-center box for the first failure — its cause is the first
+/// thing you see when you open a failed run.
+pub fn spotlight(cd: &str, diagnostic: &str) {
+    let st = Style::detect();
+    eprintln!();
+    eprintln!(
+        "  {} {}",
+        st.red("┏━ first failure"),
+        st.dim(&format!("· course {cd}")),
+    );
+    for line in diagnostic.lines() {
+        eprintln!("  {} {}", st.red("┃"), st.dim(line));
+    }
+    eprintln!("  {}", st.red("┗━"));
+    eprintln!();
+}
+
+/// A one-line verdict + an actionable hint + where the full context was saved.
+pub fn diagnosis(headline: &str, hint: Option<&str>, artifact: &Path) {
+    let st = Style::detect();
+    eprintln!("  {}  {}", st.red("⚑ diagnosis"), st.bold(headline));
+    if let Some(h) = hint {
+        eprintln!("  {} {}", st.yellow("→"), st.yellow(h));
+    }
+    eprintln!(
+        "  {} {}",
+        st.dim("full context →"),
+        st.dim(&artifact.display().to_string()),
+    );
+    eprintln!();
+}
+
 /// Skip reasons bucketed and ranked most-common first.
 fn reason_counts(skipped: &[(String, String)]) -> Vec<(&str, usize)> {
     let mut counts: BTreeMap<&str, usize> = BTreeMap::new();
@@ -296,6 +328,15 @@ mod tests {
             ],
             Duration::from_secs(52 * 60 + 10),
             false,
+        );
+        spotlight(
+            "09005",
+            "HTTP 400 — response body:\n{\"errorMessages\":[{\"message\":\"service method 'SyllabusSanshoWebApi initFind' not found\"}]}",
+        );
+        diagnosis(
+            "0 fetched · 10 skipped of 10 attempted",
+            Some("The sansho API path/method may have changed — compare the captured body with INIT_FIND_URL."),
+            std::path::Path::new("diagnostics/fetch-details.md"),
         );
     }
 
