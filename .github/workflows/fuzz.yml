@@ -1,0 +1,46 @@
+name: Fuzz
+
+# Continuous, non-blocking fuzzing of the two parsers that face messy real-world
+# input. Weekly plus on-demand; never gates a PR.
+on:
+  schedule:
+    - cron: "0 4 * * 1" # Mondays 04:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fuzz-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fuzz:
+    name: cargo-fuzz (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [fuzz_parse_jikanwari, fuzz_parse_sansho_html]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: nightly
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-fuzz
+      - name: seed corpus
+        run: |
+          mkdir -p crates/cli/fuzz/corpus/fuzz_parse_sansho_html
+          cp crates/cli/tests/fixtures/sansho_sample.html \
+             crates/cli/fuzz/corpus/fuzz_parse_sansho_html/ || true
+      - name: fuzz
+        working-directory: crates/cli/fuzz
+        run: cargo +nightly fuzz run ${{ matrix.target }} -- -max_total_time=120
+      - name: upload crashes
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-artifacts-${{ matrix.target }}
+          path: crates/cli/fuzz/artifacts/

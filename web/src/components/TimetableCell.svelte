@@ -10,7 +10,7 @@ interface Props {
 let { courses, onselect }: Props = $props()
 </script>
 
-<div class="bg-white rounded-lg min-h-24 p-1.5">
+<div class="bg-surface-primary rounded-lg min-h-24 p-1.5">
 	{#each courses as course (course.cd)}
 		<CourseCard {course} onclick={() => onselect(course)} />
 	{/each}

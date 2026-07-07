@@ -1,18 +1,17 @@
-//! Dictionary ordering for the v3 output — a faithful port of the Go pipeline's
-//! `sortSemesters` / `sortCampuses` / `sortDepartments` / `sortKubun` /
-//! `sortKaikojiki` (`internal/transform/{transform,v2}.go`).
+//! Dictionary ordering for the v3 output.
 //!
 //! Semesters and campuses use a fixed domain order with unknown values sorted
-//! last; departments and kubun are plain lexical. Go's `sortSemesters` has no
-//! tiebreak (its only ties are unknown values, which the dataset never has and
-//! Go itself leaves non-deterministic), so we add a lexical tiebreak: identical
-//! output for the known values the data contains, and *deterministic* for the
-//! unknowns Go left to chance.
+//! last; departments and kubun are lexical with the `その他` catch-all pushed to
+//! the end. A lexical tiebreak makes the ordering of equal-rank labels
+//! deterministic.
 
 use std::collections::BTreeSet;
 
-/// Sort key for a semester label; unknown labels sort last, as in Go's
-/// `semesterOrder` map (`internal/transform/transform.go`).
+/// The catch-all bucket label for empty dimension values, sorted last in the
+/// otherwise-lexical dimensions.
+const SONOTA_LABEL: &str = "その他";
+
+/// Sort key for a semester label; unknown labels sort last.
 fn semester_order(label: &str) -> u8 {
     match label {
         "1学期" => 0,
@@ -28,8 +27,7 @@ fn semester_order(label: &str) -> u8 {
     }
 }
 
-/// Sort key for a campus label; unknown labels sort last, as in Go's
-/// `campusOrder` map (`internal/transform/v2.go`).
+/// Sort key for a campus label; unknown labels sort last.
 fn campus_order(label: &str) -> u8 {
     match label {
         "朝倉キャンパス" => 0,
@@ -46,8 +44,7 @@ pub fn sort_semesters(set: &BTreeSet<String>) -> Vec<String> {
     sorted_by_order(set, semester_order)
 }
 
-/// Kaikojiki share the semester ordering (Go's `sortKaikojiki` delegates to
-/// `sortSemesters`).
+/// Kaikojiki share the semester ordering.
 #[must_use]
 pub fn sort_kaikojiki(set: &BTreeSet<String>) -> Vec<String> {
     sorted_by_order(set, semester_order)
@@ -59,16 +56,22 @@ pub fn sort_campuses(set: &BTreeSet<String>) -> Vec<String> {
     sorted_by_order(set, campus_order)
 }
 
-/// Departments in plain lexical (UTF-8 byte) order — matches Go's `sort.Strings`.
-#[must_use]
-pub fn sort_departments(set: &BTreeSet<String>) -> Vec<String> {
-    set.iter().cloned().collect()
+/// Sort key that pushes the `その他` catch-all to the end of an otherwise
+/// lexical dimension.
+fn sonota_last(label: &str) -> u8 {
+    u8::from(label == SONOTA_LABEL)
 }
 
-/// Kubun in plain lexical order — matches Go's `sort.Strings`.
+/// Departments in lexical (UTF-8 byte) order, with `その他` last.
+#[must_use]
+pub fn sort_departments(set: &BTreeSet<String>) -> Vec<String> {
+    sorted_by_order(set, sonota_last)
+}
+
+/// Kubun in lexical order, with `その他` last.
 #[must_use]
 pub fn sort_kubun(set: &BTreeSet<String>) -> Vec<String> {
-    set.iter().cloned().collect()
+    sorted_by_order(set, sonota_last)
 }
 
 /// Collect a set into a vector ordered by `order` first, then lexically. Since
@@ -124,7 +127,17 @@ mod tests {
     fn departments_are_lexical() {
         let got = sort_departments(&set(&["理工学部", "人文社会科学部", "医学部"]));
         let mut want = ["理工学部", "人文社会科学部", "医学部"];
-        want.sort_unstable(); // UTF-8 byte order, same as Go sort.Strings
+        want.sort_unstable(); // UTF-8 byte order
         assert_eq!(got, want);
+    }
+
+    #[test]
+    fn sonota_catch_all_sorts_last_in_departments_and_kubun() {
+        // その他 begins with a hiragana (U+305D) that would sort *before* the
+        // kanji-led names lexically; the catch-all must still land last.
+        let got = sort_departments(&set(&["その他", "理工学部", "医学部"]));
+        assert_eq!(got.last().unwrap(), "その他");
+        let got = sort_kubun(&set(&["その他", "講義", "演習"]));
+        assert_eq!(got.last().unwrap(), "その他");
     }
 }

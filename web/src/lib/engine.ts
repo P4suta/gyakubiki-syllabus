@@ -4,7 +4,7 @@ import type { Course, Dictionaries } from '../types/course'
 /** A timetable cell key, `"<day label>-<period>"` (e.g. `"月-1"`). */
 export type GridKey = `${string}-${number}`
 
-/** Periods shown in the grid (1限‥6限); fixed, unlike the day columns. */
+/** Periods shown in the grid (1–6); fixed, unlike the day columns. */
 export const PERIODS = [1, 2, 3, 4, 5, 6] as const
 
 const WEEKDAYS = ['月', '火', '水', '木', '金'] as const
@@ -31,8 +31,7 @@ interface WasmGridResult {
  * Assemble the WASM grid (numeric day/period cells of course *indices*) into the
  * UI's `Map<GridKey, Course[]>`, resolving indices against the view cache.
  *
- * Pure and WASM-free so it can be unit-tested directly; every day×period cell is
- * pre-seeded to `[]` to match the original `buildGrid` contract.
+ * Pure and WASM-free for direct unit testing.
  */
 export function assembleGrid(
 	cells: WasmGridCell[],
@@ -67,6 +66,7 @@ export class SyllabusEngine {
 	readonly dicts: Dictionaries
 	readonly courses: readonly Course[]
 	readonly generatedAt: string
+	readonly year: string
 	readonly hasSaturday: boolean
 	readonly days: readonly string[]
 
@@ -77,6 +77,7 @@ export class SyllabusEngine {
 		this.courses = views
 		this.dicts = dicts
 		this.generatedAt = wasm.generatedAt()
+		this.year = wasm.year()
 		this.hasSaturday = wasm.hasSaturday()
 		this.days = dayLabels(this.hasSaturday)
 	}
@@ -85,10 +86,9 @@ export class SyllabusEngine {
 	static async create(): Promise<SyllabusEngine> {
 		await initWasm()
 
-		// `data.json` lives at a stable, unhashed URL, so browsers cache it hard.
-		// `no-cache` forces an ETag revalidation every load: a wire-format bump or
-		// the monthly data refresh reaches users instead of erroring on a stale copy
-		// (a cached v2 against the v3 engine, say). 304 keeps it cheap when unchanged.
+		// `data.json` is at a stable, unhashed URL, so `no-cache` forces an ETag
+		// revalidation each load — a wire-format bump or the monthly refresh reaches
+		// users instead of erroring on a hard-cached stale copy. 304s stay cheap.
 		const res = await fetch(`${import.meta.env.BASE_URL}data.json`, { cache: 'no-cache' })
 		if (!res.ok) {
 			throw new Error(`データの取得に失敗しました (HTTP ${res.status})`)

@@ -2,10 +2,9 @@
 //! two questions the UI asks — *which courses match these filters* and *how do
 //! they lay out on the timetable*.
 //!
-//! This is the single source of truth that replaces the TS `CourseIndex`
-//! (`web/src/lib/course-index.ts`) plus the data wiring in `load-data.ts`.
-//! Parsing, bitset decoding and index construction all happen in [`Engine::from_json`],
-//! so the WASM layer only ever marshals **indices** across the boundary.
+//! Parsing, bitset decoding and index construction all happen in
+//! [`Engine::from_json`], so the WASM layer only ever marshals **indices**
+//! across the boundary.
 
 use crate::bitset::BitSet;
 use crate::grid::{build_grid, Grid, GridSlot};
@@ -20,19 +19,19 @@ const TSUUNEN_LABEL: &str = "通年";
 #[derive(Debug, thiserror::Error)]
 pub enum EngineError {
     /// The input is a raw KULAS API response, not a converted v3 dataset.
-    #[error("KULAS の生レスポンスです。先に syllabus-cli convert で変換してください。")]
+    #[error("This is a raw KULAS response; run `syllabus-cli convert` on it first.")]
     RawKulasResponse,
     /// No usable `version` field — not a syllabus-cli v3 output.
-    #[error("v3 フォーマットではありません（version フィールドが見つかりません）。")]
+    #[error("Not a v3 dataset: no `version` field found.")]
     NotV3Format,
     /// A `version` was present but unsupported.
-    #[error("version {0} は対応していません。version 3 が必要です。")]
+    #[error("Unsupported version {0}; version 3 is required.")]
     UnsupportedVersion(u64),
     /// The JSON itself could not be parsed / did not match the v3 schema.
-    #[error("JSON の解析に失敗しました: {0}")]
+    #[error("Failed to parse JSON: {0}")]
     Parse(#[from] serde_json::Error),
     /// A base64 bitset could not be decoded.
-    #[error("ビットセットのデコードに失敗しました: {0}")]
+    #[error("Failed to decode bitset: {0}")]
     Bitset(#[from] crate::bitset::DecodeError),
 }
 
@@ -40,8 +39,7 @@ pub enum EngineError {
 ///
 /// Each dimension is `None` for "all", or the dictionary *value* to narrow by;
 /// `query` is matched (case-insensitively, after [`normalize`]) as a substring
-/// of each candidate's search haystack. Grouping them in one struct keeps
-/// callers from transposing three same-typed `Option<&str>` arguments.
+/// of each candidate's search haystack.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct Filters<'a> {
     pub semester: Option<&'a str>,
@@ -60,6 +58,8 @@ pub struct Engine {
     timetables: Vec<Vec<GridSlot>>,
     dicts: Dictionaries,
     generated_at: String,
+    /// Academic year shared by the dataset (for the official syllabus deep link).
+    year: String,
     semester_bitsets: Vec<BitSet>,
     department_bitsets: Vec<BitSet>,
     campus_bitsets: Vec<BitSet>,
@@ -78,8 +78,8 @@ impl Engine {
     /// Returns an [`EngineError`] if the text is a raw KULAS response, is not a
     /// supported v3 document, or fails schema/bitset decoding.
     pub fn from_json(json: &str) -> Result<Self, EngineError> {
-        // A cheap structural pre-check gives friendly errors for the two common
-        // "wrong file" cases before the full schema deserialization.
+        // Cheap structural pre-check: friendly errors for the two common "wrong
+        // file" cases before full schema deserialization.
         let value: serde_json::Value = serde_json::from_str(json)?;
         if value.get("selectKogiDtoList").is_some() {
             return Err(EngineError::RawKulasResponse);
@@ -102,6 +102,7 @@ impl Engine {
             indices,
             courses,
             generated_at,
+            year,
             ..
         } = data;
 
@@ -130,6 +131,7 @@ impl Engine {
             timetables,
             dicts,
             generated_at,
+            year,
             semester_bitsets: decode_dimension(&semester)?,
             department_bitsets: decode_dimension(&department)?,
             campus_bitsets: decode_dimension(&campus)?,
@@ -146,8 +148,8 @@ impl Engine {
             return Vec::new();
         }
 
-        // AND the running set with each filter dimension in turn. Pairing each
-        // dictionary with its own bitsets keeps a campus value from querying the
+        // AND the running set with each filter dimension in turn. Each dictionary
+        // is paired with its own bitsets so a campus value can't query the
         // semester vector.
         let dimensions: [(&[String], &[BitSet], Option<&str>); 3] = [
             (
@@ -213,6 +215,12 @@ impl Engine {
         &self.generated_at
     }
 
+    /// The dataset's academic year (`kaikoNendo`), for the official deep link.
+    #[must_use]
+    pub fn year(&self) -> &str {
+        &self.year
+    }
+
     /// Whether the timetable needs a Saturday column.
     #[must_use]
     pub fn has_saturday(&self) -> bool {
@@ -223,10 +231,7 @@ impl Engine {
 /// AND a running bitset with one filter dimension.
 ///
 /// `None` (i.e. "all") leaves it untouched; a value absent from the dictionary
-/// (or whose positional bitset is missing) yields the empty set — mirroring the
-/// TS `semBits ? bits.and(semBits) : BitSet.allOnes(0)`. The caller pairs each
-/// dictionary with its own bitsets, so a campus value can't query the semester
-/// vector.
+/// (or whose positional bitset is missing) yields the empty set.
 fn narrow(bits: BitSet, dict: &[String], bitsets: &[BitSet], selector: Option<&str>) -> BitSet {
     match selector {
         None => bits,
@@ -252,9 +257,8 @@ fn decode_dimension(encoded: &[String]) -> Result<Vec<BitSet>, EngineError> {
 
 #[cfg(test)]
 mod tests {
-    //! Ported from `web/src/lib/course-index.test.ts`. The fixture indices are
-    //! built here the way the Go pipeline does — little-endian `u64` words,
-    //! base64-encoded — so `from_base64` round-trips them bit-for-bit.
+    //! Fixture indices are built here as little-endian `u64` words, base64-encoded,
+    //! so `from_base64` round-trips them bit-for-bit.
 
     use super::{Engine, Filters};
     use crate::index::CourseIndex;
@@ -271,7 +275,7 @@ mod tests {
         }
     }
 
-    /// Minimal course builder mirroring the TS `makeCourse`.
+    /// Minimal course builder for tests.
     fn course(cd: &str, slots: &[(u32, i32, i32)], dept: u32, campus: u32, st: &str) -> Course {
         Course {
             cd: cd.into(),
@@ -289,6 +293,10 @@ mod tests {
             nen: None,
             bunrui: None,
             bunya: None,
+            pat: None,
+            unit: None,
+            dm: None,
+            ev: None,
             st: st.into(),
         }
     }
@@ -301,9 +309,8 @@ mod tests {
         STANDARD.encode(bytes)
     }
 
-    /// Port of the TS `buildTestIndices`: one positional `u64` word array per
-    /// dictionary value, with 通年 courses propagated into every other semester
-    /// bitset.
+    /// Build one positional `u64` word array per dictionary value, with 通年
+    /// courses propagated into every other semester bitset.
     fn build_test_indices(courses: &[Course], dicts: &Dictionaries) -> IndicesMap {
         let n = courses.len();
         let num_words = n.div_ceil(64).max(1);
@@ -360,6 +367,7 @@ mod tests {
         Engine::build(ProcessedData {
             version: 3,
             generated_at: "2026-05-31T00:00:00Z".into(),
+            year: "2026".into(),
             total_raw: courses.len() as u32,
             dicts: d,
             indices,

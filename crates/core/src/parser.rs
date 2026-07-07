@@ -1,10 +1,7 @@
-//! Parse a `jikanwari` (時間割) string into semester / day / period slots — a
-//! hand-written port of Go's `ParseJikanwari` (`internal/parser/parser.go`).
+//! Parse a `jikanwari` (時間割) string into semester / day / period slots.
 //!
-//! Hand-written rather than regex-based on purpose: it keeps the core crate
-//! dependency-free (nothing for the WASM consumer to drag in), and it lets the
-//! whitespace handling match Go's RE2 `\s` exactly — ASCII-only, which is what
-//! [`char::is_ascii_whitespace`] already is.
+//! Hand-written rather than regex-based to keep the core crate dependency-free
+//! for the WASM consumer.
 
 /// A parsed time slot: semester label, weekday label, and the 1-based period.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -15,7 +12,7 @@ pub struct ParsedSlot {
 }
 
 /// The slots parsed from one `jikanwari`, with warnings for any part that could
-/// not be parsed (collected rather than silently dropped, as in Go).
+/// not be parsed (collected rather than silently dropped).
 #[derive(Debug, Default)]
 pub struct ParseResult {
     pub slots: Vec<ParsedSlot>,
@@ -48,22 +45,18 @@ pub fn parse_jikanwari(jikanwari: &str) -> ParseResult {
             }),
             (None, None) => result
                 .warnings
-                .push(format!("曜日・時限が見つかりません: {part:?}")),
-            (None, Some(_)) => result
-                .warnings
-                .push(format!("曜日が見つかりません: {part:?}")),
-            (Some(_), None) => result
-                .warnings
-                .push(format!("時限が見つかりません: {part:?}")),
+                .push(format!("day and period not found: {part:?}")),
+            (None, Some(_)) => result.warnings.push(format!("day not found: {part:?}")),
+            (Some(_), None) => result.warnings.push(format!("period not found: {part:?}")),
         }
     }
 
     result
 }
 
-/// Split `part` at its first ASCII colon into `(semester, rest)` — Go's
-/// `^(.*?):\s*`. The semester is whitespace-trimmed; the rest has its leading
-/// ASCII whitespace removed. With no colon: empty semester, rest is all of `part`.
+/// Split `part` at its first ASCII colon into `(semester, rest)`. The semester
+/// is whitespace-trimmed; the rest has its leading ASCII whitespace removed.
+/// With no colon: empty semester, rest is all of `part`.
 fn split_semester(part: &str) -> (&str, &str) {
     match part.find(':') {
         Some(colon) => {
@@ -75,15 +68,14 @@ fn split_semester(part: &str) -> (&str, &str) {
     }
 }
 
-/// The leftmost weekday appearing in `X曜日` form — Go's `(月|…|日)曜日`.
+/// The leftmost weekday appearing in `X曜日` form.
 fn find_day(rest: &str) -> Option<char> {
     rest.char_indices().find_map(|(i, c)| {
         (DAYS.contains(&c) && rest[i + c.len_utf8()..].starts_with("曜日")).then_some(c)
     })
 }
 
-/// The leftmost full-width digit in `N時限` form, as a 1-based period — Go's
-/// `([１-８])時限` with `fullWidthToInt`.
+/// The leftmost full-width digit in `N時限` form, as a 1-based period.
 fn find_period(rest: &str) -> Option<i32> {
     rest.char_indices().find_map(|(i, c)| {
         let period = full_width_digit(c)?;
@@ -100,7 +92,6 @@ fn full_width_digit(c: char) -> Option<i32> {
 
 #[cfg(test)]
 mod tests {
-    //! Ported from `internal/parser/parser_test.go`.
     use super::{parse_jikanwari, ParsedSlot};
 
     fn slot(semester: &str, day: &str, period: i32) -> ParsedSlot {
@@ -214,5 +205,57 @@ mod tests {
         let result = parse_jikanwari("1学期: ３時限");
         assert_eq!(result.warnings.len(), 1);
         assert!(result.warnings[0].contains("1学期: ３時限"));
+    }
+
+    use proptest::prelude::*;
+
+    /// Render `(semester, day, period)` back into KULAS `jikanwari` syntax.
+    fn render(semester: &str, day: char, period: i32) -> String {
+        let fw = char::from_u32('０' as u32 + period as u32).unwrap();
+        format!("{semester}: {day}曜日{fw}時限")
+    }
+
+    proptest! {
+        /// Never panics on arbitrary input (UTF-8 slicing in find_day/find_period).
+        #[test]
+        fn never_panics(s in ".*") {
+            let _ = parse_jikanwari(&s);
+        }
+
+        /// Conservation: every non-empty comma part becomes exactly one slot OR one
+        /// warning — a part is never silently dropped, never double-counted.
+        #[test]
+        fn every_nonempty_part_is_accounted_for(s in "[^,]{0,40}(,[^,]{0,40}){0,5}") {
+            let expected = s.split(',').filter(|p| !p.trim().is_empty()).count();
+            let r = parse_jikanwari(&s);
+            prop_assert_eq!(r.slots.len() + r.warnings.len(), expected);
+        }
+
+        /// A well-formed list of `sem: 曜日N時限` parts parses to exactly those
+        /// slots with zero warnings (structured round-trip).
+        #[test]
+        fn well_formed_input_round_trips(
+            parts in prop::collection::vec(
+                (
+                    prop::sample::select(vec!["1学期", "2学期", "通年", "前期", "後期"]),
+                    prop::sample::select(super::DAYS.to_vec()),
+                    1i32..=8,
+                ),
+                0..6,
+            )
+        ) {
+            let input = parts
+                .iter()
+                .map(|(sem, day, p)| render(sem, *day, *p))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let r = parse_jikanwari(&input);
+            prop_assert!(r.warnings.is_empty(), "unexpected warnings: {:?}", r.warnings);
+            let want: Vec<ParsedSlot> = parts
+                .iter()
+                .map(|(sem, day, p)| slot(sem, &day.to_string(), *p))
+                .collect();
+            prop_assert_eq!(r.slots, want);
+        }
     }
 }

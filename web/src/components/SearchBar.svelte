@@ -6,10 +6,7 @@ interface Props {
 let { searchText = $bindable() }: Props = $props()
 </script>
 
-<!--
-  Desktop only — ヘッダー (FilterBar) 直下、Timetable の上に置く全幅検索バー。
-  Mobile はヘッダー側の「フィルター」シート内で同じ state を共有する。
--->
+<!-- Desktop full-width search bar; mobile shares this state via the filter sheet. -->
 <div class="hidden sm:block border-b border-overlay-light bg-surface-primary/40 backdrop-blur-md px-6 py-3">
 	<div class="relative">
 		<svg
@@ -24,7 +21,7 @@ let { searchText = $bindable() }: Props = $props()
 		<input
 			type="text"
 			bind:value={searchText}
-			placeholder="科目名・教員名・授業コードで検索"
+			placeholder="科目名・教員・内容で検索"
 			class="w-full bg-overlay-subtle rounded-xl pl-12 pr-12 py-3 text-body text-apple-text outline-none placeholder:text-apple-text/40 transition-all duration-200 focus:bg-surface-primary focus:ring-2 focus:ring-apple-blue/30 focus:shadow-sm"
 		/>
 		{#if searchText}

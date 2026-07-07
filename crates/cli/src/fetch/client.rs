@@ -1,13 +1,11 @@
-//! KULAS HTTP client — port of Go's `internal/fetch/client.go`, with the fix for
-//! the findPage "Token invalid" rejection.
+//! KULAS HTTP client for findPage.
 //!
 //! One GET to the search page establishes the session cookie and yields the
 //! **full `entryContext`** (token + session identifiers like `cpClientPid`,
 //! `userId`, …). findPage validates the token against the rest of that context,
-//! so each request must carry the *current* session's context — not a stale
-//! captured one with only the token swapped (the bug that made findPage 400).
-//! native-tls (OpenSSL) plus the embedded KULAS intermediate CA completes the
-//! TLS chain exactly as the Go pipeline did.
+//! so each request must carry the *current* session's context, not a stale one
+//! with only the token swapped. The embedded KULAS intermediate CA completes the
+//! TLS chain the server omits.
 
 use std::time::Duration;
 
@@ -19,7 +17,11 @@ use super::PageFetcher;
 
 const SEARCH_PAGE_URL: &str = "https://kulas.kochi-u.ac.jp/cpsmart/public/dashboard/main/ja/Simple/1900/3000120/wsl/SyllabusKensaku";
 const FIND_PAGE_URL: &str = "https://kulas.kochi-u.ac.jp/cpsmart/public/wsl/WebRoot/SystemD.Lead.Gkm.Com.KogiKensaku.App.KogiKensakuWebApi/findPage";
-const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36";
+// Browser-compatible (keeps the Mozilla/Chrome prefix so UA-gating servers pass
+// us) but honestly identified: the trailing product token + repo URL let an
+// operator who notices the traffic reach the project (README disclaimer, issues)
+// and contact us instead of treating it as an unknown crawler.
+pub(crate) const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 gyakubiki-syllabus/1.0 (+https://github.com/p4suta/gyakubiki-syllabus)";
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
 
 /// The findPage request body template (`{{.PageNo}}`/`{{.KaikoNendo}}` for the
@@ -29,10 +31,8 @@ const BODY_TEMPLATE: &str = include_str!("../../assets/findpage_body.tmpl.json")
 /// chain completes even though the server does not send it.
 const KULAS_CA_PEM: &[u8] = include_bytes!("../../assets/kulas_ca.pem");
 
-/// entryContext keys the browser strips when building the findPage body — they
-/// are display-only and absent from the working request (derived from a captured
-/// session). Sending the page's `ResourceId` under the lowercase `resourceId`
-/// the body uses.
+/// Display-only entryContext keys the browser strips when building the findPage
+/// body.
 const ENTRY_CONTEXT_DROP: [&str; 10] = [
     "ResourceId",
     "contextName",
@@ -46,8 +46,7 @@ const ENTRY_CONTEXT_DROP: [&str; 10] = [
     "systemNm",
 ];
 
-/// A live KULAS client holding the session cookie jar, the current session's
-/// full `entryContext`, and the academic year.
+/// A live KULAS client: session cookie jar, current `entryContext`, academic year.
 pub struct Client {
     http: reqwest::blocking::Client,
     entry_context: Value,
@@ -60,14 +59,7 @@ impl Client {
     /// `token_override` (from `--token` / `KULAS_API_TOKEN`) replaces the
     /// HTML-extracted token when non-empty — for verification only.
     pub fn new(kaiko_nendo: &str, token_override: Option<&str>) -> Result<Self> {
-        let ca = reqwest::Certificate::from_pem(KULAS_CA_PEM)
-            .context("埋め込み KULAS CA の読み込みに失敗")?;
-        let http = reqwest::blocking::Client::builder()
-            .cookie_store(true)
-            .add_root_certificate(ca)
-            .timeout(REQUEST_TIMEOUT)
-            .build()
-            .context("HTTP クライアントの構築に失敗")?;
+        let http = build_http_client()?;
 
         let mut client = Self {
             http,
@@ -93,17 +85,16 @@ impl Client {
             )
             .header("Accept-Language", "ja")
             .send()
-            .context("検索ページ GET に失敗 (TLS chain やネットワーク疎通を確認)")?;
+            .context("search page GET failed (check the TLS chain and network connectivity)")?;
 
         let status = response.status();
-        let html = response
-            .text()
-            .context("検索ページ HTML の読み込みに失敗")?;
+        let html = response.text().context("failed to read search page HTML")?;
         if !status.is_success() {
-            bail!("検索ページが HTTP {} を返しました", status.as_u16());
+            bail!("search page returned HTTP {}", status.as_u16());
         }
 
-        self.entry_context = extract_entry_context(&html).context("entryContext 抽出に失敗")?;
+        self.entry_context =
+            extract_entry_context(&html).context("failed to extract entryContext")?;
         Ok(())
     }
 }
@@ -128,24 +119,38 @@ impl PageFetcher for Client {
             .header("Referer", SEARCH_PAGE_URL)
             .body(body)
             .send()
-            .with_context(|| format!("findPage HTTP 呼び出しに失敗 (page {page_no})"))?;
+            .with_context(|| format!("findPage HTTP call failed (page {page_no})"))?;
 
         let status = response.status();
         let bytes = response
             .bytes()
-            .with_context(|| format!("findPage レスポンス読み込みに失敗 (page {page_no})"))?
+            .with_context(|| format!("failed to read findPage response (page {page_no})"))?
             .to_vec();
 
         if !status.is_success() {
             let preview: String = String::from_utf8_lossy(&bytes).chars().take(500).collect();
             bail!(
-                "findPage が HTTP {} を返しました (page {page_no}): {preview}\n  \
-                 ※ token / entryContext が古い / body フォーマットが API と不整合の可能性があります",
+                "findPage returned HTTP {} (page {page_no}): {preview}\n  \
+                 note: the token/entryContext may be stale, or the body format may not match the API",
                 status.as_u16()
             );
         }
         Ok(bytes)
     }
+}
+
+/// Build the blocking HTTP client KULAS needs: a cookie jar (session) plus the
+/// embedded intermediate CA so native-tls completes the chain the server omits.
+/// Shared by the findPage [`Client`] and the sansho detail client.
+pub(crate) fn build_http_client() -> Result<reqwest::blocking::Client> {
+    let ca =
+        reqwest::Certificate::from_pem(KULAS_CA_PEM).context("failed to load embedded KULAS CA")?;
+    reqwest::blocking::Client::builder()
+        .cookie_store(true)
+        .add_root_certificate(ca)
+        .timeout(REQUEST_TIMEOUT)
+        .build()
+        .context("failed to build HTTP client")
 }
 
 /// Build the findPage body: substitute the search params, then inject the fresh
@@ -163,20 +168,19 @@ fn build_body(
         .replace("{{.KaikoNendo}}", kaiko_nendo)
         .replace("{{.Token}}", "");
     let mut body: Value = serde_json::from_str(&rendered)
-        .context("findPage body テンプレートの JSON パースに失敗")?;
+        .context("failed to parse findPage body template as JSON")?;
     body["tempData"]["entryContext"] = browser_entry_context(entry_context);
-    serde_json::to_string(&body).context("findPage body のシリアライズに失敗")
+    serde_json::to_string(&body).context("failed to serialize findPage body")
 }
 
-/// Transform the page's `entryContext` into the shape the browser sends to
-/// findPage: keep every session field, drop the display-only keys, and expose
-/// `ResourceId` as `resourceId`.
+/// Reshape the page's `entryContext` into what the browser sends to findPage:
+/// keep every session field, drop the display-only keys, expose `ResourceId` as
+/// `resourceId`.
 ///
 /// The denylist (`ENTRY_CONTEXT_DROP`) is load-bearing: KULAS validates the
-/// *whole* context, so every other session field must survive. Do **not**
-/// rewrite this as an allowlist — an unlisted key silently dropped breaks the
-/// request.
-fn browser_entry_context(entry_context: &Value) -> Value {
+/// *whole* context, so every other field must survive. Do **not** rewrite as an
+/// allowlist — a silently dropped key breaks the request.
+pub(crate) fn browser_entry_context(entry_context: &Value) -> Value {
     let Some(object) = entry_context.as_object() else {
         return entry_context.clone();
     };

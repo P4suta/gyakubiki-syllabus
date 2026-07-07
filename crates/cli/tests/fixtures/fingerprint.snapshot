@@ -4,7 +4,7 @@ has_saturday: true
 courses: 9
 == dicts ==
 semesters[5]: 1学期 | 1学期前半 | 2学期 | 2学期前半 | 通年
-departments[5]: 人文社会科学部 | 共通教育 | 医学部 医学科 | 理工学部 | 農林海洋科学部
+departments[6]: 人文社会科学部 | 共通教育 | 医学部 医学科 | 理工学部 | 農林海洋科学部 | その他
 campuses[4]: 朝倉キャンパス | 物部キャンパス | 岡豊キャンパス | その他
 kubun[4]: 実技 | 実習 | 演習 | 講義
 kaikojiki[5]: 1学期 | 1学期前半 | 2学期 | 2学期前半 | 通年
@@ -15,11 +15,12 @@ semester=1学期前半: count=2 hash=e5543e7052beb418
 semester=2学期: count=3 hash=53212217020f422c
 semester=2学期前半: count=2 hash=e5543d7052beb265
 semester=通年: count=1 hash=4e7ef3181d60f8fa
-department=人文社会科学部: count=2 hash=87f700bcc69e369c
+department=人文社会科学部: count=1 hash=4e7ef4181d60faad
 department=共通教育: count=2 hash=bb19289c7d316b57
 department=医学部 医学科: count=1 hash=4e7eef181d60f22e
 department=理工学部: count=2 hash=20c0b8c0d9f712b6
 department=農林海洋科学部: count=2 hash=e5543b7052beaeff
+department=その他: count=1 hash=4e7ee9181d60e7fc
 campus=朝倉キャンパス: count=5 hash=5d341c9a32830264
 campus=物部キャンパス: count=2 hash=e5543b7052beaeff
 campus=岡豊キャンパス: count=1 hash=4e7eef181d60f22e

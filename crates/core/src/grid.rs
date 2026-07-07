@@ -1,11 +1,9 @@
 //! The timetable grid: which courses land in each (day, period) cell.
 //!
-//! A faithful port of the former TS `buildGrid` / `countUnique`
-//! (`web/src/lib/grid.ts`), kept deliberately **display-agnostic**: cells are
-//! keyed by a numeric [`Day`] (0=月 … 5=土) and [`Period`], leaving the day
-//! *labels* to the presentation layer. The engine resolves semester strings to
-//! [`SemesterIndex`]es before calling in, so this module never touches the
-//! dictionaries.
+//! Deliberately **display-agnostic**: cells are keyed by a numeric [`Day`]
+//! (0=月 … 5=土) and [`Period`], leaving the day *labels* to the presentation
+//! layer. The engine resolves semester strings to [`SemesterIndex`]es before
+//! calling in, so this module never touches the dictionaries.
 
 use std::collections::{BTreeMap, HashSet};
 
@@ -52,8 +50,8 @@ impl Grid {
 
     /// Number of distinct courses placed anywhere in the grid.
     ///
-    /// The pipeline de-duplicates courses by `cd` (one index ⇔ one `cd`), so
-    /// the distinct-index count equals the distinct-`cd` count of the TS version.
+    /// The pipeline de-duplicates courses by `cd` (one index ⇔ one `cd`), so the
+    /// distinct-index count equals the distinct-`cd` count.
     #[must_use]
     pub fn count_unique(&self) -> usize {
         self.cells
@@ -68,9 +66,8 @@ impl Grid {
 /// A timetable slot validated into the grid's typed [`Day`] / [`Period`].
 ///
 /// The wire [`Slot`] carries raw `i32` day/period; [`GridSlot::from_wire`]
-/// range-checks them **once** (when the engine is built) so [`build_grid`] —
-/// which runs on every filter change — only ever sees displayable slots and
-/// never re-validates.
+/// range-checks them **once** when the engine is built, so [`build_grid`] — run
+/// on every filter change — never re-validates.
 #[derive(Debug, Clone, Copy)]
 pub struct GridSlot {
     /// Dictionary index of the slot's semester (drives the semester filter).
@@ -145,8 +142,8 @@ pub fn build_grid<'a>(
 
 #[cfg(test)]
 mod tests {
-    //! Ported from `web/src/lib/grid.test.ts`. The test dataset has no Saturday,
-    //! so `saturday = false` throughout; 通年 sits at semester index 2.
+    //! The test dataset has no Saturday, so `saturday = false` throughout;
+    //! 通年 sits at semester index 2.
 
     use super::{build_grid, Grid, GridSlot};
     use crate::index::{CourseIndex, Day, Period, SemesterIndex};
@@ -247,7 +244,7 @@ mod tests {
         assert_eq!(g.count_unique(), 1);
     }
 
-    // GridSlot::from_wire — the range validation that used to live in build_grid.
+    // GridSlot::from_wire range validation.
 
     #[test]
     fn from_wire_drops_sunday_and_beyond() {

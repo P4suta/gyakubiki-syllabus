@@ -12,7 +12,9 @@
     "taishoGakka": "数学科",
     "taishoNenji": "1年",
     "kamokuBunrui": "専門",
-    "kamokuBunya": "数学"
+    "kamokuBunya": "数学",
+    "syllabusKomokuPatternId": "4",
+    "kaikoNendo": "2026"
   },
   {
     "kogiCd": "001",
@@ -34,7 +36,9 @@
     "kogiKubunNm": "演習",
     "sekininBushoNm": "人文社会科学部",
     "kochiNm": "朝倉キャンパス",
-    "gakusokuKamokuNm": "政治学"
+    "gakusokuKamokuNm": "政治学",
+    "syllabusKomokuPatternId": "5",
+    "kaikoNendo": "2026"
   },
   {
     "kogiCd": "003",

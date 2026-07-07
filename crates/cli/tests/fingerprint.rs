@@ -1,22 +1,11 @@
-//! F0 — semantic fingerprint over a small committed fixture.
+//! Semantic fingerprint over a committed fixture: runs the whole chain
+//! (`convert_v2` → serialize → `Engine::from_json` → `filter`/`grid`) over
+//! `fixtures/sample_raw.json` and compares to a committed snapshot. The
+//! fingerprint is cd/value-based (never raw indices), so it is immune to
+//! reordering and drifts only on a real semantic change. Where the byte golden
+//! pins serialization, this pins behaviour.
 //!
-//! Pins the *meaning* of the pipeline — dictionaries, filter results, grid
-//! layout — by running the whole chain (`convert_v2` → serialize →
-//! `Engine::from_json` → `filter`/`grid`) over the committed
-//! `fixtures/sample_raw.json` and comparing to a committed snapshot. Where the
-//! byte golden (G0) pins serialization, F0 pins behaviour: it is what proved the
-//! Phase B wire redesign changed the encoding, not the answers.
-//!
-//! It lives in `crates/cli` (not `crates/core`) so the deliberately pure core
-//! never reaches for a test fixture, and it uses a synthetic fixture rather than
-//! the gitignored, monthly-regenerated real `data.json` so it is CI-safe and
-//! stable.
-//!
-//! The fingerprint is **cd/value-based** (never raw indices), so it is immune to
-//! course/dictionary reordering and only drifts on a real semantic change.
-//!
-//! Regenerate the snapshot after an intended change:
-//!   UPDATE_FINGERPRINT=1 cargo test -p syllabus-cli --test fingerprint
+//! Regenerate: UPDATE_FINGERPRINT=1 cargo test -p syllabus-cli --test fingerprint
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -32,7 +21,7 @@ fn fixtures_dir() -> PathBuf {
 }
 
 /// Build an engine the way the CLI does: parse raw → `convert_v2` → serialize →
-/// `Engine::from_json`. Exercises the full producer→consumer round-trip.
+/// `Engine::from_json`, exercising the full producer→consumer round-trip.
 fn engine_from_fixture() -> Engine {
     let raw_json =
         fs::read_to_string(fixtures_dir().join("sample_raw.json")).expect("read sample_raw.json");
@@ -42,9 +31,8 @@ fn engine_from_fixture() -> Engine {
     Engine::from_json(&json).expect("engine builds from converted fixture")
 }
 
-/// FNV-1a 64-bit — a tiny, version-stable digest so the snapshot stays compact
-/// and human-diffable (count + hash per query). Deterministic across Rust
-/// versions, unlike `DefaultHasher`.
+/// FNV-1a 64-bit — a tiny digest so the snapshot stays compact and
+/// human-diffable. Deterministic across Rust versions, unlike `DefaultHasher`.
 fn fnv1a(s: &str) -> u64 {
     let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
     for byte in s.bytes() {

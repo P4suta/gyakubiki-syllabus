@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 9b72969efdd54c5e103eff1f9804da57bd3d38445246f8ae9489a989ba430fdf # shrinks to raw = [RawCourse { kogi_cd: "a", kogi_nm: "", fukudai: None, tanto_kyoin: "", jikanwari: "1学期: 月曜日１時限", kogi_kaikojiki_nm: "", kogi_kubun_nm: "", sekinin_busho_nm: "", kochi_nm: "", gakusoku_kamoku_nm: "", taisho_gakka: None, taisho_nenji: None, kamoku_bunrui: None, kamoku_bunya: None, syllabus_komoku_pattern_id: None, kaiko_nendo: None, last_update: None }, RawCourse { kogi_cd: "a", kogi_nm: "", fukudai: None, tanto_kyoin: "", jikanwari: "1学期: 月曜日１時限", kogi_kaikojiki_nm: "", kogi_kubun_nm: "", sekinin_busho_nm: "", kochi_nm: "理工学部", gakusoku_kamoku_nm: "", taisho_gakka: None, taisho_nenji: None, kamoku_bunrui: None, kamoku_bunya: None, syllabus_komoku_pattern_id: None, kaiko_nendo: None, last_update: None }]

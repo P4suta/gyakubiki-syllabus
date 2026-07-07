@@ -1,9 +1,8 @@
 //! Build the optimized `data.json` — dictionaries plus per-dimension bitsets —
-//! from raw KULAS courses (originally a port of Go's `ConvertV2`).
+//! from raw KULAS courses.
 //!
-//! `generated_at` is injected by the caller, keeping this function pure and its
-//! output deterministic for a given input; the byte-exact `golden_convert` test
-//! in `crates/cli` pins that determinism against the committed `data.json`.
+//! `generated_at` is injected by the caller, keeping conversion pure and
+//! deterministic for a given input.
 
 use std::collections::{BTreeSet, HashMap};
 
@@ -14,8 +13,7 @@ use crate::parser::{self, ParsedSlot};
 use crate::text::search_text;
 
 /// The v3 payload plus any warnings raised while converting (empty course codes,
-/// unparsable jikanwari, …). Warnings are surfaced by the CLI; they never reach
-/// `data.json`.
+/// unparsable jikanwari, …). Warnings are surfaced by the CLI, never in `data.json`.
 pub struct ConvertResult {
     pub data: ProcessedData,
     pub warnings: Vec<String>,
@@ -26,7 +24,7 @@ pub struct ConvertResult {
 const TSUUNEN_LABEL: &str = "通年";
 
 /// Convert raw KULAS courses into the v3 output, stamping `generated_at`
-/// (an RFC 3339 string) into the payload.
+/// (an RFC 3339 string).
 ///
 /// Three phases: [`first_pass`] dedups courses and gathers the dictionary
 /// values, [`build_dictionaries`] sorts them into the wire dictionaries, and
@@ -48,6 +46,7 @@ pub fn convert_v2(raw: &[RawCourse], generated_at: String) -> ConvertResult {
         data: ProcessedData {
             version: 3,
             generated_at,
+            year: dataset_year(raw),
             total_raw: raw.len() as u32,
             dicts,
             indices,
@@ -78,10 +77,9 @@ struct FirstPass {
     warnings: Vec<String>,
 }
 
-/// First pass: walk every raw record, dedup by trimmed `kogiCd` (first wins,
-/// later occurrences merge their slots), gather the five dictionary value sets,
-/// and collect warnings. Each kept course is pushed with index fields = 0 and
-/// empty slots — [`second_pass`] fills those once the dictionaries exist.
+/// First pass: dedup by trimmed `kogiCd` (first wins, later occurrences merge
+/// their slots), gather the five dictionary value sets, and collect warnings.
+/// Index fields stay 0 and slots empty until [`second_pass`] fills them.
 fn first_pass(raw: &[RawCourse]) -> FirstPass {
     let mut warnings = Vec::new();
     let mut dict_sets = DictSets::default();
@@ -93,14 +91,14 @@ fn first_pass(raw: &[RawCourse]) -> FirstPass {
         let cd = r.kogi_cd.trim();
         if cd.is_empty() {
             warnings.push(format!(
-                "  [{}件目] 授業コード(kogiCd)が空です。スキップします",
+                "  [item {}] course code (kogiCd) is empty; skipping",
                 i + 1
             ));
             continue;
         }
         let nm = r.kogi_nm.trim();
         if nm.is_empty() {
-            warnings.push(format!("  [{}] 科目名(kogiNm)が空です", r.kogi_cd));
+            warnings.push(format!("  [{}] course name (kogiNm) is empty", r.kogi_cd));
         }
 
         let parsed = parser::parse_jikanwari(&r.jikanwari);
@@ -109,35 +107,37 @@ fn first_pass(raw: &[RawCourse]) -> FirstPass {
         }
         if !r.jikanwari.is_empty() && parsed.slots.is_empty() {
             warnings.push(format!(
-                "  [{}] {}: 時間割情報がありますがパースできませんでした: {:?}",
+                "  [{}] {}: has jikanwari but it could not be parsed: {:?}",
                 r.kogi_cd, r.kogi_nm, r.jikanwari
             ));
         }
 
+        // Slots merge across duplicates, so every occurrence's semesters count.
         for s in &parsed.slots {
             if !s.semester.is_empty() {
                 dict_sets.semester.insert(s.semester.clone());
             }
         }
-        let dept = r.sekinin_busho_nm.trim();
-        if !dept.is_empty() {
-            dict_sets.department.insert(dept.to_owned());
-        }
-        dict_sets.campus.insert(campus_of(r).to_owned());
-        let kubun = r.kogi_kubun_nm.trim();
-        if !kubun.is_empty() {
-            dict_sets.kubun.insert(kubun.to_owned());
-        }
-        let kaikojiki = r.kogi_kaikojiki_nm.trim();
-        if !kaikojiki.is_empty() {
-            dict_sets.kaikojiki.insert(kaikojiki.to_owned());
-        }
 
-        // Duplicate code → merge its slots into the first occurrence and move on.
+        // Duplicate code: merge its slots into the first occurrence. Its other
+        // fields are discarded, so they must NOT be gathered into the
+        // dictionaries — otherwise a dropped record's department leaves a filter
+        // entry that selects no course.
         if let Some(&idx) = seen.get(cd) {
             merge_slots(&mut slots_per_course[idx], &parsed.slots);
             continue;
         }
+
+        // First occurrence is canonical: gather its dimension values.
+        let dept = r.sekinin_busho_nm.trim();
+        dict_sets.department.insert(or_sonota(dept).to_owned());
+        dict_sets.campus.insert(campus_of(r).to_owned());
+        dict_sets
+            .kubun
+            .insert(or_sonota(r.kogi_kubun_nm.trim()).to_owned());
+        dict_sets
+            .kaikojiki
+            .insert(or_sonota(r.kogi_kaikojiki_nm.trim()).to_owned());
 
         seen.insert(cd.to_owned(), courses.len());
         let prof = r.tanto_kyoin.trim();
@@ -161,6 +161,10 @@ fn first_pass(raw: &[RawCourse]) -> FirstPass {
             nen: trim_opt(&r.taisho_nenji),
             bunrui: trim_opt(&r.kamoku_bunrui),
             bunya: trim_opt(&r.kamoku_bunya),
+            pat: trim_opt(&r.syllabus_komoku_pattern_id),
+            unit: None, // detail-derived; filled by the CLI's enrichment pass
+            dm: None,
+            ev: None,
         });
         slots_per_course.push(parsed.slots);
     }
@@ -231,10 +235,10 @@ fn second_pass(
 
     for i in 0..courses.len() {
         let r = &raw[raw_first[courses[i].cd.as_str()]];
-        courses[i].dept = lookup(&dict_index.department, r.sekinin_busho_nm.trim());
+        courses[i].dept = lookup(&dict_index.department, or_sonota(r.sekinin_busho_nm.trim()));
         courses[i].campus = lookup(&dict_index.campus, campus_of(r));
-        courses[i].kbn = lookup(&dict_index.kubun, r.kogi_kubun_nm.trim());
-        courses[i].ki = lookup(&dict_index.kaikojiki, r.kogi_kaikojiki_nm.trim());
+        courses[i].kbn = lookup(&dict_index.kubun, or_sonota(r.kogi_kubun_nm.trim()));
+        courses[i].ki = lookup(&dict_index.kaikojiki, or_sonota(r.kogi_kaikojiki_nm.trim()));
 
         let mut slots = Vec::new();
         let mut has_tsuunen = false;
@@ -287,17 +291,40 @@ fn second_pass(
     (courses, indices)
 }
 
-/// The campus label, defaulting empty values to `その他` (Go's behavior).
-fn campus_of(r: &RawCourse) -> &str {
-    let campus = r.kochi_nm.trim();
-    if campus.is_empty() {
-        "その他"
+/// The dataset's academic year: the first non-empty `kaikoNendo` across the raw
+/// records (the whole fetch is one year, so this is uniform). Empty when absent.
+fn dataset_year(raw: &[RawCourse]) -> String {
+    raw.iter()
+        .find_map(|r| {
+            r.kaiko_nendo
+                .as_deref()
+                .map(str::trim)
+                .filter(|y| !y.is_empty())
+        })
+        .unwrap_or_default()
+        .to_owned()
+}
+
+/// The catch-all bucket label for empty dimension values.
+const SONOTA_LABEL: &str = "その他";
+
+/// The label to file a dimension value under, mapping empty values to `その他` so
+/// a course with no department/kubun/kaikojiki/campus gets its own dictionary
+/// entry instead of silently landing on index 0 — a real, unrelated value.
+fn or_sonota(label: &str) -> &str {
+    if label.is_empty() {
+        SONOTA_LABEL
     } else {
-        campus
+        label
     }
 }
 
-/// Trim an optional string, collapsing `None`/empty to `None` (Go's `trimPtr`).
+/// The campus label, defaulting empty values to `その他`.
+fn campus_of(r: &RawCourse) -> &str {
+    or_sonota(r.kochi_nm.trim())
+}
+
+/// Trim an optional string, collapsing `None`/empty to `None`.
 fn trim_opt(value: &Option<String>) -> Option<String> {
     value
         .as_deref()
@@ -306,7 +333,7 @@ fn trim_opt(value: &Option<String>) -> Option<String> {
         .map(str::to_owned)
 }
 
-/// Append `new` slots not already present, deduplicating by value (Go's slot merge).
+/// Append `new` slots not already present, deduplicating by value.
 fn merge_slots(existing: &mut Vec<ParsedSlot>, new: &[ParsedSlot]) {
     for slot in new {
         if !existing.contains(slot) {
@@ -324,14 +351,15 @@ fn index_map(labels: &[String]) -> HashMap<String, usize> {
         .collect()
 }
 
-/// Resolve a label to its dictionary index, falling back to `0` for unknown or
-/// empty keys — faithfully reproducing Go's `lookupIndex` quirk (an empty
-/// department/kubun/kaikojiki is attributed to index 0).
+/// Resolve a label to its dictionary index. Callers normalize empty values to
+/// `その他` (see [`or_sonota`]) before calling, so every real value is present;
+/// the `0` fallback is only a defensive net for a genuinely unknown key (e.g. an
+/// empty dictionary).
 fn lookup(idx: &HashMap<String, usize>, key: &str) -> u32 {
     idx.get(key).copied().unwrap_or(0) as u32
 }
 
-/// Day label → column index (0=月 … 6=日), matching Go's `dayIndex`.
+/// Day label → column index (0=月 … 6=日).
 fn day_index(day: &str) -> Option<i32> {
     match day {
         "月" => Some(0),
@@ -347,9 +375,8 @@ fn day_index(day: &str) -> Option<i32> {
 
 /// Build a dimension's positional bitsets from already-resolved courses: each
 /// course sets its bit in the bucket its `project`ed dictionary index names.
-/// `dict_len` fixes the dense length; an index outside it — only reachable when
-/// the dictionary is empty and `lookup` fell back to 0 — is skipped, leaving no
-/// bucket rather than panicking.
+/// An index outside `dict_len` — reachable only when the dictionary is empty and
+/// `lookup` fell back to 0 — is skipped rather than panicking.
 fn dimension_bitsets(
     courses: &[Course],
     dict_len: usize,
@@ -373,7 +400,6 @@ fn encode(bitsets: &[BitSet]) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
-    //! Ported from `internal/transform/v2_test.go`.
     use super::convert_v2;
     use crate::bitset::BitSet;
     use crate::model::{ProcessedData, RawCourse};
@@ -554,6 +580,26 @@ mod tests {
     }
 
     #[test]
+    fn dedup_does_not_leave_dead_dictionary_entries() {
+        // Two records share a code; the second (discarded) has a different
+        // department. That department must NOT become a filter entry, since no
+        // surviving course belongs to it.
+        let data = convert(&[
+            RawCourse {
+                sekinin_busho_nm: "理工学部".into(),
+                ..raw("001", "A")
+            },
+            RawCourse {
+                sekinin_busho_nm: "共通教育".into(),
+                ..raw("001", "A")
+            },
+        ]);
+        assert_eq!(data.courses.len(), 1);
+        assert_eq!(data.dicts.departments, ["理工学部"]);
+        assert!(!data.dicts.departments.contains(&"共通教育".to_owned()));
+    }
+
+    #[test]
     fn skips_empty_code_with_warning() {
         let result = convert_v2(&[raw("", "空コード"), raw("001", "正常")], "t".to_owned());
         assert_eq!(result.data.courses.len(), 1);
@@ -657,6 +703,43 @@ mod tests {
     }
 
     #[test]
+    fn empty_department_maps_to_sonota_not_index_zero() {
+        // Regression: an empty 学部/区分/開講時期 used to fall back to dictionary
+        // index 0 — a real, unrelated value — and pollute that value's filter
+        // bitset. It must instead resolve to its own "その他" entry.
+        let data = convert(&[
+            RawCourse {
+                sekinin_busho_nm: "理工学部".into(),
+                kogi_kubun_nm: "講義".into(),
+                kogi_kaikojiki_nm: "1学期".into(),
+                ..raw("001", "A")
+            },
+            RawCourse {
+                sekinin_busho_nm: String::new(),
+                kogi_kubun_nm: String::new(),
+                kogi_kaikojiki_nm: String::new(),
+                ..raw("002", "B")
+            },
+        ]);
+
+        // The empty-valued course resolves to "その他" in all three dimensions.
+        assert_eq!(
+            data.dicts.departments[data.courses[1].dept as usize],
+            "その他"
+        );
+        assert_eq!(data.dicts.kubun[data.courses[1].kbn as usize], "その他");
+        assert_eq!(data.dicts.kaikojiki[data.courses[1].ki as usize], "その他");
+
+        // It is NOT attributed to the real "理工学部" at whatever index that holds,
+        // and the 理工学部 department bitset does not include the empty course.
+        let rigaku = pos(&data.dicts.departments, "理工学部");
+        assert_ne!(data.courses[1].dept as usize, rigaku);
+        let rigaku_bits = bitset(&data.indices.department, rigaku);
+        assert!(rigaku_bits.has(0)); // course 0 (理工学部) is present
+        assert!(!rigaku_bits.has(1)); // course 1 (empty) must not be
+    }
+
+    #[test]
     fn preserves_raw_jikanwari_and_optional_fields() {
         let data = convert(&[RawCourse {
             jikanwari: "1学期: 集中講義".into(),
@@ -672,6 +755,25 @@ mod tests {
         assert_eq!(c.nen.as_deref(), Some("1年"));
         assert_eq!(c.bunrui.as_deref(), Some("専門"));
         assert_eq!(c.bunya.as_deref(), Some("数学"));
+    }
+
+    #[test]
+    fn carries_pattern_id_and_dataset_year() {
+        let data = convert(&[
+            RawCourse {
+                syllabus_komoku_pattern_id: Some("4".into()),
+                kaiko_nendo: Some("2026".into()),
+                ..raw("001", "A")
+            },
+            RawCourse {
+                syllabus_komoku_pattern_id: Some("5".into()),
+                kaiko_nendo: Some("2026".into()),
+                ..raw("002", "B")
+            },
+        ]);
+        assert_eq!(data.year, "2026");
+        assert_eq!(data.courses[0].pat.as_deref(), Some("4"));
+        assert_eq!(data.courses[1].pat.as_deref(), Some("5"));
     }
 
     #[test]
@@ -692,5 +794,83 @@ mod tests {
         let result = convert_v2(&[raw("001", "A")], "t".to_owned());
         assert_eq!(result.data.courses[0].slots.len(), 0);
         assert!(result.warnings.is_empty());
+    }
+
+    use proptest::prelude::*;
+
+    fn label() -> impl Strategy<Value = String> {
+        prop::sample::select(vec![
+            "",
+            "理工学部",
+            "共通教育",
+            "1学期",
+            "通年",
+            "朝倉キャンパス",
+            "講義",
+        ])
+        .prop_map(str::to_owned)
+    }
+
+    fn any_raw_course() -> impl Strategy<Value = RawCourse> {
+        (
+            "[a-z0-9]{0,4}", // cd (may be empty → skipped with a warning)
+            "[\\p{Han}a-z]{0,8}",
+            label(),
+            label(),
+            label(),
+            label(),
+            prop::sample::select(vec![
+                "1学期: 月曜日１時限",
+                "通年: 火曜日３時限",
+                "1学期: 集中講義",
+                "1学期: 月曜日１時限, 2学期: 金曜日５時限",
+                "",
+                "garbage",
+            ]),
+        )
+            .prop_map(|(cd, nm, dept, campus, kubun, kaiko, jik)| RawCourse {
+                kogi_cd: cd,
+                kogi_nm: nm,
+                sekinin_busho_nm: dept,
+                kochi_nm: campus,
+                kogi_kubun_nm: kubun,
+                kogi_kaikojiki_nm: kaiko,
+                jikanwari: jik.to_owned(),
+                ..Default::default()
+            })
+    }
+
+    proptest! {
+        /// Whatever the raw input, the v3 output is structurally sound: counts
+        /// hold, every dictionary index is in range, every slot is a real cell,
+        /// and codes/search text are canonical. This is the core safety net for
+        /// the whole conversion.
+        #[test]
+        fn convert_output_is_structurally_sound(
+            raw in prop::collection::vec(any_raw_course(), 0..12)
+        ) {
+            let full_width_space = '\u{3000}';
+            let data = convert(&raw);
+
+            prop_assert_eq!(data.total_raw as usize, raw.len());
+            prop_assert!(data.courses.len() <= raw.len());
+
+            for c in &data.courses {
+                prop_assert!(!c.cd.is_empty());
+                prop_assert_eq!(c.cd.trim(), c.cd.as_str()); // trimmed
+                prop_assert!((c.dept as usize) < data.dicts.departments.len());
+                prop_assert!((c.campus as usize) < data.dicts.campuses.len());
+                prop_assert!((c.kbn as usize) < data.dicts.kubun.len());
+                prop_assert!((c.ki as usize) < data.dicts.kaikojiki.len());
+                for s in &c.slots {
+                    prop_assert!((0..=6).contains(&s.d));
+                    prop_assert!((1..=8).contains(&s.p));
+                    prop_assert!((s.s as usize) < data.dicts.semesters.len());
+                }
+                // Search haystack is normalized (no full-width space, no upper ASCII).
+                prop_assert!(!c.st.contains(full_width_space));
+                prop_assert!(!c.st.bytes().any(|b| b.is_ascii_uppercase()));
+            }
+        }
     }
 }

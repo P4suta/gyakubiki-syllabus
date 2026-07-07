@@ -3,8 +3,8 @@ import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 /**
- * Svelte コンポーネント内にハードコードされたデザイン値が残っていないことを検証する。
- * 新しいコンポーネント追加時は SVELTE_FILES に追加すること。
+ * Assert no hardcoded design values remain in the Svelte components.
+ * Add new components to SVELTE_FILES.
  */
 
 const WEB_SRC = path.resolve(__dirname, '..')
@@ -13,22 +13,24 @@ const SVELTE_FILES = [
 	'components/CourseCard.svelte',
 	'components/CourseModal.svelte',
 	'components/Disclaimer.svelte',
+	'components/EvalChart.svelte',
 	'components/FilterBar.svelte',
+	'components/SearchBar.svelte',
 	'components/Timetable.svelte',
 	'components/TimetableCell.svelte',
 ]
 
-/** style 属性内の inline CSS は検査対象外 (動的カラー等で必要なため) */
+/** Inline CSS in `style` attributes is exempt (needed for dynamic colors). */
 function stripInlineStyles(content: string): string {
 	return content.replace(/style="[^"]*"/g, '')
 }
 
 /**
- * 各ルールは [正規表現, 説明, 許可パターン(省略可)] の三つ組。
- * 許可パターンにマッチした行はスキップされる。
+ * Each rule is [regex, description, allow-pattern?]. Lines matching the
+ * allow-pattern are skipped.
  */
 const RULES: [RegExp, string, RegExp?][] = [
-	// --- 色 ---
+	// --- Colors ---
 	[
 		/\[#[0-9a-fA-F]{3,8}\]/,
 		'Tailwind arbitrary hex color (use design tokens like text-apple-text, bg-surface-page)',
@@ -46,19 +48,19 @@ const RULES: [RegExp, string, RegExp?][] = [
 		'Tailwind default amber palette (use design tokens)',
 	],
 
-	// --- フォントサイズ ---
+	// --- Font sizes ---
 	[
 		/text-\[\d+px\]/,
 		'Arbitrary font size (use text-micro, text-caption, text-sub, text-body, text-cta)',
 	],
 
-	// --- シャドウ ---
+	// --- Shadows ---
 	[
 		/shadow-\[/,
 		'Arbitrary shadow value (use shadow-card-hover, shadow-card, shadow-modal)',
 	],
 
-	// --- イージング ---
+	// --- Easing ---
 	[
 		/ease-\[cubic-bezier/,
 		'Arbitrary easing (use ease-spring)',
@@ -109,7 +111,7 @@ describe('design token enforcement', () => {
 	it('app.css defines all required token categories', () => {
 		const css = fs.readFileSync(path.join(WEB_SRC, 'app.css'), 'utf-8')
 
-		// 色トークン
+		// Color tokens
 		expect(css).toContain('--color-apple-text:')
 		expect(css).toContain('--color-apple-blue:')
 		expect(css).toContain('--color-apple-blue-hover:')
@@ -118,22 +120,22 @@ describe('design token enforcement', () => {
 		expect(css).toContain('--color-overlay-subtle:')
 		expect(css).toContain('--color-overlay-backdrop:')
 
-		// フォントサイズトークン
+		// Font-size tokens
 		expect(css).toContain('--font-size-micro:')
 		expect(css).toContain('--font-size-caption:')
 		expect(css).toContain('--font-size-sub:')
 		expect(css).toContain('--font-size-body:')
 		expect(css).toContain('--font-size-cta:')
 
-		// シャドウトークン
+		// Shadow tokens
 		expect(css).toContain('--shadow-card-hover:')
 		expect(css).toContain('--shadow-card:')
 		expect(css).toContain('--shadow-modal:')
 
-		// イージング
+		// Easing
 		expect(css).toContain('--ease-spring:')
 
-		// アニメーション
+		// Animations
 		expect(css).toContain('--animate-fade-in:')
 		expect(css).toContain('--animate-spinner:')
 	})

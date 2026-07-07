@@ -26,12 +26,8 @@ services:
       - cargo-cache:/home/dev/.cargo
       - cargo-target:/home/dev/target
       - bun-cache:/home/dev/.bun/install/cache
-      - go-pkg:/home/dev/go
-      - go-build:/home/dev/.cache/go-build
 
 volumes:
   cargo-cache:
   cargo-target:
   bun-cache:
-  go-pkg:
-  go-build:

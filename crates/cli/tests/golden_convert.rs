@@ -1,18 +1,10 @@
-//! G0 — byte-exact golden over a small committed fixture.
+//! Byte-exact golden over a committed fixture: runs the built binary on
+//! `fixtures/sample_raw.json` and asserts byte-identical output to
+//! `fixtures/sample_data.golden.json` — compact JSON, HTML escaping, key order,
+//! and the no-trailing-newline `-o <file>` write. A synthetic fixture is used
+//! because the real `data.json` is a gitignored, monthly-changing artifact.
 //!
-//! Runs the real built binary (`CARGO_BIN_EXE_syllabus-cli`) on the committed
-//! `fixtures/sample_raw.json` and asserts the output is byte-identical to the
-//! committed `fixtures/sample_data.golden.json`. This pins the exact
-//! serialization — compact JSON, Go-style HTML escaping (the fixture contains an
-//! `&`), key/field order, and the no-trailing-newline `-o <file>` write — through
-//! the same code path production uses.
-//!
-//! It is deliberately self-contained: the real `web/public/data.json` is a
-//! gitignored build artifact that a fresh CI checkout does not have, and `raw/`
-//! changes monthly, so neither is a stable golden. The synthetic fixture is.
-//!
-//! Regenerate after an intended output change:
-//!   UPDATE_GOLDEN=1 cargo test -p syllabus-cli --test golden_convert
+//! Regenerate: UPDATE_GOLDEN=1 cargo test -p syllabus-cli --test golden_convert
 
 use std::fs;
 use std::path::{Path, PathBuf};

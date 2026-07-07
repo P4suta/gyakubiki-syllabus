@@ -4,7 +4,7 @@ version = "0.1.0"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Native CLI that builds data.json from raw KULAS JSON — the Rust port of the Go pipeline."
+description = "Native CLI that builds data.json from raw KULAS JSON."
 
 [lib]
 name = "syllabus_cli"
@@ -21,11 +21,21 @@ serde_json = "1"
 clap = { version = "4", features = ["derive"] }
 anyhow = "1"
 chrono = "0.4"
-# fetch: blocking HTTP with a cookie jar; native-tls (OpenSSL) mirrors the Go
-# pipeline's SystemCertPool + AppendCertsFromPEM so the embedded KULAS
-# intermediate CA completes the chain the same way. `gzip` mirrors Go's
-# net/http, which advertises Accept-Encoding: gzip and decompresses
-# transparently — so the bytes written match Go's regardless of server encoding.
+# fetch: blocking HTTP with a cookie jar. native-tls lets the embedded KULAS
+# intermediate CA complete the chain; gzip decompresses responses transparently.
 reqwest = { version = "0.13", default-features = false, features = ["blocking", "cookies", "native-tls", "gzip"] }
 regex = "1"
 base64 = "0.22"
+# detail scraping: parse the KULAS "シラバス参照" HTML (server-rendered tables).
+scraper = "0.23"
+# scraper's tree lib — used to read a cell's own text while pruning nested tables.
+ego-tree = "0.10"
+# fetch-details politeness: jittered sleep between requests.
+rand = "0.9"
+
+[dev-dependencies]
+# Property-based tests (parsers, invariants) and CLI process assertions. Dev-only
+# — not part of the shipped binary.
+proptest = "1"
+assert_cmd = "2"
+predicates = "3"
