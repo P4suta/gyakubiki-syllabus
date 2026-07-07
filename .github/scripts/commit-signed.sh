@@ -1,38 +1,30 @@
 #!/usr/bin/env bash
-# Commit changed data files directly to the `data` branch as a signed, Verified
-# commit (createCommitOnBranch with GITHUB_TOKEN). `data` is deliberately outside
-# main-protection, so the bot can commit without a PR / required checks / manual
-# approval — while require-signed-commits + data-protection (no force-push, no
-# deletion) still guard it. main stays fully protected.
+# Commit changed data files directly to the current branch (main) as a signed,
+# Verified commit (createCommitOnBranch with GITHUB_TOKEN). A plain `git push`
+# from Actions is rejected by the require-signed-commits ruleset; this satisfies
+# it. main-protection keeps signed commits / linear history / no force-push / no
+# deletion, but no longer requires status checks, so this direct commit is allowed.
 #
-# Usage: commit-data.sh <path> <headline>   (path = raw | raw-details)
+# Usage: commit-signed.sh <path> <headline>   (path = raw | raw-details)
 # Sets `changed=true|false` on $GITHUB_OUTPUT.
 set -euo pipefail
 
 path="$1"
 headline="$2"
 repo="${GITHUB_REPOSITORY:?}"
-data="data"
+branch="${GITHUB_REF_NAME:?}"
 
 set_output() { [[ -n "${GITHUB_OUTPUT:-}" ]] && echo "$1" >>"$GITHUB_OUTPUT"; }
 
-# Seed the data branch from main on the very first run.
-if ! git ls-remote --exit-code --heads origin "$data" >/dev/null 2>&1; then
-  main_oid=$(gh api "repos/$repo/git/ref/heads/main" -q .object.sha)
-  gh api -X POST "repos/$repo/git/refs" -f ref="refs/heads/$data" -f sha="$main_oid" >/dev/null
-  echo "Seeded the data branch from main."
-fi
-git fetch origin "$data" --depth=1 -q
-
-# Delta between the data branch (FETCH_HEAD) and the freshly-written worktree,
-# scoped to this path. `git add` first so newly-written (untracked) files count.
 git -c core.quotepath=false add -A -- "$path"
-if git diff --cached --quiet FETCH_HEAD -- "$path"; then
-  echo "No changes under $path vs the data branch."
+if git diff --cached --quiet -- "$path"; then
+  echo "No changes under $path."
   set_output "changed=false"
   exit 0
 fi
 
+# Turn the staged diff (vs the checked-out HEAD = branch tip) into GraphQL
+# fileChanges: additions carry base64 contents, deletions carry just the path.
 additions='[]'
 deletions='[]'
 while IFS=$'\t' read -r status file rest; do
@@ -50,11 +42,11 @@ while IFS=$'\t' read -r status file rest; do
       additions=$(jq -c --arg p "$file" --arg c "$contents" '. + [{path: $p, contents: $c}]' <<<"$additions")
       ;;
   esac
-done < <(git -c core.quotepath=false diff --cached --name-status FETCH_HEAD -- "$path")
+done < <(git -c core.quotepath=false diff --cached --name-status -- "$path")
 
-base_oid=$(gh api "repos/$repo/git/ref/heads/$data" -q .object.sha)
+oid=$(gh api "repos/$repo/git/ref/heads/$branch" -q .object.sha)
 jq -n \
-  --arg repo "$repo" --arg branch "$data" --arg oid "$base_oid" \
+  --arg repo "$repo" --arg branch "$branch" --arg oid "$oid" \
   --arg headline "$headline" \
   --argjson additions "$additions" --argjson deletions "$deletions" \
   '{
@@ -68,4 +60,4 @@ jq -n \
    }' | gh api graphql --input - -q '.data.createCommitOnBranch.commit.url'
 
 set_output "changed=true"
-echo "Committed (signed) to the data branch."
+echo "Committed (signed) to $branch."
