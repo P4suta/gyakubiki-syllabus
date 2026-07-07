@@ -12,7 +12,7 @@ use clap::{Args, Parser, Subcommand};
 
 use syllabus_cli::convert::render_data_json;
 use syllabus_cli::detail::SanshoDetail;
-use syllabus_cli::{fetch, fetch_details, fields, gen_sample, io};
+use syllabus_cli::{banner, fetch, fetch_details, fields, gen_sample, io, term};
 
 #[derive(Parser)]
 #[command(
@@ -70,7 +70,22 @@ struct ConvertArgs {
     details_out: PathBuf,
 }
 
-fn main() -> Result<()> {
+fn main() -> std::process::ExitCode {
+    banner::print();
+    let started = std::time::Instant::now();
+    let result = dispatch();
+    match &result {
+        Ok(()) => term::footer_ok(started.elapsed()),
+        Err(e) => term::footer_err(e, started.elapsed()),
+    }
+    if result.is_ok() {
+        std::process::ExitCode::SUCCESS
+    } else {
+        std::process::ExitCode::FAILURE
+    }
+}
+
+fn dispatch() -> Result<()> {
     match Cli::parse().command {
         Command::Convert(args) => convert(args),
         Command::Fetch(args) => fetch::run(args),
@@ -83,7 +98,7 @@ fn main() -> Result<()> {
 fn convert(args: ConvertArgs) -> Result<()> {
     let loaded = io::load(&args.files)?;
     for warning in &loaded.warnings {
-        eprintln!("{warning}");
+        term::warn(warning);
     }
     let raw = loaded.courses;
     if raw.is_empty() {
@@ -104,7 +119,10 @@ fn convert(args: ConvertArgs) -> Result<()> {
     let rendered = render_data_json(&raw, generated_at, args.compact, &details)?;
 
     for warning in &rendered.warnings {
-        eprintln!("{warning}");
+        term::warn(warning);
+    }
+    if let Some(path) = args.output.as_deref() {
+        term::ok(&format!("wrote {} ({} courses)", path.display(), raw.len()));
     }
     emit(&rendered.bytes, args.output.as_deref())
 }
@@ -125,7 +143,7 @@ fn load_details(dir: &Path) -> Result<std::collections::HashMap<String, SanshoDe
             .with_context(|| format!("cannot parse detail JSON: {}", path.display()))?;
         map.insert(detail.cd.clone(), detail);
     }
-    eprintln!("convert: loaded {} details", map.len());
+    term::ok(&format!("loaded {} syllabus details", map.len()));
     Ok(map)
 }
 
@@ -146,11 +164,11 @@ fn write_details_out(
         fs::write(&path, bytes)
             .with_context(|| format!("failed to write detail JSON: {}", path.display()))?;
     }
-    eprintln!(
-        "convert: wrote {} details to {}",
+    term::ok(&format!(
+        "copied {} details → {}",
         details.len(),
         out.display()
-    );
+    ));
     Ok(())
 }
 

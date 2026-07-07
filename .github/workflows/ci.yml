@@ -18,34 +18,26 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      # Reads rust-toolchain.toml (channel + components + wasm32 target).
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-      - name: test
-        run: cargo test
-      - name: clippy
-        run: cargo clippy --all-targets -- -D warnings
-      - name: fmt
-        run: cargo fmt --check
-      # FIELD_SPEC drives both the generated TS and docs; fail if they are stale.
-      - name: field spec generated files up to date
-        run: cargo run -q -p syllabus-cli -- gen-field-docs --check
-
-  coverage:
-    name: Coverage (llvm-cov)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
+      # Reads rust-toolchain.toml (channel + components + wasm32 target); also
+      # caches ~/.cargo + target automatically.
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           components: llvm-tools-preview
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-llvm-cov
+      # fmt needs no build — run it first so a formatting slip fails in seconds.
+      - name: fmt
+        run: cargo fmt --check
+      - name: clippy
+        run: cargo clippy --locked --all-targets -- -D warnings
+      # llvm-cov *runs the tests* under instrumentation, so test + coverage share
+      # one build here instead of two jobs each doing a full workspace compile.
       # Native coverage only (the wasm crate's #[wasm_bindgen] surface isn't
-      # exercised natively). Collect once, then report/enforce from the same data.
-      - name: collect coverage
-        run: cargo llvm-cov --workspace --exclude syllabus-wasm --no-report
-      - name: report + enforce threshold
+      # exercised natively).
+      - name: test + coverage
+        run: cargo llvm-cov --locked --workspace --exclude syllabus-wasm --no-report
+      - name: coverage report + enforce threshold (lines >= 80%)
         run: |
           cargo llvm-cov report --summary-only >> "$GITHUB_STEP_SUMMARY"
           cargo llvm-cov report --lcov --output-path lcov.info
@@ -54,6 +46,9 @@ jobs:
         with:
           name: coverage-lcov
           path: lcov.info
+      # FIELD_SPEC drives both the generated TS and docs; fail if they are stale.
+      - name: field spec generated files up to date
+        run: cargo run --locked -q -p syllabus-cli -- gen-field-docs --check
 
   typos:
     name: typos (spell check)

@@ -6,6 +6,7 @@
 //! - [`fields`] — the display-field spec and its doc/TS generator.
 //! - [`io`] — read and parse the raw input files `convert` ingests.
 
+pub mod banner;
 pub mod convert;
 pub mod detail;
 pub mod fetch;
@@ -13,3 +14,4 @@ pub mod fetch_details;
 pub mod fields;
 pub mod gen_sample;
 pub mod io;
+pub mod term;
