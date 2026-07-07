@@ -1,10 +1,10 @@
 name: Fetch syllabus details
 
-# Crawls the KULAS「シラバス参照」detail pages into raw-details/. Runs only here
-# (never locally). Daily, but capped per run (--limit) and incremental: each
-# course is written as it is fetched and unchanged courses are skipped, so a large
-# backlog is spread over many short off-peak sessions rather than one long one.
-# A partial run is committed (if: always()) and a later run continues.
+# Crawls the KULAS「シラバス参照」detail pages into raw-details/ on the `data`
+# branch. Runs only here (never locally). Daily, but capped per run (--limit) and
+# incremental: each course is written as it is fetched and unchanged courses are
+# skipped, so a large backlog is spread over many short off-peak sessions. A
+# partial run is committed (if: always()) and a later run continues.
 
 on:
   schedule:
@@ -29,7 +29,6 @@ on:
 permissions:
   contents: write
   actions: write
-  pull-requests: write
 
 concurrency:
   group: fetch-details
@@ -45,6 +44,9 @@ jobs:
 
       - name: Build syllabus-cli
         run: cargo build --release -p syllabus-cli
+
+      - name: Sync data branch into the worktree
+        run: bash .github/scripts/sync-data.sh
 
       - name: Fetch details
         env:
@@ -66,14 +68,14 @@ jobs:
 
       - name: Commit progress
         # always(): land what was fetched even if the crawl aborted or timed out.
-        # Data reaches the protected main via an auto-merged PR (main's rulesets are
-        # never bypassed); the commit is signed/Verified via the GitHub API.
+        # Signed commit straight to the `data` branch (no PR/checks/approval); main
+        # stays untouched and fully protected.
         if: always()
         id: commit
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          bash .github/scripts/data-pr.sh raw-details \
+          bash .github/scripts/commit-data.sh raw-details \
             "chore(raw-details): syllabus detail crawl ($(date -u +%Y-%m-%d))"
 
       - name: Trigger deploy

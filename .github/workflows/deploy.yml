@@ -23,6 +23,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # Overlay the living raw/ + raw-details/ from the data branch (the fetch
+      # workflows commit there, not to main).
+      - name: Sync data branch into the worktree
+        run: bash .github/scripts/sync-data.sh
+
       - uses: actions-rust-lang/setup-rust-toolchain@v1
 
       # convert: raw JSON (+ raw-details/ when present) → data.json + details/.
