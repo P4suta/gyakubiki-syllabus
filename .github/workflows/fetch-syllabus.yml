@@ -57,20 +57,12 @@ jobs:
 
       - name: Commit & push if changed
         id: commit
-        # Run only when dry-run is false.
+        # Run only when dry-run is false. Signed via the GitHub API so the commit
+        # is Verified (a plain git push is rejected by require-signed-commits).
         if: ${{ !inputs.dry-run }}
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          if [[ -n "$(git status --porcelain raw/)" ]]; then
-            git add raw/
-            git commit -m "chore(raw): syllabus grid refresh ($(date -u +%Y-%m-%d))"
-            git push
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-            echo "No changes."
-          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash .github/scripts/commit-signed.sh raw "chore(raw): syllabus grid refresh ($(date -u +%Y-%m-%d))"
 
       - name: Trigger deploy workflow
         if: ${{ steps.commit.outputs.changed == 'true' }}
