@@ -85,6 +85,13 @@ impl DetailError {
                 }
         )
     }
+    /// Whether this is a course-specific "no usable detail" — the server responded
+    /// but there is no guid/detail (bad guid, empty body, an `errorMsg` like MSG5).
+    /// Such a course can be tombstoned after repeated failures, unlike an HTTP or
+    /// network error, which is server-side and should keep retrying.
+    pub fn is_no_detail(&self) -> bool {
+        matches!(self, DetailError::Fatal(_))
+    }
     /// The server-requested wait (`Retry-After`), if any, to honor before retrying.
     pub fn retry_after(&self) -> Option<Duration> {
         match self {

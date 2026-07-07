@@ -57,6 +57,11 @@ pub struct FetchDetailsArgs {
     /// Retries per course on transient errors.
     #[arg(long, default_value_t = 3)]
     retries: u32,
+    /// Treat a course as "scanned" (stop re-requesting it in scheduled runs) after
+    /// this many "no detail" responses at the same grid lastUpdate. `--force`
+    /// retries tombstoned courses anyway.
+    #[arg(long = "tombstone-after", default_value_t = 2)]
+    tombstone_after: u32,
     /// Stop cleanly after this many seconds (for CI partial commits; 0 = unlimited).
     #[arg(long = "max-secs", default_value_t = 0)]
     max_secs: u64,
@@ -76,9 +81,10 @@ pub fn run(args: FetchDetailsArgs) -> Result<()> {
         )
     })?;
 
-    let selected = select_courses(all, &args);
+    let no_detail = load_no_detail(&args.out_dir);
+    let selected = select_courses(all, &args, &no_detail);
     if selected.is_empty() {
-        eprintln!("fetch-details: nothing to fetch (all up to date, or 0 after filtering)");
+        eprintln!("fetch-details: nothing to fetch (all up to date, tombstoned, or filtered out)");
         return Ok(());
     }
     ui::header(selected.len(), args.sleep_ms, args.jitter_ms, &args.out_dir);
@@ -107,6 +113,11 @@ pub fn run(args: FetchDetailsArgs) -> Result<()> {
         report.elapsed,
         report.aborted,
     );
+
+    // Persist no-detail tombstones so scheduled runs stop re-requesting courses the
+    // server declines (saved before any bail below, so it always sticks).
+    let no_detail = update_no_detail(no_detail, &report, &selected, &args.out_dir);
+    save_no_detail(&args.out_dir, &no_detail)?;
 
     let attempted = report.fetched + report.skipped.len();
     if !report.diagnostics.is_empty() || report.aborted {
@@ -243,22 +254,36 @@ fn course_refs(raw: &[syllabus_core::model::RawCourse]) -> Vec<CourseRef> {
         .collect()
 }
 
-/// Apply `--only`, incremental (`lastUpdate` unchanged) skipping, and `--limit`.
-fn select_courses(all: Vec<CourseRef>, args: &FetchDetailsArgs) -> Vec<CourseRef> {
+/// Apply `--only`, incremental skipping, no-detail tombstones, and `--limit`.
+fn select_courses(
+    all: Vec<CourseRef>,
+    args: &FetchDetailsArgs,
+    no_detail: &HashMap<String, NoDetail>,
+) -> Vec<CourseRef> {
     let existing = existing_last_updates(&args.out_dir);
-    filter_courses(all, args.only.as_deref(), &existing, args.force, args.limit)
+    filter_courses(
+        all,
+        args.only.as_deref(),
+        &existing,
+        args.force,
+        args.limit,
+        no_detail,
+        args.tombstone_after,
+    )
 }
 
-/// Pure selection: `--only` → incremental skip (drop courses whose `lastUpdate`
-/// matches what we already saved) → `--limit`. Split from the filesystem read so
-/// the day-to-day window advance (last run's fetches are skipped, so `--limit`
-/// takes the next batch) is unit-testable.
+/// Pure selection: `--only` → skip already-fetched (incremental) and tombstoned
+/// no-detail courses → `--limit`. `--force` keeps everything. Split from the
+/// filesystem read so the day-to-day window advance is unit-testable.
+#[allow(clippy::too_many_arguments)]
 fn filter_courses(
     all: Vec<CourseRef>,
     only: Option<&str>,
     existing: &HashMap<String, String>,
     force: bool,
     limit: usize,
+    no_detail: &HashMap<String, NoDetail>,
+    tombstone_after: u32,
 ) -> Vec<CourseRef> {
     let only: Option<std::collections::HashSet<&str>> = only.map(|s| {
         s.split(',')
@@ -272,9 +297,10 @@ fn filter_courses(
         .filter(|c| only.as_ref().is_none_or(|set| set.contains(c.cd.as_str())))
         .filter(|c| {
             force
-                || existing
+                || (existing
                     .get(&c.cd)
                     .is_none_or(|prev| prev != &c.last_update || c.last_update.is_empty())
+                    && !is_tombstoned(no_detail, &c.cd, &c.last_update, tombstone_after))
         })
         .collect();
     if limit > 0 {
@@ -297,6 +323,88 @@ fn existing_last_updates(out_dir: &std::path::Path) -> HashMap<String, String> {
             Some((detail.cd, detail.last_update))
         })
         .collect()
+}
+
+// --- "no detail" tombstones (courses the server declines; stop re-requesting) ---
+
+const NO_DETAIL_FILE: &str = "_no-detail.tsv";
+
+/// Per-course "the server has no detail here" record: how many times it failed and
+/// the grid `lastUpdate` it was seen at (a later update re-opens the course).
+#[derive(Clone)]
+struct NoDetail {
+    last_update: String,
+    fails: u32,
+}
+
+/// Load tombstones from `out_dir/_no-detail.tsv` (the `.tsv` extension keeps it out
+/// of the `*.json` detail readers). Missing/garbled lines → skipped.
+fn load_no_detail(out_dir: &std::path::Path) -> HashMap<String, NoDetail> {
+    let Ok(text) = fs::read_to_string(out_dir.join(NO_DETAIL_FILE)) else {
+        return HashMap::new();
+    };
+    text.lines()
+        .filter_map(|line| {
+            let mut c = line.split('\t');
+            let cd = c.next()?;
+            let last_update = c.next()?.to_owned();
+            let fails: u32 = c.next()?.parse().ok()?;
+            (!cd.is_empty()).then(|| (cd.to_owned(), NoDetail { last_update, fails }))
+        })
+        .collect()
+}
+
+/// Persist tombstones (sorted for clean diffs); empty → remove the file.
+fn save_no_detail(out_dir: &std::path::Path, map: &HashMap<String, NoDetail>) -> Result<()> {
+    let path = out_dir.join(NO_DETAIL_FILE);
+    if map.is_empty() {
+        let _ = fs::remove_file(&path);
+        return Ok(());
+    }
+    let mut rows: Vec<(&String, &NoDetail)> = map.iter().collect();
+    rows.sort_by(|a, b| a.0.cmp(b.0));
+    let out: String = rows
+        .iter()
+        .map(|(cd, nd)| format!("{cd}\t{}\t{}\n", nd.last_update, nd.fails))
+        .collect();
+    fs::write(&path, out).with_context(|| format!("failed to write {}", path.display()))
+}
+
+/// Whether a course is a confirmed no-detail at its current `lastUpdate`.
+fn is_tombstoned(nd: &HashMap<String, NoDetail>, cd: &str, last_update: &str, after: u32) -> bool {
+    nd.get(cd)
+        .is_some_and(|r| r.fails >= after && r.last_update == last_update)
+}
+
+/// Fold this run's no-detail failures into the state: increment (resetting the
+/// count when the grid `lastUpdate` changed), then drop any course that now has a
+/// detail file (e.g. a `--force` run finally fetched it).
+fn update_no_detail(
+    mut state: HashMap<String, NoDetail>,
+    report: &CrawlReport,
+    selected: &[CourseRef],
+    out_dir: &std::path::Path,
+) -> HashMap<String, NoDetail> {
+    let lu: HashMap<&str, &str> = selected
+        .iter()
+        .map(|c| (c.cd.as_str(), c.last_update.as_str()))
+        .collect();
+    for cd in &report.no_detail {
+        let last_update = lu.get(cd.as_str()).copied().unwrap_or_default().to_owned();
+        let entry = state.entry(cd.clone()).or_insert(NoDetail {
+            last_update: last_update.clone(),
+            fails: 0,
+        });
+        if entry.last_update != last_update {
+            *entry = NoDetail {
+                last_update,
+                fails: 0,
+            };
+        }
+        entry.fails += 1;
+    }
+    state.retain(|cd, _| !out_dir.join(format!("{cd}.json")).exists());
+    state
 }
 
 /// Write one course's detail as compact JSON to `out_dir/{cd}.json`.
@@ -365,6 +473,9 @@ struct CrawlReport {
     /// Rich, self-explaining context for the first few failures (status + response
     /// body), captured so a failure is diagnosable without an expensive re-run.
     diagnostics: Vec<(String, String)>,
+    /// Courses that failed with a course-specific "no detail" this run (candidates
+    /// for tombstoning so scheduled runs stop re-requesting them).
+    no_detail: Vec<String>,
     aborted: bool,
     elapsed: Duration,
 }
@@ -405,6 +516,7 @@ fn crawl_with_clock(
     let mut fetched = 0usize;
     let mut skipped = Vec::new();
     let mut diagnostics: Vec<(String, String)> = Vec::new();
+    let mut no_detail: Vec<String> = Vec::new();
     let mut consecutive_blocks = 0u32;
     // Emit a progress line every N courses so a long run is observable live in the
     // Actions log (step logs only finalize on completion otherwise).
@@ -439,6 +551,10 @@ fn crawl_with_clock(
                     }
                     diagnostics.push((course.cd.clone(), err.diagnostic()));
                 }
+                // A course-specific "no detail" counts toward tombstoning it.
+                if err.is_no_detail() {
+                    no_detail.push(course.cd.clone());
+                }
                 skipped.push((course.cd.clone(), err.to_string()));
                 if blocking {
                     consecutive_blocks += 1;
@@ -447,6 +563,7 @@ fn crawl_with_clock(
                             fetched,
                             skipped,
                             diagnostics,
+                            no_detail,
                             aborted: true,
                             elapsed: elapsed(),
                         };
@@ -467,6 +584,7 @@ fn crawl_with_clock(
         fetched,
         skipped,
         diagnostics,
+        no_detail,
         aborted: false,
         elapsed: elapsed(),
     }
@@ -576,8 +694,9 @@ mod tests {
                 course("005"),
             ]
         };
+        let none = HashMap::new();
         // Day 1: nothing saved yet → the first `limit` courses are selected.
-        let day1 = filter_courses(all(), None, &HashMap::new(), false, 3);
+        let day1 = filter_courses(all(), None, &HashMap::new(), false, 3, &none, 2);
         assert_eq!(cds(&day1), ["001", "002", "003"]);
 
         // Day 2: day 1's fetches are now saved at the same lastUpdate → skipped,
@@ -586,16 +705,67 @@ mod tests {
             .iter()
             .map(|c| (c.cd.clone(), c.last_update.clone()))
             .collect();
-        let day2 = filter_courses(all(), None, &saved, false, 3);
+        let day2 = filter_courses(all(), None, &saved, false, 3, &none, 2);
         assert_eq!(cds(&day2), ["004", "005"]);
 
         // --force ignores saved state and re-selects from the top.
-        let forced = filter_courses(all(), None, &saved, true, 3);
+        let forced = filter_courses(all(), None, &saved, true, 3, &none, 2);
         assert_eq!(cds(&forced), ["001", "002", "003"]);
 
         // --only narrows to specific codes before the limit applies.
-        let only = filter_courses(all(), Some("002,004"), &HashMap::new(), false, 0);
+        let only = filter_courses(all(), Some("002,004"), &HashMap::new(), false, 0, &none, 2);
         assert_eq!(cds(&only), ["002", "004"]);
+    }
+
+    #[test]
+    fn tombstoned_no_detail_courses_are_skipped_until_forced_or_changed() {
+        let cds = |v: &[CourseRef]| v.iter().map(|c| c.cd.clone()).collect::<Vec<_>>();
+        let all = || vec![course("001"), course("002"), course("003")];
+        let none = HashMap::new();
+
+        // 001 confirmed no-detail (2 fails at the current lastUpdate "t") → skipped.
+        let mut nd = HashMap::new();
+        nd.insert(
+            "001".to_owned(),
+            NoDetail {
+                last_update: "t".into(),
+                fails: 2,
+            },
+        );
+        let sel = filter_courses(all(), None, &none, false, 0, &nd, 2);
+        assert_eq!(cds(&sel), ["002", "003"]);
+
+        // Only one failure so far → still retried (below the threshold).
+        let mut one = HashMap::new();
+        one.insert(
+            "001".to_owned(),
+            NoDetail {
+                last_update: "t".into(),
+                fails: 1,
+            },
+        );
+        assert_eq!(
+            cds(&filter_courses(all(), None, &none, false, 0, &one, 2)),
+            ["001", "002", "003"]
+        );
+
+        // --force retries even a tombstoned course.
+        assert_eq!(
+            cds(&filter_courses(all(), None, &none, true, 0, &nd, 2)),
+            ["001", "002", "003"]
+        );
+
+        // A changed grid lastUpdate re-opens it (the tombstone was for "t", not "u").
+        let changed = vec![CourseRef {
+            cd: "001".into(),
+            kaiko_nendo: "2026".into(),
+            pattern_id: "4".into(),
+            last_update: "u".into(),
+        }];
+        assert_eq!(
+            cds(&filter_courses(changed, None, &none, false, 0, &nd, 2)),
+            ["001"]
+        );
     }
 
     fn report_with(
@@ -608,6 +778,7 @@ mod tests {
             fetched,
             skipped,
             diagnostics,
+            no_detail: Vec::new(),
             aborted,
             elapsed: Duration::ZERO,
         }
