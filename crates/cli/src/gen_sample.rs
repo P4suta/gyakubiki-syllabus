@@ -150,7 +150,7 @@ fn raw_course(i: usize, rng: &mut StdRng) -> serde_json::Value {
     let (name, instructor, dept) = match i {
         3 => (
             "理論 & 実践 <入門>".to_owned(),
-            "Smith, John".to_owned(),
+            "Smith John".to_owned(),
             DEPARTMENTS[0],
         ),
         7 => (SUBJECTS[i % SUBJECTS.len()].to_owned(), String::new(), ""), // empty prof + dept
@@ -161,11 +161,15 @@ fn raw_course(i: usize, rng: &mut StdRng) -> serde_json::Value {
             } else {
                 base.to_owned()
             };
-            (
-                n,
-                INSTRUCTORS[rng.random_range(0..INSTRUCTORS.len())].to_owned(),
-                DEPARTMENTS[i % DEPARTMENTS.len()],
-            )
+            let a = INSTRUCTORS[rng.random_range(0..INSTRUCTORS.len())];
+            // Some courses are team-taught (comma-separated), so the card shows「… ほか」.
+            let instructor = if i.is_multiple_of(3) {
+                let b = INSTRUCTORS[rng.random_range(0..INSTRUCTORS.len())];
+                format!("{a}, {b}")
+            } else {
+                a.to_owned()
+            };
+            (n, instructor, DEPARTMENTS[i % DEPARTMENTS.len()])
         }
     };
     let fukudai = (i % 5 == 2).then(|| "基礎から応用まで".to_owned());

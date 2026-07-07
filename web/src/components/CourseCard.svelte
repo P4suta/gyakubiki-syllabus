@@ -11,11 +11,19 @@ interface Props {
 let { course, onclick }: Props = $props()
 let color = $derived(getColor(course.cd))
 
+// Representative instructor; "… ほか" once there is more than one.
+const prof = $derived.by(() => {
+	const names = course.prof
+		.split(',')
+		.map((s) => s.trim())
+		.filter(Boolean)
+	if (names.length === 0) return ''
+	return names.length > 1 ? `${names[0]} ほか` : names[0]
+})
+
 const mode = $derived(deliveryMode(course.dm))
 
-// The course's dominant assessment axis with its share of the whole grade
-// (e.g. 試験 60%). Percentage is the weight relative to the total, matching the
-// modal's chart; omitted when KULAS gives no weights.
+// Dominant assessment axis with its share of the whole grade (e.g. 試験 60%).
 const topEval = $derived.by(() => {
 	if (!course.ev?.length) return null
 	const parsed = course.ev.map((e) => {
@@ -29,7 +37,7 @@ const topEval = $derived.by(() => {
 	return `${evalKind(top.type).label}${pct != null ? ` ${pct}%` : ''}`
 })
 
-// Compact "delivery · assessment%" line; omits whichever part is missing.
+// The key "how it's delivered / graded" line — emphasized in the card's accent.
 const meta = $derived([mode?.label, topEval].filter(Boolean).join(' · '))
 </script>
 
@@ -41,10 +49,13 @@ const meta = $derived([mode?.label, topEval].filter(Boolean).join(' · '))
 	<div class="font-semibold text-caption sm:text-micro leading-snug line-clamp-2 text-apple-text">
 		{course.nm}
 	</div>
+	{#if prof}
+		<div class="text-micro sm:text-fine text-apple-text/50 truncate">{prof}</div>
+	{/if}
 	{#if meta || course.unit}
-		<div class="flex items-center gap-1 text-micro sm:text-fine text-apple-text/50 mt-0.5">
-			<span class="truncate">{meta}</span>
-			{#if course.unit}<span class="ml-auto shrink-0 tabular-nums">{course.unit}</span>{/if}
+		<div class="flex items-center gap-1 text-micro sm:text-fine mt-0.5">
+			{#if meta}<span class="truncate font-semibold" style="color: {color.border};">{meta}</span>{/if}
+			{#if course.unit}<span class="ml-auto shrink-0 tabular-nums text-apple-text/45">{course.unit}</span>{/if}
 		</div>
 	{/if}
 </button>
