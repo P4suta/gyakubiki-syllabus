@@ -365,14 +365,20 @@ fn save_no_detail(out_dir: &std::path::Path, map: &HashMap<String, NoDetail>) ->
     rows.sort_by(|a, b| a.0.cmp(b.0));
     let out: String = rows
         .iter()
-        .map(|(cd, nd)| format!("{cd}\t{}\t{}\n", nd.last_update, nd.fails))
+        .map(|(cd, rec)| format!("{cd}\t{}\t{}\n", rec.last_update, rec.fails))
         .collect();
     fs::write(&path, out).with_context(|| format!("failed to write {}", path.display()))
 }
 
 /// Whether a course is a confirmed no-detail at its current `lastUpdate`.
-fn is_tombstoned(nd: &HashMap<String, NoDetail>, cd: &str, last_update: &str, after: u32) -> bool {
-    nd.get(cd)
+fn is_tombstoned(
+    state: &HashMap<String, NoDetail>,
+    cd: &str,
+    last_update: &str,
+    after: u32,
+) -> bool {
+    state
+        .get(cd)
         .is_some_and(|r| r.fails >= after && r.last_update == last_update)
 }
 
@@ -724,15 +730,15 @@ mod tests {
         let none = HashMap::new();
 
         // 001 confirmed no-detail (2 fails at the current lastUpdate "t") → skipped.
-        let mut nd = HashMap::new();
-        nd.insert(
+        let mut tomb = HashMap::new();
+        tomb.insert(
             "001".to_owned(),
             NoDetail {
                 last_update: "t".into(),
                 fails: 2,
             },
         );
-        let sel = filter_courses(all(), None, &none, false, 0, &nd, 2);
+        let sel = filter_courses(all(), None, &none, false, 0, &tomb, 2);
         assert_eq!(cds(&sel), ["002", "003"]);
 
         // Only one failure so far → still retried (below the threshold).
@@ -751,7 +757,7 @@ mod tests {
 
         // --force retries even a tombstoned course.
         assert_eq!(
-            cds(&filter_courses(all(), None, &none, true, 0, &nd, 2)),
+            cds(&filter_courses(all(), None, &none, true, 0, &tomb, 2)),
             ["001", "002", "003"]
         );
 
@@ -763,7 +769,7 @@ mod tests {
             last_update: "u".into(),
         }];
         assert_eq!(
-            cds(&filter_courses(changed, None, &none, false, 0, &nd, 2)),
+            cds(&filter_courses(changed, None, &none, false, 0, &tomb, 2)),
             ["001"]
         );
     }
