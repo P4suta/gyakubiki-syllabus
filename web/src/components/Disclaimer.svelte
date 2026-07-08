@@ -2,17 +2,44 @@
 import { fade, scale } from 'svelte/transition'
 
 let accepted = $state(false)
+let dialogEl = $state<HTMLDialogElement>()
+
+// Top-layer consent gate: `showModal()` lifts it above everything (no z-index)
+// and traps focus. It's a gate, so Esc must NOT dismiss it — swallow `cancel`.
+// (jsdom lacks showModal — fall back to `open` so any render test works.)
+$effect(() => {
+	const el = dialogEl
+	if (!el) return
+	try {
+		el.showModal()
+	} catch {
+		el.open = true
+	}
+	return () => {
+		try {
+			el.close()
+		} catch {
+			el.open = false
+		}
+	}
+})
 </script>
 
 {#if !accepted}
-<div
-	class="fixed inset-0 z-overlay flex items-center justify-center bg-overlay-backdrop backdrop-blur-md p-4"
-	transition:fade={{ duration: 200 }}
+<dialog
+	bind:this={dialogEl}
+	class="overlay"
+	aria-label="ご利用にあたって"
+	oncancel={(e) => e.preventDefault()}
 >
 	<div
-		class="bg-surface-primary rounded-2xl shadow-modal max-w-md w-full max-h-overlay overflow-y-auto p-5 sm:p-8"
-		transition:scale={{ start: 0.95, duration: 300 }}
+		class="fixed inset-0 flex items-center justify-center bg-overlay-backdrop backdrop-blur-md p-4"
+		transition:fade={{ duration: 200 }}
 	>
+		<div
+			class="bg-surface-primary rounded-2xl shadow-modal max-w-md w-full max-h-overlay overflow-y-auto p-5 sm:p-8"
+			transition:scale={{ start: 0.95, duration: 300 }}
+		>
 		<h2 class="text-title font-semibold text-apple-text tracking-tight mb-5">ご利用にあたって</h2>
 
 		<div class="text-body text-apple-text-secondary leading-relaxed space-y-3 mb-8 tracking-tight">
@@ -39,4 +66,5 @@ let accepted = $state(false)
 		</button>
 	</div>
 </div>
+</dialog>
 {/if}

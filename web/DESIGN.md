@@ -73,10 +73,13 @@ rest are conventions.
   size/spacing `[…]` fails the lint. (`scale-[1.02]`, the one hover micro-scale,
   is the lone sanctioned exception.)
 - **Stacking** ★ — one named z-ladder in `app.css`, never a raw `z-<n>`:
-  `z-sticky` (10) < `z-sticky-head` (20) < `z-sticky-corner` (30) < `z-nav` (50)
-  < `z-overlay` (100) < `z-sheet` (200). The `sticky-*` rungs order the grid's
-  sticky siblings; overlays sit on top. (Overlays could instead move to the
-  native top layer via `<dialog>` and carry no z at all.)
+  `z-sticky` (10) < `z-sticky-head` (20) < `z-sticky-corner` (30) < `z-nav` (50).
+  The `sticky-*` rungs order the grid's sticky siblings; `nav` is the chrome.
+- **Overlays** — modal, sheet, and the consent gate render in the native **top
+  layer** via `<dialog>.showModal()` (`dialog.overlay` in `app.css`): above every
+  stacking context with **no z-index**, plus a free focus trap and inert page.
+  Esc arrives as the dialog's `cancel` event, which the sheet routes through its
+  single history/back close-path (the consent gate swallows it).
 - **Motion** — property-specific transitions (`transition-colors` /
   `-transform`), `duration-200`, and `ease-spring` for movement.
 

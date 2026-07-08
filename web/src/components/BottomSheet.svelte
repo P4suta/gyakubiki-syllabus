@@ -22,8 +22,35 @@ const initialMobile = !matchesDesktop()
 
 const desktop = useDesktop()
 const isDesktop = $derived(desktop.current)
+let dialogEl = $state<HTMLDialogElement>()
 let sheetEl = $state<HTMLElement>()
 let bodyEl = $state<HTMLElement>()
+
+// Render in the top layer: `showModal()` lifts the dialog above every stacking
+// context (no z-index) and traps focus. Native Esc fires `cancel`; we route it
+// through our own dismiss so the history/back close-path stays single. (jsdom
+// lacks showModal — fall back to the `open` attribute so component tests run.)
+$effect(() => {
+	const el = dialogEl
+	if (!el) return
+	try {
+		el.showModal()
+	} catch {
+		el.open = true
+	}
+	return () => {
+		try {
+			el.close()
+		} catch {
+			el.open = false
+		}
+	}
+})
+
+function onCancel(e: Event) {
+	e.preventDefault() // keep close on our single path, not the native one
+	dismiss()
+}
 
 // Sheet offset from its resting position. Starts a screen below on mobile so the
 // first paint is off-screen and the open effect can slide it up.
@@ -178,37 +205,41 @@ $effect(() => {
 })
 </script>
 
-<svelte:window onkeydown={(e) => { if (e.key === 'Escape') dismiss() }} />
+<!-- The native <dialog> exists only to put us in the top layer (showModal); the
+     inner element carries the dialog semantics, so `role="presentation"` here
+     keeps a single dialog in the a11y tree and lets tests target the sheet. -->
+<!-- svelte-ignore a11y_no_interactive_element_to_noninteractive_role -->
+<dialog bind:this={dialogEl} class="overlay" role="presentation" oncancel={onCancel}>
+	<div class="fixed inset-0 flex items-end justify-center sm:items-center sm:p-5">
+		<!-- svelte-ignore a11y_click_events_have_key_events -->
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<div
+			class="absolute inset-0 bg-overlay-backdrop backdrop-blur-md animate-fade-in"
+			style="opacity: {backdropOpacity};"
+			aria-hidden="true"
+			onclick={dismiss}
+		></div>
 
-<div class="fixed inset-0 z-sheet flex items-end justify-center sm:items-center sm:p-5">
-	<!-- svelte-ignore a11y_click_events_have_key_events -->
-	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<div
-		class="absolute inset-0 bg-overlay-backdrop backdrop-blur-md animate-fade-in"
-		style="opacity: {backdropOpacity};"
-		aria-hidden="true"
-		onclick={dismiss}
-	></div>
-
-	<div
-		bind:this={sheetEl}
-		role="dialog"
-		aria-modal="true"
-		aria-label={ariaLabel}
-		class="relative flex flex-col w-full max-h-overlay overflow-hidden bg-surface-primary rounded-t-2xl shadow-modal safe-bottom sm:max-w-lg sm:max-h-overlay-sm sm:rounded-2xl {isDesktop ? 'animate-dialog-in' : ''}"
-		style="translate: 0 {isDesktop ? 0 : dragY}px; transition: {settling ? 'translate 0.26s var(--ease-spring)' : 'none'};"
-	>
-		<div class="flex justify-center pt-2 shrink-0 sm:hidden touch-none">
-			<div class="w-9 h-1 rounded-full bg-overlay-strong"></div>
+		<div
+			bind:this={sheetEl}
+			role="dialog"
+			aria-modal="true"
+			aria-label={ariaLabel}
+			class="relative flex flex-col w-full max-h-overlay overflow-hidden bg-surface-primary rounded-t-2xl shadow-modal safe-bottom sm:max-w-lg sm:max-h-overlay-sm sm:rounded-2xl {isDesktop ? 'animate-dialog-in' : ''}"
+			style="translate: 0 {isDesktop ? 0 : dragY}px; transition: {settling ? 'translate 0.26s var(--ease-spring)' : 'none'};"
+		>
+			<div class="flex justify-center pt-2 shrink-0 sm:hidden touch-none">
+				<div class="w-9 h-1 rounded-full bg-overlay-strong"></div>
+			</div>
+			{#if header}
+				<div class="shrink-0 touch-none">{@render header(dismiss)}</div>
+			{/if}
+			<div bind:this={bodyEl} class="grow overflow-auto overscroll-contain touch-pan-y">
+				{@render children()}
+			</div>
+			{#if footer}
+				<div class="shrink-0">{@render footer(dismiss)}</div>
+			{/if}
 		</div>
-		{#if header}
-			<div class="shrink-0 touch-none">{@render header(dismiss)}</div>
-		{/if}
-		<div bind:this={bodyEl} class="grow overflow-auto overscroll-contain touch-pan-y">
-			{@render children()}
-		</div>
-		{#if footer}
-			<div class="shrink-0">{@render footer(dismiss)}</div>
-		{/if}
 	</div>
-</div>
+</dialog>
