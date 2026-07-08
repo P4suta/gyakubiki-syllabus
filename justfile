@@ -61,6 +61,15 @@ cov:
 fuzz TARGET *ARGS:
     cd crates/cli/fuzz && cargo +nightly fuzz run {{TARGET}} -- -max_total_time=60 {{ARGS}}
 
+# Mutation testing (weekly in CI, slow): do the tests actually kill injected bugs?
+# Rust core (needs `cargo install cargo-mutants`).
+mutants *ARGS:
+    cargo mutants --package syllabus-core --timeout 60 {{ARGS}}
+
+# Mutation testing for the web's pure lib modules (see web/stryker.conf.json).
+stryker:
+    cd web && bunx stryker run
+
 # === Format / lint ===
 
 fmt:

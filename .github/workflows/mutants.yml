@@ -1,0 +1,57 @@
+name: Mutation
+
+# Mutation testing: inject small bugs and check the suite kills them — measures
+# whether the tests actually catch regressions (vs merely running). Weekly plus
+# on-demand; never gates a PR (it is slow and advisory, like Fuzz).
+on:
+  schedule:
+    - cron: "0 5 * * 1" # Mondays 05:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mutation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cargo-mutants:
+    name: cargo-mutants (core)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-mutants
+      # The proptest-heavy core is where mutation testing pays off; --timeout
+      # guards mutants that spin an infinite loop.
+      - name: mutate syllabus-core
+        run: cargo mutants --package syllabus-core --timeout 60 -j 2
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: mutants-core
+          path: mutants.out/
+          retention-days: 14
+          if-no-files-found: ignore
+
+  stryker:
+    name: Stryker (web lib)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - run: bunx stryker run
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: stryker-report
+          path: web/reports/
+          retention-days: 14
+          if-no-files-found: ignore
