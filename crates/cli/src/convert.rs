@@ -171,6 +171,51 @@ mod tests {
     }
 
     #[test]
+    fn detail_prose_stays_out_of_the_search_haystack() {
+        // Only キーワード ride into `st`; the long 概要/目的/到達目標 prose does not,
+        // so it can't bloat data.json (it stays in details/{cd}.json). Guarding the
+        // *negative* here — the earlier positive test alone wouldn't catch a
+        // regression that re-adds the prose.
+        let raw = vec![RawCourse {
+            kogi_cd: "001".into(),
+            kogi_nm: "情報科学".into(),
+            ..Default::default()
+        }];
+        // Japanese-only tokens: `normalize` lowercases ASCII, so distinct kana/kanji
+        // avoid a false match from casing.
+        let detail = SanshoDetail {
+            cd: "001".into(),
+            summary: Some("除外概要プロース本文".into()),
+            aims: Some("除外目的プロース本文".into()),
+            goals: vec!["除外到達目標プロース本文".into()],
+            keywords: vec!["検索可能キーワード語".into()],
+            ..Default::default()
+        };
+        let details: HashMap<String, SanshoDetail> =
+            [("001".to_owned(), detail)].into_iter().collect();
+
+        let json = String::from_utf8(
+            render_data_json(&raw, "t".into(), true, &details)
+                .unwrap()
+                .bytes,
+        )
+        .unwrap();
+        assert!(
+            json.contains("検索可能キーワード語"),
+            "keyword should be searchable"
+        );
+        assert!(
+            !json.contains("除外概要"),
+            "summary prose must not enter st"
+        );
+        assert!(!json.contains("除外目的"), "aims prose must not enter st");
+        assert!(
+            !json.contains("除外到達目標"),
+            "goals prose must not enter st"
+        );
+    }
+
+    #[test]
     fn unparsable_weight_renders_kind_without_fabricated_zero() {
         let raw = vec![RawCourse {
             kogi_cd: "001".into(),

@@ -125,20 +125,29 @@ mod tests {
             prop_assert!(!out.bytes().any(|b| b.is_ascii_uppercase()));
         }
 
-        /// `search_text` is exactly `normalize` of the space-joined parts — the
-        /// contract the search relies on (haystack and query share `normalize`).
+        /// `search_text` is exactly `normalize` of the space-joined parts (core
+        /// five + non-empty extra taxonomy) — the contract the search relies on
+        /// (haystack and query share `normalize`).
         #[test]
         fn search_text_is_normalize_of_the_join(
             name in "[\\p{Han}a-zA-Z0-9]{0,10}",
             instr in "[\\p{Han}a-zA-Z0-9]{0,10}",
             code in "[a-zA-Z0-9]{0,8}",
             dept in "[\\p{Han}a-zA-Z0-9]{0,10}",
+            extra in proptest::collection::vec("[\\p{Han}a-zA-Z0-9]{0,8}", 0..4),
         ) {
-            let st = search_text(&name, None, &instr, &code, &dept, &[]);
-            let joined = normalize(&[name.as_str(), instr.as_str(), code.as_str(), dept.as_str()].join(" "));
-            prop_assert_eq!(&st, &joined);
-            // A normalized query drawn from one part is found in the haystack.
+            let extra_refs: Vec<&str> = extra.iter().map(String::as_str).collect();
+            let st = search_text(&name, None, &instr, &code, &dept, &extra_refs);
+
+            let mut parts = vec![name.as_str(), instr.as_str(), code.as_str(), dept.as_str()];
+            parts.extend(extra_refs.iter().copied().filter(|s| !s.is_empty()));
+            prop_assert_eq!(&st, &normalize(&parts.join(" ")));
+
+            // A normalized query drawn from any part is found in the haystack.
             prop_assert!(st.contains(&normalize(&instr)));
+            for e in extra_refs.iter().filter(|s| !s.is_empty()) {
+                prop_assert!(st.contains(&normalize(e)), "non-empty extra must appear in st");
+            }
         }
     }
 }

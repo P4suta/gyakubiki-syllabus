@@ -576,6 +576,21 @@ mod tests {
     }
 
     #[test]
+    fn taxonomy_bunya_and_bunrui_are_searchable_in_st() {
+        // 分野・分類 must ride along in the search haystack so they stay searchable
+        // now that the heavy syllabus prose no longer does (see the CLI's convert).
+        let data = convert(&[RawCourse {
+            kamoku_bunya: Some("数理科学".into()),
+            kamoku_bunrui: Some("専門科目".into()),
+            ..raw("001", "線形代数")
+        }]);
+        let st = &data.courses[0].st;
+        assert!(st.contains("数理科学"), "bunya must be in st: {st}");
+        assert!(st.contains("専門科目"), "bunrui must be in st: {st}");
+        assert!(!st.contains('\u{3000}'), "st stays normalized");
+    }
+
+    #[test]
     fn dedups_by_code_and_merges_slots() {
         let data = convert(&[
             RawCourse {
