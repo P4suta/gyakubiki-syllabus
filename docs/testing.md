@@ -15,7 +15,8 @@ is on-screen-but-mispositioned. The layers below close those gaps.
 | Rust snapshots | `insta` | CI `rust` | `cargo test` (regen: `INSTA_UPDATE=always`) |
 | WASM boundary shapes | `wasm-pack test --node` | CI `web` | `just test-wasm` |
 | Web unit + property | `vitest` (+ `fast-check`) | CI `web` | `bun run test` |
-| Web coverage (pure `lib/`) | `@vitest/coverage-v8` | CI `web` | `bun run test:cov` |
+| Web component / state-machine | `vitest` (jsdom) + `@testing-library/svelte` | CI `web` | `bun run test` |
+| Web coverage (`lib/` incl. gestures) | `@vitest/coverage-v8` | CI `web` | `bun run test:cov` |
 | Web static "forbidden pattern" checks | `vitest` | CI `web` | `bun run test` |
 | E2E: smoke / filters / search / modal | Playwright | CI `e2e` | `bun run test:e2e` |
 | E2E: **geometry** (box/overlap/band) | Playwright | CI `e2e` | `bun run test:e2e` |
@@ -31,6 +32,14 @@ is on-screen-but-mispositioned. The layers below close those gaps.
   inputs rather than a few examples — e.g. `rubberBand` is bounded & monotonic,
   `shouldCommit` commits iff far- or fast-enough, eval-chart shares round to ~100
   and arc length + gap = circumference, `search_text` normalises the join.
+- **Component / state-machine tests** (`*.svelte.test.ts`, jsdom +
+  `@testing-library/svelte`): drive the DOM state machines E2E can only cover
+  slowly — the BottomSheet's single-path close routing (history push/popstate/
+  Esc), the day pager's `onSettle → commit` transitions, `TimetableCell`'s
+  IntersectionObserver lazy-mount, and the `swipeNavigate` action. Vitest runs
+  two projects — `node` (pure, DOM-free) and `dom` (jsdom) — so browser globals
+  never leak into the pure tests. Layout/geometry (`getBoundingClientRect`) has
+  no meaning in jsdom and stays in E2E.
 - **Geometry assertions** (`e2e/helpers.ts`): `box`, `boxesOverlap`,
   `expectWithinBand`, `expectOnScreen`, `expectNoOverlap`. These check the
   rendered rectangles, catching "DOM-visible but off-screen / overlapping" —
@@ -44,7 +53,7 @@ is on-screen-but-mispositioned. The layers below close those gaps.
   (`fingerprint.rs`), and `insta` for generated TS/MD (`fields.rs`).
 - **Mutation testing**: measures whether the suite *kills* injected bugs. Advisory
   (weekly) — surfaced a real gap once (an arc test that ignored the dash gap).
-  Excludes data tables and DOM/worker code, which other layers cover.
+  Excludes data tables and the worker/network code, which other layers cover.
 
 ## Determinism notes
 
@@ -59,5 +68,3 @@ is on-screen-but-mispositioned. The layers below close those gaps.
 - **Visual regression** (`toHaveScreenshot`): baselines must be rendered on the CI
   OS (Linux); with signed-commit rules and no local Linux/Docker here, baseline
   bootstrapping needs a dedicated (API-committed) workflow — deferred.
-- **Component render tests** (jsdom + `@testing-library/svelte`) for the BottomSheet
-  / day-pager state machines — deferred; their logic is currently covered by E2E.

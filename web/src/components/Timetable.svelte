@@ -1,4 +1,5 @@
 <script lang="ts">
+import { useDesktop } from '../lib/breakpoint.svelte'
 import { type GridKey, PERIODS } from '../lib/engine'
 import { haptic, type SwipeDir, swipeNavigate } from '../lib/gestures'
 import { PERIOD_TIMES } from '../lib/schedule'
@@ -71,17 +72,8 @@ const minWidth = $derived(`${days.length * 120 + 64}px`)
 // dozens of cards, and mounting both (hiding one with CSS) doubled the initial
 // component work for nothing. `sm` = 640px, matching the Tailwind breakpoints
 // below. Seeded synchronously so the correct view renders on the first frame.
-const DESKTOP = '(min-width: 640px)'
-let isDesktop = $state(typeof window !== 'undefined' && window.matchMedia(DESKTOP).matches)
-$effect(() => {
-	const mq = window.matchMedia(DESKTOP)
-	const sync = () => {
-		isDesktop = mq.matches
-	}
-	sync()
-	mq.addEventListener('change', sync)
-	return () => mq.removeEventListener('change', sync)
-})
+const desktop = useDesktop()
+const isDesktop = $derived(desktop.current)
 
 // The「N限」badge stays readable while scrolling a tall row via native
 // `position: sticky` (top: header height, bottom: 6px). Compositor-driven, so it

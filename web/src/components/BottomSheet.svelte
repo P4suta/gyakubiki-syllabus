@@ -1,5 +1,6 @@
 <script lang="ts">
 import type { Snippet } from 'svelte'
+import { matchesDesktop, useDesktop } from '../lib/breakpoint.svelte'
 import { haptic, rubberBand, shouldCommit } from '../lib/gestures'
 
 interface Props {
@@ -17,10 +18,10 @@ interface Props {
 
 let { onclose, ariaLabel, header, footer, children }: Props = $props()
 
-const DESKTOP = '(min-width: 640px)'
-const initialMobile = typeof window !== 'undefined' && !window.matchMedia(DESKTOP).matches
+const initialMobile = !matchesDesktop()
 
-let isDesktop = $state(!initialMobile)
+const desktop = useDesktop()
+const isDesktop = $derived(desktop.current)
 let sheetEl = $state<HTMLElement>()
 let bodyEl = $state<HTMLElement>()
 
@@ -68,16 +69,6 @@ function dismiss() {
 	dragY = sheetHeight
 	window.setTimeout(requestClose, 240)
 }
-
-$effect(() => {
-	const mq = window.matchMedia(DESKTOP)
-	const sync = () => {
-		isDesktop = mq.matches
-	}
-	sync()
-	mq.addEventListener('change', sync)
-	return () => mq.removeEventListener('change', sync)
-})
 
 // Slide up once, on mount (mobile only).
 $effect(() => {
