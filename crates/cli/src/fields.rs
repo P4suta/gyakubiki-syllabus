@@ -223,6 +223,19 @@ mod tests {
     use super::*;
     use crate::detail::SanshoDetail;
 
+    // Snapshot the generated artifacts. `gen-field-docs --check` guards drift in
+    // CI, but these pin the exact bytes under `cargo test` (and cover the render
+    // paths), so an accidental format change surfaces as a reviewable diff.
+    #[test]
+    fn render_ts_snapshot() {
+        insta::assert_snapshot!(render_ts());
+    }
+
+    #[test]
+    fn render_md_snapshot() {
+        insta::assert_snapshot!(render_md());
+    }
+
     #[test]
     fn spec_covers_every_populated_detail_field() {
         // A fully-populated detail: every content field non-empty so it serializes.
