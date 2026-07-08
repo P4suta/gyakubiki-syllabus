@@ -21,6 +21,7 @@ is on-screen-but-mispositioned. The layers below close those gaps.
 | E2E: **geometry** (box/overlap/band) | Playwright | CI `e2e` | `bun run test:e2e` |
 | E2E: gestures (real touch via CDP) | Playwright | CI `e2e` | `bun run test:e2e` |
 | E2E: accessibility (WCAG 2 A/AA) | `@axe-core/playwright` | CI `e2e` | `bun run test:e2e` |
+| E2E: **visual** (screenshot diff) | Playwright `toHaveScreenshot` | CI `e2e` (Linux) | `bun run test:e2e` |
 | Fuzzing (parsers) | `cargo-fuzz` | weekly, advisory | `just fuzz <target>` |
 | Mutation (Rust core) | `cargo-mutants` | weekly, advisory | `just mutants` |
 | Mutation (web lib) | Stryker | weekly, advisory | `just stryker` |
@@ -35,6 +36,12 @@ is on-screen-but-mispositioned. The layers below close those gaps.
   `expectWithinBand`, `expectOnScreen`, `expectNoOverlap`. These check the
   rendered rectangles, catching "DOM-visible but off-screen / overlapping" —
   the bug `toBeVisible()` can't. See `e2e/sticky-period.spec.ts`.
+- **Visual regression** (`e2e/visual.spec.ts`, `toHaveScreenshot`): pixel-diffs
+  the major layouts (grid top/scrolled, modal desktop/mobile, filter sheet,
+  mobile day view) against Linux-rendered baselines, catching styling/layout
+  drift that no assertion enumerates. The non-deterministic「最終更新」date is
+  masked; a small `maxDiffPixelRatio` absorbs antialiasing. Skipped off Linux
+  (baselines are OS-specific). See the baseline workflow under Determinism.
 - **Invariants / forbidden patterns**: `crates/cli/tests/invariants.rs` (dictionary
   ranges, 通年 propagation, HTML-escape/XSS, producer→consumer round-trip);
   `web/src/lib/design-tokens.test.ts` (no hardcoded colours/sizes) and the
@@ -53,11 +60,15 @@ is on-screen-but-mispositioned. The layers below close those gaps.
 - Playwright disables renderer background-throttling (`playwright.config.ts`) so
   scroll/animation timing is stable in headless CI. The period label uses native
   `position: sticky` (no rAF), so its geometry spec is deterministic.
+- **Visual baselines** are rendered on the CI OS (Linux) and can't be produced on
+  the Windows dev box, so the visual spec is skipped off Linux. The
+  `visual-baseline` workflow (`workflow_dispatch`) regenerates them and lands the
+  PNGs as a *signed* commit via `syllabus-cli commit` (a plain Actions push can't
+  satisfy the require-signed-commits ruleset), then opens a PR. Dispatch it on the
+  branch whose UI changed; the CI `e2e` job and that workflow install the same
+  `fonts-noto-cjk`, so glyphs render identically on both sides.
 
 ## Not yet automated
 
-- **Visual regression** (`toHaveScreenshot`): baselines must be rendered on the CI
-  OS (Linux); with signed-commit rules and no local Linux/Docker here, baseline
-  bootstrapping needs a dedicated (API-committed) workflow — deferred.
-- **Component render tests** (jsdom + `@testing-library/svelte`) for the BottomSheet
-  / day-pager state machines — deferred; their logic is currently covered by E2E.
+- Everything from the #51–#56 test push is now automated; add new gaps here as
+  they surface.
