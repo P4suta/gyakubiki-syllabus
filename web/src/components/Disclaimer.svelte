@@ -6,14 +6,14 @@ let accepted = $state(false)
 
 {#if !accepted}
 <div
-	class="fixed inset-0 z-[100] flex items-center justify-center bg-overlay-backdrop backdrop-blur-md p-4"
+	class="fixed inset-0 z-overlay flex items-center justify-center bg-overlay-backdrop backdrop-blur-md p-4"
 	transition:fade={{ duration: 200 }}
 >
 	<div
-		class="bg-surface-primary rounded-2xl shadow-modal max-w-md w-full max-h-[90dvh] overflow-y-auto p-5 sm:p-8"
+		class="bg-surface-primary rounded-2xl shadow-modal max-w-md w-full max-h-overlay overflow-y-auto p-5 sm:p-8"
 		transition:scale={{ start: 0.95, duration: 300 }}
 	>
-		<h2 class="text-xl font-bold text-apple-text tracking-tight mb-5">ご利用にあたって</h2>
+		<h2 class="text-title font-semibold text-apple-text tracking-tight mb-5">ご利用にあたって</h2>
 
 		<div class="text-body text-apple-text-secondary leading-relaxed space-y-3 mb-8 tracking-tight">
 			<p>
@@ -33,7 +33,7 @@ let accepted = $state(false)
 
 		<button
 			onclick={() => { accepted = true }}
-			class="w-full py-3 px-8 bg-apple-blue text-white text-cta font-normal rounded-full hover:bg-apple-blue-hover transition-colors duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-apple-blue/40 focus:ring-offset-2"
+			class="w-full py-3 px-8 bg-apple-blue text-on-accent text-cta font-normal rounded-full hover:bg-apple-blue-hover transition-colors duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-apple-blue/40 focus:ring-offset-2"
 		>
 			上記を確認の上、利用する
 		</button>

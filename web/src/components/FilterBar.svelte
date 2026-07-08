@@ -66,7 +66,7 @@ function resetFilters() {
 {/snippet}
 
 <!-- Mobile: compact bar -->
-<div class="glass-nav sticky top-0 z-50 border-b border-overlay-light px-3 py-2 sm:hidden">
+<div class="glass-nav sticky top-0 z-nav border-b border-overlay-subtle px-3 py-2 sm:hidden">
 	<div class="flex items-center gap-2">
 		<h1 class="text-body font-semibold text-apple-text whitespace-nowrap tracking-tight">時間割</h1>
 		{#if generatedAtLabel}
@@ -76,7 +76,7 @@ function resetFilters() {
 		{/if}
 
 		<button
-			class="bg-overlay-muted rounded-full px-3 py-1 text-caption font-medium text-apple-text truncate max-w-[140px]"
+			class="bg-overlay-muted rounded-full px-3 py-1 text-caption font-medium text-apple-text truncate max-w-36"
 			onclick={() => { mobileFilterOpen = true }}
 		>
 			{semester === 'all' ? '全学期' : semester}
@@ -122,15 +122,15 @@ function resetFilters() {
 						type="text"
 						bind:value={searchText}
 						placeholder="科目名・教員・キーワードで検索"
-						class="w-full bg-overlay-subtle rounded-xl pl-10 pr-10 py-2.5 text-body text-apple-text outline-none placeholder:text-apple-text-tertiary focus:bg-surface-primary focus:ring-2 focus:ring-apple-blue/30"
+						class="w-full bg-overlay-subtle rounded-xl pl-10 pr-10 py-2.5 text-body text-apple-text outline-none placeholder:text-apple-text-tertiary focus:bg-surface-primary focus:ring-2 focus:ring-apple-blue/40"
 					/>
 					{#if searchText}
 						<button
-							class="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-apple-text/20 flex items-center justify-center"
+							class="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-overlay-medium flex items-center justify-center hover:bg-overlay-strong transition-colors"
 							onclick={() => { searchText = '' }}
 							aria-label="検索をクリア"
 						>
-							<svg class="w-3 h-3 text-surface-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
+							<svg class="w-3 h-3 text-apple-text-secondary" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
 								<path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
 							</svg>
 						</button>
@@ -142,17 +142,17 @@ function resetFilters() {
 				<span class="text-micro font-medium text-apple-text-tertiary mb-1.5 block">学期</span>
 				<div class="flex gap-1.5 overflow-x-auto pb-1 -mx-4 px-4 snap-x hide-scrollbar">
 					<button
-						class="snap-start shrink-0 px-3 py-2 rounded-xl text-caption font-medium min-h-[44px] transition-colors
+						class="snap-start shrink-0 px-3 py-2 rounded-full text-caption font-medium min-h-tap transition-colors
 							{semester === 'all'
-								? 'bg-apple-blue text-white'
+								? 'bg-apple-blue text-on-accent'
 								: 'bg-overlay-subtle text-apple-text-secondary active:bg-overlay-medium'}"
 						onclick={() => { semester = 'all' }}
 					>全て</button>
 					{#each semesters as s}
 						<button
-							class="snap-start shrink-0 px-3 py-2 rounded-xl text-caption font-medium min-h-[44px] transition-colors
+							class="snap-start shrink-0 px-3 py-2 rounded-full text-caption font-medium min-h-tap transition-colors
 								{semester === s
-									? 'bg-apple-blue text-white'
+									? 'bg-apple-blue text-on-accent'
 									: 'bg-overlay-subtle text-apple-text-secondary active:bg-overlay-medium'}"
 							onclick={() => { semester = s }}
 						>{s}</button>
@@ -166,7 +166,7 @@ function resetFilters() {
 					<select
 						id="mobile-campus"
 						bind:value={campus}
-						class="w-full appearance-none bg-overlay-subtle rounded-xl px-3 py-2.5 pr-8 text-body text-apple-text min-h-[44px] outline-none cursor-pointer focus:bg-surface-primary focus:ring-2 focus:ring-apple-blue/30"
+						class="w-full appearance-none bg-overlay-subtle rounded-xl px-3 py-2.5 pr-8 text-body text-apple-text min-h-tap outline-none cursor-pointer focus:bg-surface-primary focus:ring-2 focus:ring-apple-blue/40"
 					>
 						{@render selectOptions('全キャンパス', campuses)}
 					</select>
@@ -180,7 +180,7 @@ function resetFilters() {
 					<select
 						id="mobile-dept"
 						bind:value={department}
-						class="w-full appearance-none bg-overlay-subtle rounded-xl px-3 py-2.5 pr-8 text-body text-apple-text min-h-[44px] outline-none cursor-pointer focus:bg-surface-primary focus:ring-2 focus:ring-apple-blue/30"
+						class="w-full appearance-none bg-overlay-subtle rounded-xl px-3 py-2.5 pr-8 text-body text-apple-text min-h-tap outline-none cursor-pointer focus:bg-surface-primary focus:ring-2 focus:ring-apple-blue/40"
 					>
 						{@render selectOptions('全部署', departments)}
 					</select>
@@ -192,7 +192,7 @@ function resetFilters() {
 		{#snippet footer(close)}
 			<div class="px-4 pb-6 pt-2">
 				<button
-					class="w-full py-3 bg-apple-blue text-white text-body font-medium rounded-full min-h-[44px] active:bg-apple-blue-hover transition-colors cursor-pointer"
+					class="w-full py-3 bg-apple-blue text-on-accent text-body font-medium rounded-full min-h-tap active:bg-apple-blue-hover transition-colors cursor-pointer"
 					onclick={() => { haptic('light'); close() }}
 				>
 					{displayCount}科目を表示
@@ -203,9 +203,9 @@ function resetFilters() {
 {/if}
 
 <!-- Desktop: horizontal layout -->
-<div class="glass-nav sticky top-0 z-50 border-b border-overlay-light px-6 py-3 hidden sm:block">
+<div class="glass-nav sticky top-0 z-nav border-b border-overlay-subtle px-6 py-3 hidden sm:block">
 	<div class="flex items-center gap-4 flex-wrap">
-		<h1 class="text-lg font-semibold text-apple-text whitespace-nowrap tracking-tight">時間割</h1>
+		<h1 class="text-headline font-semibold text-apple-text whitespace-nowrap tracking-tight">時間割</h1>
 		{#if generatedAtLabel}
 			<span class="bg-overlay-subtle text-apple-text-secondary rounded-full px-2.5 py-0.5 text-caption whitespace-nowrap">
 				最終更新: <span class="tabular-nums">{generatedAtLabel}</span>
@@ -239,7 +239,7 @@ function resetFilters() {
 			<select
 				bind:value={campus}
 				aria-label="キャンパスで絞り込み"
-				class="appearance-none bg-overlay-subtle hover:bg-overlay-medium rounded-lg px-3 py-1.5 pr-7 text-caption text-apple-text outline-none transition-colors duration-200 focus:bg-surface-primary focus:ring-2 focus:ring-apple-blue/30 focus:shadow-sm max-w-40 cursor-pointer"
+				class="appearance-none bg-overlay-subtle hover:bg-overlay-medium rounded-xl px-3 py-1.5 pr-7 text-caption text-apple-text outline-none transition-colors duration-200 focus:bg-surface-primary focus:ring-2 focus:ring-apple-blue/40 focus:shadow-sm max-w-40 cursor-pointer"
 			>
 				{@render selectOptions('全キャンパス', campuses)}
 			</select>
@@ -250,7 +250,7 @@ function resetFilters() {
 			<select
 				bind:value={department}
 				aria-label="開講部署で絞り込み"
-				class="appearance-none bg-overlay-subtle hover:bg-overlay-medium rounded-lg px-3 py-1.5 pr-7 text-caption text-apple-text outline-none transition-colors duration-200 focus:bg-surface-primary focus:ring-2 focus:ring-apple-blue/30 focus:shadow-sm max-w-48 cursor-pointer"
+				class="appearance-none bg-overlay-subtle hover:bg-overlay-medium rounded-xl px-3 py-1.5 pr-7 text-caption text-apple-text outline-none transition-colors duration-200 focus:bg-surface-primary focus:ring-2 focus:ring-apple-blue/40 focus:shadow-sm max-w-48 cursor-pointer"
 			>
 				{@render selectOptions('全部署', departments)}
 			</select>

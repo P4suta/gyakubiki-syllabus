@@ -107,7 +107,7 @@ function hasValue(v: unknown): boolean {
 		<div class="px-4 pt-2 pb-3 sm:px-7 sm:pt-6 sm:pb-3">
 			<div class="flex justify-between items-start gap-3">
 				<div class="min-w-0">
-					<h2 class="text-xl font-bold text-apple-text leading-snug tracking-tight">
+					<h2 class="text-title font-semibold text-apple-text leading-snug tracking-tight">
 						{course.nm}
 					</h2>
 					{#if course.sub}
@@ -115,16 +115,16 @@ function hasValue(v: unknown): boolean {
 					{/if}
 					<div class="flex flex-wrap gap-1.5 mt-2.5">
 						{#if delivery}
-							<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-overlay-light text-micro text-apple-text/80">
+							<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-overlay-light text-micro text-apple-text-secondary">
 								{delivery.emoji} {delivery.label}
 							</span>
 						{/if}
 						{#if detail?.unit}
-							<span class="px-2 py-0.5 rounded-full bg-overlay-light text-micro text-apple-text/80">{detail.unit}単位</span>
+							<span class="px-2 py-0.5 rounded-full bg-overlay-light text-micro text-apple-text-secondary">{detail.unit}単位</span>
 						{/if}
-						<span class="px-2 py-0.5 rounded-full bg-overlay-light text-micro text-apple-text/80">{dicts.kubun[course.kbn]}</span>
-						<span class="px-2 py-0.5 rounded-full bg-overlay-light text-micro text-apple-text/80">{dicts.kaikojiki[course.ki]}</span>
-						<span class="px-2 py-0.5 rounded-full bg-overlay-light text-micro text-apple-text/80">{dicts.campuses[course.campus]}</span>
+						<span class="px-2 py-0.5 rounded-full bg-overlay-light text-micro text-apple-text-secondary">{dicts.kubun[course.kbn]}</span>
+						<span class="px-2 py-0.5 rounded-full bg-overlay-light text-micro text-apple-text-secondary">{dicts.kaikojiki[course.ki]}</span>
+						<span class="px-2 py-0.5 rounded-full bg-overlay-light text-micro text-apple-text-secondary">{dicts.campuses[course.campus]}</span>
 					</div>
 				</div>
 				<button
@@ -144,8 +144,8 @@ function hasValue(v: unknown): boolean {
 		{#if loading}
 			<div class="space-y-3 py-4 animate-pulse">
 				<div class="h-24 rounded-xl bg-overlay-light"></div>
-				<div class="h-4 rounded bg-overlay-light w-3/4"></div>
-				<div class="h-4 rounded bg-overlay-light w-1/2"></div>
+				<div class="h-4 rounded-lg bg-overlay-light w-3/4"></div>
+				<div class="h-4 rounded-lg bg-overlay-light w-1/2"></div>
 			</div>
 		{:else}
 			<!-- Hero: 成績評価 + 概要, open by default. -->
@@ -206,11 +206,11 @@ function hasValue(v: unknown): boolean {
 		{@const ev = s.value as import('../types/course').Eval}
 		<EvalChart rows={ev.rows} note={ev.note} />
 	{:else if s.render === 'longtext'}
-		<p class="text-body text-apple-text/90 leading-relaxed whitespace-pre-line tracking-tight">{s.value as string}</p>
+		<p class="text-body text-apple-text leading-relaxed whitespace-pre-line tracking-tight">{s.value as string}</p>
 	{:else if s.render === 'list'}
 		<ol class="list-decimal list-outside pl-5 space-y-1">
 			{#each s.value as string[] as item}
-				<li class="text-body text-apple-text/90 leading-relaxed tracking-tight">{item}</li>
+				<li class="text-body text-apple-text leading-relaxed tracking-tight">{item}</li>
 			{/each}
 		</ol>
 	{:else if s.render === 'plan-timeline'}
@@ -219,7 +219,7 @@ function hasValue(v: unknown): boolean {
 			{#each plan as p}
 				<li class="flex gap-3">
 					<span class="shrink-0 w-12 whitespace-nowrap text-micro font-semibold text-apple-blue tabular-nums">第{p.n}回</span>
-					<span class="text-body text-apple-text/90 leading-relaxed whitespace-pre-line tracking-tight">{p.text}</span>
+					<span class="text-body text-apple-text leading-relaxed whitespace-pre-line tracking-tight">{p.text}</span>
 				</li>
 			{/each}
 		</ol>
@@ -227,7 +227,7 @@ function hasValue(v: unknown): boolean {
 		{@const rows = s.value as import('../types/course').OfficeHour[]}
 		<div class="space-y-1">
 			{#each rows as o}
-				<div class="text-body text-apple-text/90 leading-relaxed tracking-tight">
+				<div class="text-body text-apple-text leading-relaxed tracking-tight">
 					{[o.name, o.day, o.time, o.place].filter(Boolean).join(' / ')}
 				</div>
 			{/each}
@@ -235,7 +235,7 @@ function hasValue(v: unknown): boolean {
 	{:else if s.render === 'chips'}
 		<div class="flex flex-wrap gap-1.5">
 			{#each s.value as string[] as chip}
-				<span class="px-2 py-0.5 rounded-full bg-overlay-light text-micro text-apple-text/80">{chip}</span>
+				<span class="px-2 py-0.5 rounded-full bg-overlay-light text-micro text-apple-text-secondary">{chip}</span>
 			{/each}
 		</div>
 	{:else if s.render === 'base'}
@@ -244,7 +244,7 @@ function hasValue(v: unknown): boolean {
 				{#if value}
 					<div class="flex gap-3 py-1.5">
 						<dt class="shrink-0 w-24 text-caption text-apple-text-tertiary tracking-tight">{label}</dt>
-						<dd class="text-body text-apple-text/90 leading-relaxed tracking-tight">{value}</dd>
+						<dd class="text-body text-apple-text leading-relaxed tracking-tight">{value}</dd>
 					</div>
 				{/if}
 			{/each}
