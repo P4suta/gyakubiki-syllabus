@@ -73,7 +73,7 @@ onMount(async () => {
 {#if loading}
 	<div class="min-h-screen bg-surface-page flex items-center justify-center">
 		<div class="text-center">
-			<div class="inline-block w-5 h-5 border-2 border-apple-text/20 border-t-apple-text rounded-full mb-4 animate-spinner"></div>
+			<div class="inline-block w-5 h-5 border-2 border-overlay-subtle border-t-apple-blue rounded-full mb-4 animate-spinner"></div>
 			<p class="text-body text-apple-text-secondary tracking-tight">データを読み込み中...</p>
 		</div>
 	</div>

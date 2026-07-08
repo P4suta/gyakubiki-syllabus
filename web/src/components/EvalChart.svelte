@@ -1,6 +1,7 @@
 <script lang="ts">
 import { evalArcs, evalSegments } from '../lib/eval-chart'
 import { evalKind } from '../lib/syllabus-icons'
+import { useTheme } from '../lib/theme.svelte'
 import type { EvalRow } from '../types/course'
 
 interface Props {
@@ -10,8 +11,15 @@ interface Props {
 
 let { rows, note }: Props = $props()
 
+const theme = useTheme()
+
 // Percentages (equal-split when weightless) plus each row's icon/colour style.
-const segments = $derived(evalSegments(rows).map((s) => ({ ...s, style: evalKind(s.type) })))
+const segments = $derived(
+	evalSegments(rows).map((s) => {
+		const style = evalKind(s.type)
+		return { ...s, style, color: theme.isDark ? style.color.dark : style.color.light }
+	}),
+)
 
 const hasWeights = $derived(segments.some((s) => s.hasWeight))
 
@@ -20,7 +28,7 @@ const arcs = $derived(
 	evalArcs(
 		segments.map((s) => s.pct),
 		R,
-	).map((arc, i) => ({ ...arc, color: segments[i].style.color })),
+	).map((arc, i) => ({ ...arc, color: segments[i].color })),
 )
 
 const dominant = $derived([...segments].sort((a, b) => b.pct - a.pct)[0] ?? null)
@@ -45,7 +53,7 @@ const dominant = $derived([...segments].sort((a, b) => b.pct - a.pct)[0] ?? null
 		</svg>
 		{#if dominant}
 			<div class="absolute inset-0 flex flex-col items-center justify-center">
-				<span class="text-xl leading-none">{dominant.style.emoji}</span>
+				<span class="text-title leading-none">{dominant.style.emoji}</span>
 				{#if hasWeights}
 					<span class="text-caption font-semibold text-apple-text mt-0.5">{dominant.pct}%</span>
 				{/if}
@@ -56,8 +64,8 @@ const dominant = $derived([...segments].sort((a, b) => b.pct - a.pct)[0] ?? null
 	<div class="min-w-0 flex-1 space-y-1.5">
 		{#each segments as s}
 			<div class="flex items-center gap-2 text-caption">
-				<span class="w-2 h-2 rounded-full shrink-0" style="background: {s.style.color};"></span>
-				<span class="text-apple-text/90 truncate">{s.item || s.style.label}</span>
+				<span class="w-2 h-2 rounded-full shrink-0" style="background: {s.color};"></span>
+				<span class="text-apple-text truncate">{s.item || s.style.label}</span>
 				{#if s.hasWeight}
 					<span class="ml-auto shrink-0 text-apple-text-secondary tabular-nums font-medium">{s.pct}%</span>
 				{/if}

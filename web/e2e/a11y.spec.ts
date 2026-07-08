@@ -48,3 +48,22 @@ test.describe('mobile', () => {
 		await auditEmpty(page)
 	})
 })
+
+// The dark theme is a full second palette (app.css `prefers-color-scheme` block);
+// re-run the colour-heavy states so a dark-only contrast regression fails here.
+test.describe('dark theme', () => {
+	test.use({ colorScheme: 'dark' })
+
+	test('dark grid has no WCAG A/AA violations', async ({ page }) => {
+		await enter(page)
+		await pickSemester(page, '1学期')
+		await auditEmpty(page)
+	})
+
+	test('dark course modal has no WCAG A/AA violations', async ({ page }) => {
+		await enter(page)
+		await pickSemester(page, '1学期')
+		await openCourse(page, FIXTURES.regular)
+		await auditEmpty(page)
+	})
+})

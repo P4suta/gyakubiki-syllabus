@@ -4,33 +4,50 @@
   /* ===== Font Family ===== */
   --font-sans: 'Noto Sans JP', 'Hiragino Sans', 'Hiragino Kaku Gothic ProN', 'Meiryo', sans-serif;
 
-  /* ===== Colors — Brand ===== */
-  --color-apple-text: #1d1d1f;
-  --color-apple-blue: #0071e3;
-  --color-apple-blue-hover: #0077ed;
+  /* Minimum comfortable tap target (44px, the iOS/WCAG floor). A spacing token so
+     it reads as `min-h-tap` rather than a magic `min-h-[44px]`. */
+  --spacing-tap: 2.75rem;
 
-  /* Muted text scale — solid (not opacity-on-dark) so contrast holds on every
-     surface, including the course tiles. Both clear WCAG AA (4.5:1) on white,
-     the page, the subtle overlay, and all 10 card tints — locked by
-     design-tokens.test.ts. `secondary` for labels/headers, `tertiary` for the
+  /* "Porcelain & Ocean": a near-white cool field, one slate-tinted neutral (ink)
+     for text + structure, and a single ocean-blue accent. Colours below are the
+     LIGHT theme; the dark theme overrides the same variables under
+     `prefers-color-scheme: dark` further down. All values are derived on a shared
+     OKLCH basis and every muted-text/surface pair clears WCAG AA — locked by
+     design-tokens.test.ts (and colors.ts for the course tiles). */
+
+  /* ===== Colors — Brand ===== */
+  --color-apple-text: #1c1e27;
+  /* Ocean accent. #0071e3 clears WCAG AA (4.5:1) both as link text on white and
+     as a fill under white text; `on-accent` is the text/icon colour placed on an
+     accent fill (white in light; dark in dark, where the accent brightens). */
+  --color-apple-blue: #0071e3;
+  --color-apple-blue-hover: #0064cf;
+  --color-on-accent: #ffffff;
+
+  /* Muted text scale — solid slate (not opacity-on-ink) so contrast holds on
+     every surface, including the course tiles, and so the same tokens flip
+     correctly in dark mode. `secondary` for labels/headers, `tertiary` for the
      faintest still-legible text (times, counts, placeholders). */
-  --color-apple-text-secondary: #57575a;
-  --color-apple-text-tertiary: #636366;
+  --color-apple-text-secondary: #515761;
+  --color-apple-text-tertiary: #5f656e;
 
   /* ===== Colors — Surfaces ===== */
-  --color-surface-primary: #ffffff;
-  --color-surface-page: #f5f5f7;
+  --color-surface-primary: #ffffff;   /* cards, cells */
+  --color-surface-page: #fbfbfd;       /* body field */
+  --color-surface-elevated: #ffffff;   /* modals, sheets */
 
-  /* ===== Colors — Overlays (black at semantic opacities) ===== */
-  --color-overlay-subtle: rgb(0 0 0 / 0.04);
-  --color-overlay-muted: rgb(0 0 0 / 0.05);
-  --color-overlay-light: rgb(0 0 0 / 0.06);
-  --color-overlay-medium: rgb(0 0 0 / 0.07);
-  --color-overlay-strong: rgb(0 0 0 / 0.1);
-  --color-overlay-backdrop: rgb(0 0 0 / 0.3);
+  /* ===== Colors — Overlays (slate ink at semantic opacities) =====
+     Tinted slate, not pure black, so borders/hovers/skeletons read as soft
+     structure rather than muddy grey on the light field. */
+  --color-overlay-subtle: rgb(41 49 69 / 0.04);
+  --color-overlay-muted: rgb(41 49 69 / 0.05);
+  --color-overlay-light: rgb(41 49 69 / 0.06);
+  --color-overlay-medium: rgb(41 49 69 / 0.08);
+  --color-overlay-strong: rgb(41 49 69 / 0.12);
+  --color-overlay-backdrop: rgb(20 22 31 / 0.32);
 
   /* ===== Colors — Glass ===== */
-  --color-glass-bg: rgb(251 251 253 / 0.72);
+  --color-glass-bg: rgb(252 252 254 / 0.72);
 
   /* ===== Font Sizes (with associated line-heights) ===== */
   --font-size-fine: 10px;
@@ -51,6 +68,14 @@
   --font-size-cta: 17px;
   --font-size-cta--line-height: 1.35;
 
+  /* Headings — the two sizes above `cta`. `headline` for the app bar / bar
+     titles, `title` for dialog headings and the eval glyph. */
+  --font-size-headline: 18px;
+  --font-size-headline--line-height: 1.3;
+
+  --font-size-title: 20px;
+  --font-size-title--line-height: 1.25;
+
   /* ===== Shadows ===== */
   --shadow-card-hover: 0 2px 12px rgba(0, 0, 0, 0.08);
   --shadow-card: 0 3px 30px rgba(0, 0, 0, 0.08);
@@ -64,6 +89,73 @@
   --animate-spinner: spinner-rotate 0.8s linear infinite;
   --animate-dialog-in: dialog-in 200ms var(--ease-spring);
 }
+
+/* ===== Dark theme =====
+   Follows the OS setting. Overrides the same semantic tokens (Tailwind emits its
+   utilities as `var(--color-…)`, so redeclaring the variables cascades). Ink
+   inverts to light slate, surfaces to deep slate, overlays to light-tinted, and
+   the accent brightens to hold AA on the dark field. Every muted-text/surface
+   pair is re-locked for dark in design-tokens.test.ts. */
+:root { color-scheme: light; }
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+
+    --color-apple-text: #e9eaf0;
+    --color-apple-blue: #3d9bff;
+    --color-apple-blue-hover: #5aa9ff;
+    --color-on-accent: #0b1220;
+    --color-apple-text-secondary: #a7aeba;
+    --color-apple-text-tertiary: #8e96a2;
+
+    --color-surface-primary: #191c22;
+    --color-surface-page: #0f1116;
+    --color-surface-elevated: #1f232b;
+
+    --color-overlay-subtle: rgb(233 236 244 / 0.05);
+    --color-overlay-muted: rgb(233 236 244 / 0.06);
+    --color-overlay-light: rgb(233 236 244 / 0.08);
+    --color-overlay-medium: rgb(233 236 244 / 0.10);
+    --color-overlay-strong: rgb(233 236 244 / 0.14);
+    --color-overlay-backdrop: rgb(0 0 0 / 0.55);
+
+    --color-glass-bg: rgb(24 27 33 / 0.72);
+
+    --shadow-card-hover: 0 2px 12px rgba(0, 0, 0, 0.4);
+    --shadow-card: 0 3px 30px rgba(0, 0, 0, 0.45);
+    --shadow-modal: 0 25px 50px rgba(0, 0, 0, 0.6);
+  }
+}
+
+/* ===== Named utilities =====
+   Semantic names for the few values that would otherwise be arbitrary `[…]`
+   utilities, so components never carry magic numbers. */
+
+/* Off-screen cells: skip layout/paint until near the viewport, reserving height
+   so the skeleton and scrolling stay stable. */
+@utility content-auto {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 6rem;
+}
+
+/* The one stacking ladder. Every z-index in the app is a named rung here — no
+   magic numbers scattered through components. The `sticky-*` rungs order the
+   sticky siblings inside the scrolling grid (rail < headers < corner); `nav` is
+   the sticky chrome; `overlay`/`sheet` sit above everything.
+   (Overlays could instead move to the native top layer via `<dialog>` and drop
+   their z entirely — a deliberate follow-up, since the sheet's drag/history
+   state machine would need porting.) */
+@utility z-sticky { z-index: 10; }
+@utility z-sticky-head { z-index: 20; }
+@utility z-sticky-corner { z-index: 30; }
+@utility z-nav { z-index: 50; }
+@utility z-overlay { z-index: 100; }
+@utility z-sheet { z-index: 200; }
+
+/* Modal / sheet max height — dynamic viewport on mobile, classic vh on desktop. */
+@utility max-h-overlay { max-height: 92dvh; }
+@utility max-h-overlay-sm { max-height: 86vh; }
 
 /* Base styles */
 html {

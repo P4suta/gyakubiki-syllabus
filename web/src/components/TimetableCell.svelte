@@ -38,7 +38,7 @@ $effect(() => {
      size reserves height so both the skeleton and scrolling stay stable. -->
 <div
 	bind:this={el}
-	class="bg-surface-primary rounded-lg min-h-24 p-1.5 [content-visibility:auto] [contain-intrinsic-size:auto_6rem]"
+	class="bg-surface-primary rounded-lg min-h-24 p-1.5 content-auto"
 >
 	{#if visible}
 		{#each courses as course (course.cd)}

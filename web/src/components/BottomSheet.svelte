@@ -180,11 +180,11 @@ $effect(() => {
 
 <svelte:window onkeydown={(e) => { if (e.key === 'Escape') dismiss() }} />
 
-<div class="fixed inset-0 z-[200] flex items-end justify-center sm:items-center sm:p-5">
+<div class="fixed inset-0 z-sheet flex items-end justify-center sm:items-center sm:p-5">
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div
-		class="absolute inset-0 bg-overlay-backdrop backdrop-blur-[6px] animate-fade-in"
+		class="absolute inset-0 bg-overlay-backdrop backdrop-blur-md animate-fade-in"
 		style="opacity: {backdropOpacity};"
 		aria-hidden="true"
 		onclick={dismiss}
@@ -195,7 +195,7 @@ $effect(() => {
 		role="dialog"
 		aria-modal="true"
 		aria-label={ariaLabel}
-		class="relative flex flex-col w-full max-h-[92dvh] overflow-hidden bg-surface-primary rounded-t-2xl shadow-modal safe-bottom sm:max-w-lg sm:max-h-[86vh] sm:rounded-2xl {isDesktop ? 'animate-dialog-in' : ''}"
+		class="relative flex flex-col w-full max-h-overlay overflow-hidden bg-surface-primary rounded-t-2xl shadow-modal safe-bottom sm:max-w-lg sm:max-h-overlay-sm sm:rounded-2xl {isDesktop ? 'animate-dialog-in' : ''}"
 		style="translate: 0 {isDesktop ? 0 : dragY}px; transition: {settling ? 'translate 0.26s var(--ease-spring)' : 'none'};"
 	>
 		<div class="flex justify-center pt-2 shrink-0 sm:hidden touch-none">

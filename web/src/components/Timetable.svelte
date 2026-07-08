@@ -94,7 +94,7 @@ let headerH = $state(0)
 	<div class="flex bg-surface-page border-b border-overlay-subtle shrink-0">
 		{#each days as day, i}
 			<button
-				class="flex-1 py-2.5 text-center text-caption font-semibold min-h-[44px] transition-colors
+				class="flex-1 py-2.5 text-center text-caption font-semibold min-h-tap transition-colors
 					{activeDay === i
 						? 'text-apple-blue border-b-2 border-apple-blue'
 						: 'text-apple-text-tertiary active:text-apple-text-secondary'}"
@@ -114,7 +114,7 @@ let headerH = $state(0)
 		{#each PERIODS as period}
 			{@const courses = grid.get(`${days[activeDay]}-${period}`) ?? []}
 			<div class="bg-surface-primary rounded-xl p-3">
-				<div class="sticky top-0 z-10 -mx-3 -mt-3 px-3 pt-3 pb-1.5 mb-1.5 flex items-baseline gap-2 bg-surface-primary rounded-t-xl">
+				<div class="sticky top-0 z-sticky -mx-3 -mt-3 px-3 pt-3 pb-1.5 mb-1.5 flex items-baseline gap-2 bg-surface-primary rounded-t-xl">
 					<span class="text-micro font-medium text-apple-text-tertiary">{period}限</span>
 					{#if PERIOD_TIMES[period]}
 						<span class="text-fine text-apple-text-tertiary tabular-nums">
@@ -138,19 +138,19 @@ let headerH = $state(0)
 <!-- Desktop: full grid -->
 {#if isDesktop}
 <div class="overflow-auto flex-1 bg-surface-page hidden sm:block">
-	<div class="grid gap-[2px] bg-surface-page" style="grid-template-columns: {gridCols}; min-width: {minWidth};">
-		<div bind:clientHeight={headerH} class="sticky top-0 left-0 z-30 bg-surface-page"></div>
+	<div class="grid gap-0.5 bg-surface-page" style="grid-template-columns: {gridCols}; min-width: {minWidth};">
+		<div bind:clientHeight={headerH} class="sticky top-0 left-0 z-sticky-corner bg-surface-page"></div>
 
 		{#each days as day}
 			<div
-				class="sticky top-0 z-20 text-center py-3 font-semibold text-caption text-apple-text-secondary tracking-tight bg-surface-page/80 backdrop-blur-sm"
+				class="sticky top-0 z-sticky-head text-center py-3 font-semibold text-caption text-apple-text-secondary tracking-tight bg-surface-page/80 backdrop-blur-sm"
 			>
 				{day}
 			</div>
 		{/each}
 
 		{#each PERIODS as period}
-			<div data-period-label class="sticky left-0 z-10 bg-surface-page relative flex flex-col items-center px-1 py-2">
+			<div data-period-label class="sticky left-0 z-sticky bg-surface-page relative flex flex-col items-center px-1 py-2">
 				<!-- Times pinned to the row edges (they scroll away); the「N限」badge
 				     rides a continuous rail and is JS-clamped to stay on screen. -->
 				{#if PERIOD_TIMES[period]}

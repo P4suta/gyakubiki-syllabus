@@ -1,6 +1,7 @@
 <script lang="ts">
 import { getColor } from '../lib/colors'
 import { deliveryMode, evalKind } from '../lib/syllabus-icons'
+import { useTheme } from '../lib/theme.svelte'
 import type { Course } from '../types/course'
 
 interface Props {
@@ -9,7 +10,11 @@ interface Props {
 }
 
 let { course, onclick }: Props = $props()
-let color = $derived(getColor(course.cd))
+const theme = useTheme()
+let color = $derived.by(() => {
+	const c = getColor(course.cd)
+	return theme.isDark ? c.dark : c.light
+})
 
 // Representative instructor; "… ほか" once there is more than one.
 const prof = $derived.by(() => {
@@ -42,7 +47,7 @@ const meta = $derived([mode?.label, topEval].filter(Boolean).join(' · '))
 </script>
 
 <button
-	class="w-full text-left rounded-lg p-3 sm:p-1.5 mb-1 sm:mb-0.5 cursor-pointer transition-transform active:brightness-95 sm:hover:scale-[1.02] sm:hover:shadow-md border-l-3 min-h-[44px] sm:min-h-0"
+	class="w-full text-left rounded-lg p-3 sm:p-1.5 mb-1 sm:mb-0.5 cursor-pointer transition-transform active:brightness-95 sm:hover:scale-[1.02] sm:hover:shadow-md border-l-3 min-h-tap sm:min-h-0"
 	style="background: {color.bg}; border-left-color: {color.border};"
 	{onclick}
 >
