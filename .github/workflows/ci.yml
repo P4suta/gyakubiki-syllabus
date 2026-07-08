@@ -104,7 +104,8 @@ jobs:
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile
       - run: bun run check
-      - run: bun run test
+      # Unit tests with the coverage gate on the pure lib/ modules (see vite.config).
+      - run: bun run test:cov
 
   e2e:
     name: E2E (Playwright)

@@ -1,4 +1,5 @@
 <script lang="ts">
+import { evalArcs, evalSegments } from '../lib/eval-chart'
 import { evalKind } from '../lib/syllabus-icons'
 import type { EvalRow } from '../types/course'
 
@@ -9,32 +10,18 @@ interface Props {
 
 let { rows, note }: Props = $props()
 
-// Segments with resolved weight/percentage/style. When KULAS gives no weights,
-// fall back to equal shares so the ratio chart still communicates the mix.
-const segments = $derived.by(() => {
-	const withWeights = rows.map((r) => ({ ...r, w: r.weight ?? 0 }))
-	const sum = withWeights.reduce((a, b) => a + b.w, 0)
-	const total = sum > 0 ? sum : withWeights.length
-	return withWeights.map((r) => {
-		const value = sum > 0 ? r.w : 1
-		const pct = Math.round((value / total) * 100)
-		return { ...r, pct, hasWeight: sum > 0, style: evalKind(r.type) }
-	})
-})
+// Percentages (equal-split when weightless) plus each row's icon/colour style.
+const segments = $derived(evalSegments(rows).map((s) => ({ ...s, style: evalKind(s.type) })))
 
 const hasWeights = $derived(segments.some((s) => s.hasWeight))
 
 const R = 42
-const C = 2 * Math.PI * R
-const arcs = $derived.by(() => {
-	let offset = 0
-	return segments.map((s) => {
-		const len = (s.pct / 100) * C
-		const arc = { color: s.style.color, dash: `${len} ${C - len}`, offset: -offset }
-		offset += len
-		return arc
-	})
-})
+const arcs = $derived(
+	evalArcs(
+		segments.map((s) => s.pct),
+		R,
+	).map((arc, i) => ({ ...arc, color: segments[i].style.color })),
+)
 
 const dominant = $derived([...segments].sort((a, b) => b.pct - a.pct)[0] ?? null)
 </script>

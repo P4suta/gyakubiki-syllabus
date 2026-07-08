@@ -28,5 +28,24 @@ export default defineConfig({
 	// Unit tests live in src/; the Playwright E2E specs in e2e/ run separately.
 	test: {
 		include: ['src/**/*.{test,spec}.{js,ts}'],
+		coverage: {
+			provider: 'v8',
+			reporter: ['text-summary', 'text'],
+			// Gate the pure, node-testable `lib/` modules. Excluded (need a DOM/worker
+			// → covered by E2E and the component tests): the `swipeNavigate` DOM action
+			// in gestures.ts, the worker proxy in engine.ts, engine.worker.ts, the
+			// fetch in details.ts, generated code, and the constant table schedule.ts.
+			include: ['src/lib/**/*.ts'],
+			exclude: [
+				'src/lib/**/*.{test,spec}.ts',
+				'src/lib/*.generated.ts',
+				'src/lib/gestures.ts',
+				'src/lib/engine.ts',
+				'src/lib/engine.worker.ts',
+				'src/lib/details.ts',
+				'src/lib/schedule.ts',
+			],
+			thresholds: { lines: 90, functions: 90, branches: 85, statements: 90 },
+		},
 	},
 })
