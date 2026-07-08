@@ -128,6 +128,10 @@ jobs:
           cargo run --release -q -p syllabus-cli -- convert dev-data/sample-raw.json \
             --compact --details-dir dev-data/sample-details \
             --details-out web/public/details -o web/public/data.json
+      # CJK fonts must match the visual-baseline workflow exactly, or the visual
+      # specs diff on every glyph. Keep this line identical in both workflows.
+      - name: install fonts
+        run: sudo apt-get update && sudo apt-get install -y fonts-noto-cjk
       - uses: oven-sh/setup-bun@v2
       - name: install web deps
         working-directory: web

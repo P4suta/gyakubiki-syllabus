@@ -1,0 +1,90 @@
+name: Visual baselines
+
+# Regenerate the Playwright visual-regression baselines (e2e/visual.spec.ts) on
+# the CI OS (Linux) and land them on the dispatched branch as a *signed* commit,
+# then open a PR. Baselines are OS-specific and can't be produced on the Windows
+# dev box; and the require-signed-commits ruleset rejects a plain Actions push —
+# so a GITHUB_TOKEN-signed `createCommitOnBranch` (via `syllabus-cli commit`) is
+# the only way to bootstrap/refresh them. Run this whenever the UI intentionally
+# changes: dispatch it on the feature branch that changed the pixels.
+#
+# Note: a GITHUB_TOKEN commit does not re-trigger the branch's PR checks, so
+# after this lands re-run the PR's `e2e` job once (or push any commit) to let it
+# verify against the fresh baselines.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write        # signed commit of the baseline PNG files
+  pull-requests: write   # open the baseline PR
+
+concurrency:
+  group: visual-baseline-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  baseline:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Guard against main
+        if: github.ref_name == 'main'
+        run: |
+          echo "::error::Dispatch this on a feature branch, not main — baselines land via a PR."
+          exit 1
+
+      - uses: actions/checkout@v7
+
+      # Same pipeline as the CI `e2e` job so baselines match what CI will diff.
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-pack@0.13.1
+      - name: build wasm
+        run: wasm-pack build crates/wasm --target web --out-dir ../../web/src/wasm --out-name syllabus
+      - name: generate sample data
+        run: |
+          cargo run --release -q -p syllabus-cli -- gen-sample
+          cargo run --release -q -p syllabus-cli -- convert dev-data/sample-raw.json \
+            --compact --details-dir dev-data/sample-details \
+            --details-out web/public/details -o web/public/data.json
+      - name: Build syllabus-cli
+        run: cargo build --release -p syllabus-cli
+
+      # CJK fonts must match the CI `e2e` job exactly, or every glyph diffs.
+      - name: install fonts
+        run: sudo apt-get update && sudo apt-get install -y fonts-noto-cjk
+
+      - uses: oven-sh/setup-bun@v2
+      - name: install web deps
+        working-directory: web
+        run: bun install --frozen-lockfile
+      - name: install Playwright browser
+        working-directory: web
+        run: bunx playwright install --with-deps chromium
+
+      - name: regenerate visual baselines
+        working-directory: web
+        run: bunx playwright test visual.spec.ts --update-snapshots
+
+      - name: commit baselines (signed, via GitHub API)
+        id: commit
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ./target/release/syllabus-cli commit --path web/e2e/visual.spec.ts-snapshots \
+            --message "test(web): refresh visual baselines ($(date -u +%Y-%m-%d))"
+
+      - name: open baseline PR
+        if: steps.commit.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh pr view "${{ github.ref_name }}" --json number >/dev/null 2>&1; then
+            echo "PR already open for ${{ github.ref_name }} — baselines pushed to it." >> "$GITHUB_STEP_SUMMARY"
+          else
+            gh pr create --base main --head "${{ github.ref_name }}" \
+              --title "test(web): refresh visual baselines" \
+              --body "Automated visual-regression baselines from \`visual-baseline.yml\`. Re-run this branch's \`e2e\` check to verify against them, then squash-merge." \
+              >> "$GITHUB_STEP_SUMMARY"
+          fi
