@@ -1,5 +1,19 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { haptic, rubberBand, shouldCommit } from './gestures'
+import { clamp, haptic, rubberBand, shouldCommit } from './gestures'
+
+describe('clamp', () => {
+	it('passes values already inside the range through', () => {
+		expect(clamp(5, 0, 10)).toBe(5)
+	})
+	it('clamps to the bounds', () => {
+		expect(clamp(-3, 0, 10)).toBe(0)
+		expect(clamp(42, 0, 10)).toBe(10)
+	})
+	it('returns min when the range is inverted (min > max)', () => {
+		// Happens when the viewport is shorter than the sticky margins; stay pinned.
+		expect(clamp(5, 10, 0)).toBe(10)
+	})
+})
 
 describe('shouldCommit', () => {
 	const size = 400

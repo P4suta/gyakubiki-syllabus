@@ -1,6 +1,6 @@
 <script lang="ts">
 import { type GridKey, PERIODS } from '../lib/engine'
-import { haptic, type SwipeDir, swipeNavigate } from '../lib/gestures'
+import { clamp, haptic, type SwipeDir, swipeNavigate } from '../lib/gestures'
 import { PERIOD_TIMES } from '../lib/schedule'
 import type { Course } from '../types/course'
 import CourseCard from './CourseCard.svelte'
@@ -82,6 +82,53 @@ $effect(() => {
 	mq.addEventListener('change', sync)
 	return () => mq.removeEventListener('change', sync)
 })
+
+// Keep each period's「N限」badge visible while scrolling a tall row. The badge
+// rests at its row's centre; once the row is taller than the viewport it is
+// clamped to stay on screen (below the day header, above the bottom edge), so it
+// glides — bottom → centre → top — as you traverse the period. Pure CSS sticky
+// can't do "centred at rest AND always visible", hence this rAF-throttled pass.
+let scroller = $state<HTMLElement>()
+let headerH = $state(0)
+let rafId = 0
+
+function reposition() {
+	rafId = 0
+	const sc = scroller
+	if (!sc) return
+	const scTop = sc.getBoundingClientRect().top
+	const viewH = sc.clientHeight
+	const margin = 6
+	for (const badge of sc.querySelectorAll<HTMLElement>('[data-period-badge]')) {
+		const cell = badge.closest<HTMLElement>('[data-period-label]')
+		if (!cell) continue
+		const r = cell.getBoundingClientRect() // the cell carries no transform → stable anchor
+		const centerVY = (r.top + r.bottom) / 2 - scTop
+		const clamped = clamp(centerVY, headerH + margin, viewH - margin)
+		badge.style.transform = `translateY(${clamped - centerVY}px)`
+	}
+}
+
+function onScroll() {
+	if (rafId) return
+	rafId = requestAnimationFrame(reposition)
+}
+
+$effect(() => {
+	const sc = scroller
+	if (!isDesktop || !sc) return
+	void grid // re-run when the grid (and thus row heights) changes
+	void headerH
+	reposition()
+	sc.addEventListener('scroll', onScroll, { passive: true })
+	window.addEventListener('resize', onScroll)
+	return () => {
+		sc.removeEventListener('scroll', onScroll)
+		window.removeEventListener('resize', onScroll)
+		if (rafId) cancelAnimationFrame(rafId)
+		rafId = 0
+	}
+})
 </script>
 
 {#if !isDesktop}
@@ -115,7 +162,7 @@ $effect(() => {
 		{#each PERIODS as period}
 			{@const courses = grid.get(`${days[activeDay]}-${period}`) ?? []}
 			<div class="bg-surface-primary rounded-xl p-3">
-				<div class="flex items-baseline gap-2 mb-1.5">
+				<div class="sticky top-0 z-10 -mx-3 -mt-3 px-3 pt-3 pb-1.5 mb-1.5 flex items-baseline gap-2 bg-surface-primary rounded-t-xl">
 					<span class="text-micro font-medium text-apple-text-tertiary">{period}限</span>
 					{#if PERIOD_TIMES[period]}
 						<span class="text-fine text-apple-text-tertiary tabular-nums">
@@ -138,9 +185,9 @@ $effect(() => {
 
 <!-- Desktop: full grid -->
 {#if isDesktop}
-<div class="overflow-auto flex-1 bg-surface-page hidden sm:block">
+<div bind:this={scroller} class="overflow-auto flex-1 bg-surface-page hidden sm:block">
 	<div class="grid gap-[2px] bg-surface-page" style="grid-template-columns: {gridCols}; min-width: {minWidth};">
-		<div class="sticky top-0 left-0 z-30 bg-surface-page"></div>
+		<div bind:clientHeight={headerH} class="sticky top-0 left-0 z-30 bg-surface-page"></div>
 
 		{#each days as day}
 			<div
@@ -151,19 +198,24 @@ $effect(() => {
 		{/each}
 
 		{#each PERIODS as period}
-			<div class="sticky left-0 z-10 bg-surface-page flex flex-col items-center px-1 py-2">
-				<!-- start ── N限 ── end: times pinned to the row edges and joined by a
-				     line, with the period label centered in the day-header style. -->
+			<div data-period-label class="sticky left-0 z-10 bg-surface-page relative flex flex-col items-center px-1 py-2">
+				<!-- Times pinned to the row edges (they scroll away); the「N限」badge
+				     rides a continuous rail and is JS-clamped to stay on screen. -->
 				{#if PERIOD_TIMES[period]}
 					<div class="text-fine text-apple-text-tertiary tabular-nums leading-tight">{PERIOD_TIMES[period].start}</div>
-					<div class="w-px flex-1 bg-overlay-strong my-1"></div>
 				{/if}
-				<div class="font-semibold text-caption text-apple-text-secondary tracking-tight">{period}限</div>
-				{#if PERIOD_TIMES[period]?.note}
-					<div class="text-fine text-apple-text-tertiary leading-tight">{PERIOD_TIMES[period].note}</div>
-				{/if}
+				<div class="relative flex-1 w-full my-1 flex items-center justify-center">
+					{#if PERIOD_TIMES[period]}
+						<div class="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px bg-overlay-strong"></div>
+					{/if}
+					<div data-period-badge class="relative bg-surface-page px-0.5 text-center will-change-transform">
+						<div class="font-semibold text-caption text-apple-text-secondary tracking-tight leading-tight">{period}限</div>
+						{#if PERIOD_TIMES[period]?.note}
+							<div class="text-fine text-apple-text-tertiary leading-tight">{PERIOD_TIMES[period].note}</div>
+						{/if}
+					</div>
+				</div>
 				{#if PERIOD_TIMES[period]}
-					<div class="w-px flex-1 bg-overlay-strong my-1"></div>
 					<div class="text-fine text-apple-text-tertiary tabular-nums leading-tight">{PERIOD_TIMES[period].end}</div>
 				{/if}
 			</div>
