@@ -60,9 +60,11 @@ describe('evalArcs', () => {
 					expect(arcs).toHaveLength(pcts.length)
 					let prev = 0
 					for (const arc of arcs) {
-						const len = Number(arc.dash.split(' ')[0])
+						const [len, gap] = arc.dash.split(' ').map(Number)
 						expect(len).toBeGreaterThanOrEqual(0)
 						expect(len).toBeLessThanOrEqual(c + 1e-6)
+						// dashed length + gap span exactly one circumference
+						expect(len + gap).toBeCloseTo(c)
 						expect(arc.offset).toBeLessThanOrEqual(prev + 1e-9) // non-increasing
 						prev = arc.offset
 					}
