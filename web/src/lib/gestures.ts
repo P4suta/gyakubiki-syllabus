@@ -33,6 +33,11 @@ export function rubberBand(overshoot: number, dimension = 400, constant = 0.55):
 	return (1 - 1 / ((overshoot * constant) / dimension + 1)) * dimension
 }
 
+/** Constrain `value` to the `[min, max]` range. Returns `min` if `min > max`. */
+export function clamp(value: number, min: number, max: number): number {
+	return Math.max(Math.min(value, max), min)
+}
+
 /** Fire a short haptic tick where supported (Android/Chrome); a no-op elsewhere. */
 export function haptic(kind: 'light' | 'medium' | 'select' = 'light'): void {
 	if (typeof navigator === 'undefined' || typeof navigator.vibrate !== 'function') return
