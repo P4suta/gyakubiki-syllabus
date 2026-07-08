@@ -1,5 +1,57 @@
+import fc from 'fast-check'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { clamp, haptic, rubberBand, shouldCommit } from './gestures'
+
+const dbl = (min: number, max: number) => fc.double({ min, max, noNaN: true })
+
+describe('property: clamp', () => {
+	it('lands within [min,max] and is identity inside the range', () => {
+		fc.assert(
+			fc.property(dbl(-1e6, 1e6), dbl(-1e6, 1e6), dbl(0, 2e6), (value, min, span) => {
+				const max = min + span
+				const r = clamp(value, min, max)
+				expect(r).toBeGreaterThanOrEqual(min)
+				expect(r).toBeLessThanOrEqual(max)
+				if (value >= min && value <= max) expect(r).toBe(value)
+			}),
+		)
+	})
+})
+
+describe('property: shouldCommit', () => {
+	it('commits iff far enough OR fast enough', () => {
+		fc.assert(
+			fc.property(
+				dbl(0, 2000),
+				dbl(0, 5),
+				dbl(1, 2000),
+				dbl(0.05, 1),
+				dbl(0.05, 2),
+				(distance, speed, size, distanceRatio, velocityThreshold) => {
+					const expected = distance > size * distanceRatio || speed > velocityThreshold
+					expect(shouldCommit(distance, speed, size, { distanceRatio, velocityThreshold })).toBe(
+						expected,
+					)
+				},
+			),
+		)
+	})
+})
+
+describe('property: rubberBand', () => {
+	it('is bounded by the dimension, strictly increasing, and resists', () => {
+		fc.assert(
+			fc.property(dbl(0.5, 5000), dbl(0.5, 5000), dbl(50, 2000), (a, delta, dim) => {
+				const y1 = rubberBand(a, dim)
+				const y2 = rubberBand(a + delta, dim)
+				expect(y1).toBeGreaterThan(0)
+				expect(y1).toBeLessThan(dim) // bounded
+				expect(y1).toBeLessThan(a) // resists
+				expect(y2).toBeGreaterThan(y1) // monotonic
+			}),
+		)
+	})
+})
 
 describe('clamp', () => {
 	it('passes values already inside the range through', () => {
