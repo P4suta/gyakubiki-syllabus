@@ -11,8 +11,9 @@ pub fn normalize(input: &str) -> String {
 }
 
 /// Build a course's search haystack and [`normalize`] it. The parts (name,
-/// optional subtitle, instructor, code, department) are joined with ASCII spaces.
-/// Inputs are expected already trimmed.
+/// optional subtitle, instructor, code, department) are joined with ASCII spaces,
+/// followed by any non-empty `extra` taxonomy parts (e.g. 分野・分類). Inputs are
+/// expected already trimmed.
 #[must_use]
 pub fn search_text(
     name: &str,
@@ -20,13 +21,15 @@ pub fn search_text(
     instructor: &str,
     code: &str,
     department: &str,
+    extra: &[&str],
 ) -> String {
-    let mut parts: Vec<&str> = Vec::with_capacity(5);
+    let mut parts: Vec<&str> = Vec::with_capacity(5 + extra.len());
     parts.push(name);
     if let Some(sub) = subtitle {
         parts.push(sub);
     }
     parts.extend([instructor, code, department]);
+    parts.extend(extra.iter().copied().filter(|s| !s.is_empty()));
     normalize(&parts.join(" "))
 }
 
@@ -57,7 +60,14 @@ mod tests {
     #[test]
     fn search_text_joins_and_normalizes_full_width_space() {
         assert_eq!(
-            search_text("微分積分学", None, "山田\u{3000}太郎", "001", "理工学部"),
+            search_text(
+                "微分積分学",
+                None,
+                "山田\u{3000}太郎",
+                "001",
+                "理工学部",
+                &[]
+            ),
             "微分積分学 山田 太郎 001 理工学部"
         );
     }
@@ -65,8 +75,32 @@ mod tests {
     #[test]
     fn search_text_includes_subtitle_and_lowercases() {
         assert_eq!(
-            search_text("English", Some("Communication"), "Smith", "004", "理工学部"),
+            search_text(
+                "English",
+                Some("Communication"),
+                "Smith",
+                "004",
+                "理工学部",
+                &[]
+            ),
             "english communication smith 004 理工学部"
+        );
+    }
+
+    #[test]
+    fn search_text_appends_nonempty_extra_taxonomy() {
+        // 分野・分類 become part of the haystack; empty parts are dropped so no
+        // stray double spaces creep in.
+        assert_eq!(
+            search_text(
+                "線形代数",
+                None,
+                "田中",
+                "002",
+                "理工学部",
+                &["数学", "", "専門"]
+            ),
+            "線形代数 田中 002 理工学部 数学 専門"
         );
     }
 
@@ -100,7 +134,7 @@ mod tests {
             code in "[a-zA-Z0-9]{0,8}",
             dept in "[\\p{Han}a-zA-Z0-9]{0,10}",
         ) {
-            let st = search_text(&name, None, &instr, &code, &dept);
+            let st = search_text(&name, None, &instr, &code, &dept, &[]);
             let joined = normalize(&[name.as_str(), instr.as_str(), code.as_str(), dept.as_str()].join(" "));
             prop_assert_eq!(&st, &joined);
             // A normalized query drawn from one part is found in the haystack.

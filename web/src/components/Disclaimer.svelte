@@ -15,12 +15,12 @@ let accepted = $state(false)
 	>
 		<h2 class="text-xl font-bold text-apple-text tracking-tight mb-5">ご利用にあたって</h2>
 
-		<div class="text-body text-apple-text/70 leading-relaxed space-y-3 mb-8 tracking-tight">
+		<div class="text-body text-apple-text-secondary leading-relaxed space-y-3 mb-8 tracking-tight">
 			<p>
 				本ツールは個人が作成した非公式のものであり、高知大学とは一切の関係がなく、同大学による承認又は推奨を受けたものではありません。
 			</p>
 			<p>
-				表示されるデータは、<a href="https://www.kochi-u.ac.jp/education-support/courses/syllabus/" class="text-apple-blue hover:underline" target="_blank" rel="noopener noreferrer">同大学が一般に公開しているシラバス情報</a>のみに基づいており、非公開情報は一切使用していません。
+				表示されるデータは、<a href="https://www.kochi-u.ac.jp/education-support/courses/syllabus/" class="text-apple-blue underline" target="_blank" rel="noopener noreferrer">同大学が一般に公開しているシラバス情報</a>のみに基づいており、非公開情報は一切使用していません。
 			</p>
 			<p>
 				本ツールは現状有姿（AS IS）で提供され、明示又は黙示を問わず、正確性、完全性、最新性、特定目的への適合性その他一切の保証をいたしません。

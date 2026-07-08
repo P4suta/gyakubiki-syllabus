@@ -1,4 +1,3 @@
-import initWasm, { SyllabusEngine as WasmEngine } from '../wasm/syllabus.js'
 import type { Course, Dictionaries } from '../types/course'
 
 /** A timetable cell key, `"<day label>-<period>"` (e.g. `"月-1"`). */
@@ -55,12 +54,28 @@ export function assembleGrid(
 	return grid
 }
 
+/** What the worker returns from `init` — see engine.worker.ts. */
+interface InitResult {
+	courses: Course[]
+	dicts: Dictionaries
+	generatedAt: string
+	year: string
+	hasSaturday: boolean
+}
+
+/** A worker reply: `id` echoes the request; `ok` gates `result` vs `error`. */
+type WorkerReply =
+	| { id: number; ok: true; result: unknown }
+	| { id: number; ok: false; error: string }
+
 /**
- * The browser-side facade over the WASM core.
+ * The browser-side facade over the WASM core, which now lives in a Web Worker
+ * (engine.worker.ts) so the heavy one-time parse never blocks the main thread.
  *
- * Owns the engine handle plus a read-only cache of every course view-model and
- * the dictionaries (both fetched from WASM once at load). `filter` returns course
- * indices; `grid` resolves them — no per-query data crosses the WASM boundary.
+ * Owns a read-only cache of every course view-model and the dictionaries (sent
+ * by the worker once at load), plus the worker handle for `filterAndGrid`
+ * queries. The filter index array never crosses back — the worker filters and
+ * lays out in one hop, and this side resolves cells against the cache.
  */
 export class SyllabusEngine {
 	readonly dicts: Dictionaries
@@ -70,60 +85,110 @@ export class SyllabusEngine {
 	readonly hasSaturday: boolean
 	readonly days: readonly string[]
 
-	private readonly wasm: WasmEngine
+	private readonly worker: Worker
+	private seq = 0
+	private readonly pending = new Map<
+		number,
+		{ resolve: (v: unknown) => void; reject: (e: Error) => void }
+	>()
 
-	private constructor(wasm: WasmEngine, views: Course[], dicts: Dictionaries) {
-		this.wasm = wasm
-		this.courses = views
-		this.dicts = dicts
-		this.generatedAt = wasm.generatedAt()
-		this.year = wasm.year()
-		this.hasSaturday = wasm.hasSaturday()
+	private constructor(worker: Worker, init: InitResult) {
+		this.worker = worker
+		this.courses = init.courses
+		this.dicts = init.dicts
+		this.generatedAt = init.generatedAt
+		this.year = init.year
+		this.hasSaturday = init.hasSaturday
 		this.days = dayLabels(this.hasSaturday)
+
+		worker.onmessage = (e: MessageEvent<WorkerReply>) => {
+			const reply = e.data
+			const p = this.pending.get(reply.id)
+			if (!p) return
+			this.pending.delete(reply.id)
+			if (reply.ok) p.resolve(reply.result)
+			else p.reject(new Error(reply.error))
+		}
 	}
 
-	/** Initialize WASM, fetch `data.json`, and build the engine. */
+	/**
+	 * Spin up the worker, fetch `data.json`, and seed the cache.
+	 *
+	 * The fetch runs here on the main thread, not in the worker, so the document's
+	 * `<link rel=preload as=fetch>` is actually consumed — a worker's own fetch
+	 * would not adopt it, and the payload would download twice. The body is handed
+	 * to the worker as a zero-copy transfer; the expensive parse still runs off-main.
+	 *
+	 * The default cache mode lets the fetch reuse the preloaded response (a
+	 * `no-cache` revalidation would not adopt it). The stable, unhashed URL is
+	 * served with a short max-age, so the only staleness risk is a cached copy from
+	 * just before a wire-format bump — which fails to parse. That case retries once
+	 * with the cache bypassed, so it self-heals instead of erroring.
+	 */
 	static async create(): Promise<SyllabusEngine> {
-		await initWasm()
+		const worker = new Worker(new URL('./engine.worker.ts', import.meta.url), {
+			type: 'module',
+		})
+		try {
+			const init = await SyllabusEngine.load(worker, 'default').catch(() =>
+				SyllabusEngine.load(worker, 'reload'),
+			)
+			return new SyllabusEngine(worker, init)
+		} catch (e) {
+			worker.terminate()
+			throw e
+		}
+	}
 
-		// `data.json` is at a stable, unhashed URL, so `no-cache` forces an ETag
-		// revalidation each load — a wire-format bump or the monthly refresh reaches
-		// users instead of erroring on a hard-cached stale copy. 304s stay cheap.
-		const res = await fetch(`${import.meta.env.BASE_URL}data.json`, { cache: 'no-cache' })
+	/** Fetch `data.json` (main thread → preload adoption) and init the worker. */
+	private static async load(worker: Worker, cache: RequestCache): Promise<InitResult> {
+		const res = await fetch(`${import.meta.env.BASE_URL}data.json`, { cache })
 		if (!res.ok) {
 			throw new Error(`データの取得に失敗しました (HTTP ${res.status})`)
 		}
-		const text = await res.text()
-
-		let wasm: WasmEngine
-		try {
-			wasm = WasmEngine.fromJson(text)
-		} catch (e) {
-			// from_json's thiserror message arrives as a JS Error.
-			throw new Error(e instanceof Error ? e.message : String(e))
-		}
-
-		return new SyllabusEngine(
-			wasm,
-			wasm.allCourseViews() as Course[],
-			wasm.dicts() as Dictionaries,
-		)
+		const buffer = await res.arrayBuffer()
+		return new Promise<InitResult>((resolve, reject) => {
+			worker.onmessage = (e: MessageEvent<WorkerReply>) => {
+				const reply = e.data
+				if (reply.id !== 0) return
+				if (reply.ok) resolve(reply.result as InitResult)
+				else reject(new Error(reply.error))
+			}
+			worker.onerror = (e) => reject(new Error(e.message || 'ワーカーエラー'))
+			// Transfer the buffer (second arg) — ownership moves to the worker, no copy.
+			worker.postMessage({ id: 0, type: 'init', buffer }, [buffer])
+		})
 	}
 
-	/** Course indices matching the filters (`'all'` = no filter), ascending. */
-	filter(semester: string, department: string, campus: string, query: string): Uint32Array {
-		return this.wasm.filter(semester, department, campus, query)
+	/** Post a query keyed by a fresh id; resolves when the worker echoes it. */
+	private send(payload: Record<string, unknown>): Promise<unknown> {
+		const id = ++this.seq
+		return new Promise((resolve, reject) => {
+			this.pending.set(id, { resolve, reject })
+			this.worker.postMessage({ id, ...payload })
+		})
 	}
 
-	/** Lay filtered indices onto the timetable, with the distinct-course count. */
-	grid(
-		indices: Uint32Array,
+	/**
+	 * Filter by the given selectors and lay the matches onto the timetable in one
+	 * worker round-trip, returning the resolved grid and the distinct-course count.
+	 */
+	async filterAndGrid(
 		semester: string,
-	): { grid: Map<GridKey, Course[]>; count: number } {
-		const result = this.wasm.grid(indices, semester) as WasmGridResult
+		department: string,
+		campus: string,
+		query: string,
+	): Promise<{ grid: Map<GridKey, Course[]>; count: number }> {
+		const res = (await this.send({
+			type: 'filterAndGrid',
+			semester,
+			department,
+			campus,
+			query,
+		})) as WasmGridResult
 		return {
-			grid: assembleGrid(result.cells, this.courses, this.days),
-			count: result.countUnique,
+			grid: assembleGrid(res.cells, this.courses, this.days),
+			count: res.countUnique,
 		}
 	}
 }

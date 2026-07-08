@@ -47,9 +47,8 @@ pub fn render_data_json(
 }
 
 /// Fold a course's syllabus detail into its grid record: card fields
-/// (`unit`/`dm`/`ev`) plus detail text appended to the search haystack `st` so
-/// 概要・キーワード・到達目標 become searchable. The full detail stays in
-/// `details/{cd}.json`.
+/// (`unit`/`dm`/`ev`) plus キーワード appended to the search haystack `st`. The
+/// full detail (概要・到達目標 …) stays in `details/{cd}.json`.
 fn enrich_course(course: &mut Course, detail: &SanshoDetail) {
     course.unit = detail.unit.clone();
     course.dm = detail
@@ -76,15 +75,12 @@ fn enrich_course(course: &mut Course, detail: &SanshoDetail) {
     }
 }
 
-/// Detail text folded into the search haystack (概要・目的・キーワード・到達目標),
-/// whitespace-flattened.
+/// Detail text folded into the search haystack. Only キーワード — the short,
+/// high-signal tags — are carried; the long 概要・目的・到達目標 prose is left out
+/// so `data.json` stays small (it dominated the payload and gated LCP). That
+/// prose is still readable in `details/{cd}.json`, just not full-text searchable.
 fn detail_search_text(detail: &SanshoDetail) -> String {
-    let mut parts: Vec<String> = Vec::new();
-    parts.extend(detail.summary.clone());
-    parts.extend(detail.aims.clone());
-    parts.extend(detail.keywords.iter().cloned());
-    parts.extend(detail.goals.iter().cloned());
-    parts.join(" ").replace(['\n', '\r'], " ")
+    detail.keywords.join(" ").replace(['\n', '\r'], " ")
 }
 
 /// Serialize to JSON, then HTML-escape inside string values.

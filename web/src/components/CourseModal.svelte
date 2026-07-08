@@ -1,9 +1,9 @@
 <script lang="ts">
-import { fade, fly } from 'svelte/transition'
-import { FIELD_SPEC } from '../lib/syllabus-fields.generated'
 import { loadDetail } from '../lib/details'
+import { FIELD_SPEC } from '../lib/syllabus-fields.generated'
 import { deliveryMode } from '../lib/syllabus-icons'
 import type { Course, CourseDetail, Dictionaries } from '../types/course'
+import BottomSheet from './BottomSheet.svelte'
 import EvalChart from './EvalChart.svelte'
 
 interface Props {
@@ -76,7 +76,13 @@ const allSections = $derived.by<Section[]>(() => {
 			}
 		}
 	}
-	rows.push({ key: '__base__', label: '科目情報', group: OTHER_GROUP, render: 'base', value: baseFields })
+	rows.push({
+		key: '__base__',
+		label: '科目情報',
+		group: OTHER_GROUP,
+		render: 'base',
+		value: baseFields,
+	})
 	return rows
 })
 
@@ -94,40 +100,18 @@ function hasValue(v: unknown): boolean {
 	if (typeof v === 'object') return Object.keys(v as object).length > 0
 	return true
 }
-
-function handleKeydown(e: KeyboardEvent) {
-	if (e.key === 'Escape') onclose()
-}
 </script>
 
-<svelte:window onkeydown={handleKeydown} />
-
-<!-- svelte-ignore a11y_no_static_element_interactions -->
-<div
-	class="fixed inset-0 bg-overlay-backdrop backdrop-blur-[6px] flex items-end sm:items-center justify-center sm:p-5 z-[200]"
-	onclick={onclose}
-	onkeydown={(e) => { if (e.key === 'Escape') onclose() }}
-	transition:fade={{ duration: 200 }}
->
-	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<div
-		class="bg-surface-primary w-full sm:max-w-lg rounded-t-2xl sm:rounded-2xl max-h-[92dvh] sm:max-h-[86vh] overflow-hidden shadow-modal flex flex-col"
-		onclick={(e) => e.stopPropagation()}
-		onkeydown={() => {}}
-		transition:fly={{ y: 20, duration: 300, opacity: 0 }}
-	>
-		<div class="flex justify-center pt-2 pb-0 sm:hidden shrink-0">
-			<div class="w-9 h-1 rounded-full bg-overlay-strong"></div>
-		</div>
-
-		<div class="px-4 pt-4 pb-3 sm:px-7 sm:pt-6 sm:pb-3 shrink-0">
+<BottomSheet {onclose} ariaLabel={course.nm}>
+	{#snippet header(close)}
+		<div class="px-4 pt-2 pb-3 sm:px-7 sm:pt-6 sm:pb-3">
 			<div class="flex justify-between items-start gap-3">
 				<div class="min-w-0">
 					<h2 class="text-xl font-bold text-apple-text leading-snug tracking-tight">
 						{course.nm}
 					</h2>
 					{#if course.sub}
-						<p class="text-sub text-apple-text/50 mt-1 tracking-tight">{course.sub}</p>
+						<p class="text-sub text-apple-text-tertiary mt-1 tracking-tight">{course.sub}</p>
 					{/if}
 					<div class="flex flex-wrap gap-1.5 mt-2.5">
 						{#if delivery}
@@ -145,73 +129,73 @@ function handleKeydown(e: KeyboardEvent) {
 				</div>
 				<button
 					class="shrink-0 w-10 h-10 sm:w-8 sm:h-8 rounded-full bg-overlay-light flex items-center justify-center active:bg-overlay-strong sm:hover:bg-overlay-strong transition-colors duration-200 cursor-pointer"
-					onclick={onclose}
+					onclick={close}
 					aria-label="閉じる"
 				>
-					<svg class="w-3.5 h-3.5 text-apple-text/60" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+					<svg class="w-3.5 h-3.5 text-apple-text-secondary" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
 						<path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
 					</svg>
 				</button>
 			</div>
 		</div>
+	{/snippet}
 
-		<div class="px-4 pb-6 sm:px-7 sm:pb-7 overflow-auto grow">
-			{#if loading}
-				<div class="space-y-3 py-4 animate-pulse">
-					<div class="h-24 rounded-xl bg-overlay-light"></div>
-					<div class="h-4 rounded bg-overlay-light w-3/4"></div>
-					<div class="h-4 rounded bg-overlay-light w-1/2"></div>
-				</div>
-			{:else}
-				<!-- Hero: 成績評価 + 概要, open by default. -->
-				{#each heroSections as s (s.key)}
-					<details class="group border-b border-overlay-subtle" open>
-						{@render disclosure(s.label)}
-						<div class="pb-3.5">{@render sectionBody(s)}</div>
-					</details>
-				{/each}
-
-				<!-- Each category is one collapsible group (collapsed by default); its
-				     fields sit inside as labeled blocks, so the default view is short. -->
-				{#each groupOrder as g (g)}
-					<details class="group border-b border-overlay-subtle">
-						{@render disclosure(g)}
-						<div class="pb-4 space-y-5">
-							{#each sectionsInGroup(g) as s (s.key)}
-								<div>
-									<h4 class="text-caption font-semibold text-apple-text/60 mb-2 tracking-tight">{s.label}</h4>
-									{@render sectionBody(s)}
-								</div>
-							{/each}
-						</div>
-					</details>
-				{/each}
-			{/if}
-
-			<!-- Official KULAS syllabus (source of truth) -->
-			<div class="pt-4">
-				<a
-					href={officialUrl}
-					target="_blank"
-					rel="noopener noreferrer"
-					class="inline-flex items-center gap-1 text-body text-apple-blue hover:underline tracking-tight"
-				>
-					公式シラバスで見る
-					<svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-						<path stroke-linecap="round" stroke-linejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
-					</svg>
-				</a>
+	<div class="px-4 pb-6 sm:px-7 sm:pb-7">
+		{#if loading}
+			<div class="space-y-3 py-4 animate-pulse">
+				<div class="h-24 rounded-xl bg-overlay-light"></div>
+				<div class="h-4 rounded bg-overlay-light w-3/4"></div>
+				<div class="h-4 rounded bg-overlay-light w-1/2"></div>
 			</div>
+		{:else}
+			<!-- Hero: 成績評価 + 概要, open by default. -->
+			{#each heroSections as s (s.key)}
+				<details class="group border-b border-overlay-subtle" open>
+					{@render disclosure(s.label)}
+					<div class="pb-3.5">{@render sectionBody(s)}</div>
+				</details>
+			{/each}
+
+			<!-- Each category is one collapsible group (collapsed by default); its
+			     fields sit inside as labeled blocks, so the default view is short. -->
+			{#each groupOrder as g (g)}
+				<details class="group border-b border-overlay-subtle">
+					{@render disclosure(g)}
+					<div class="pb-4 space-y-5">
+						{#each sectionsInGroup(g) as s (s.key)}
+							<div>
+								<h4 class="text-caption font-semibold text-apple-text-secondary mb-2 tracking-tight">{s.label}</h4>
+								{@render sectionBody(s)}
+							</div>
+						{/each}
+					</div>
+				</details>
+			{/each}
+		{/if}
+
+		<!-- Official KULAS syllabus (source of truth) -->
+		<div class="pt-4">
+			<a
+				href={officialUrl}
+				target="_blank"
+				rel="noopener noreferrer"
+				class="inline-flex items-center gap-1 text-body text-apple-blue hover:underline tracking-tight"
+			>
+				公式シラバスで見る
+				<svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+					<path stroke-linecap="round" stroke-linejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+				</svg>
+			</a>
 		</div>
 	</div>
-</div>
+</BottomSheet>
 
 <!-- One disclosure affordance for every collapsible section: label + a chevron
      that rotates when open. No blue-link "read more" anywhere. -->
 {#snippet disclosure(label: string)}
 	<summary class="flex items-center justify-between gap-2 py-3.5 cursor-pointer list-none select-none">
-		<span class="text-caption font-semibold text-apple-text/70 tracking-tight">{label}</span>
-		<svg class="w-4 h-4 shrink-0 text-apple-text/30 transition-transform duration-200 group-open:rotate-180" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+		<span class="text-caption font-semibold text-apple-text-secondary tracking-tight">{label}</span>
+		<svg class="w-4 h-4 shrink-0 text-apple-text-tertiary transition-transform duration-200 group-open:rotate-180" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
 			<path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
 		</svg>
 	</summary>
@@ -259,7 +243,7 @@ function handleKeydown(e: KeyboardEvent) {
 			{#each s.value as [string, string | undefined | null][] as [label, value]}
 				{#if value}
 					<div class="flex gap-3 py-1.5">
-						<dt class="shrink-0 w-24 text-caption text-apple-text/50 tracking-tight">{label}</dt>
+						<dt class="shrink-0 w-24 text-caption text-apple-text-tertiary tracking-tight">{label}</dt>
 						<dd class="text-body text-apple-text/90 leading-relaxed tracking-tight">{value}</dd>
 					</div>
 				{/if}

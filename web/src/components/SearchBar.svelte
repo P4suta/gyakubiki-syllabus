@@ -10,7 +10,7 @@ let { searchText = $bindable() }: Props = $props()
 <div class="hidden sm:block border-b border-overlay-light bg-surface-primary/40 backdrop-blur-md px-6 py-3">
 	<div class="relative">
 		<svg
-			class="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-apple-text/40 pointer-events-none"
+			class="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-apple-text-tertiary pointer-events-none"
 			fill="none"
 			viewBox="0 0 24 24"
 			stroke="currentColor"
@@ -21,8 +21,9 @@ let { searchText = $bindable() }: Props = $props()
 		<input
 			type="text"
 			bind:value={searchText}
-			placeholder="科目名・教員・内容で検索"
-			class="w-full bg-overlay-subtle rounded-xl pl-12 pr-12 py-3 text-body text-apple-text outline-none placeholder:text-apple-text/40 transition-all duration-200 focus:bg-surface-primary focus:ring-2 focus:ring-apple-blue/30 focus:shadow-sm"
+			aria-label="科目名・教員・キーワードで検索"
+			placeholder="科目名・教員・キーワードで検索"
+			class="w-full bg-overlay-subtle rounded-xl pl-12 pr-12 py-3 text-body text-apple-text outline-none placeholder:text-apple-text-tertiary transition-all duration-200 focus:bg-surface-primary focus:ring-2 focus:ring-apple-blue/30 focus:shadow-sm"
 		/>
 		{#if searchText}
 			<button

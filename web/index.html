@@ -5,6 +5,23 @@
     <link rel="icon" type="image/svg+xml" href="/ic--round-school.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>逆引きシラバス - 高知大学 時間割ビューアー</title>
+    <meta
+      name="description"
+      content="高知大学のシラバスを時間割形式で逆引き検索。学期・学部・キャンパスで絞り込み、曜日・時限から開講科目を一覧できる非公式ビューアーです。"
+    />
+    <!-- data.json gates LCP, and the app only requests it deep in the JS boot
+         chain. Preloading it here starts the download during HTML parse, in
+         parallel with the module/WASM. `as=fetch` preloads are issued in CORS
+         mode, so `crossorigin` is required for the main thread's `fetch()` in
+         engine.ts (also CORS mode, credentials same-origin) to adopt this
+         response instead of downloading it twice. Vite rewrites `%BASE_URL%` to
+         the deploy base (`/gyakubiki-syllabus/`). -->
+    <link
+      rel="preload"
+      as="fetch"
+      href="%BASE_URL%data.json"
+      crossorigin="anonymous"
+    />
   </head>
   <body>
     <div id="app"></div>

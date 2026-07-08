@@ -9,6 +9,14 @@
   --color-apple-blue: #0071e3;
   --color-apple-blue-hover: #0077ed;
 
+  /* Muted text scale — solid (not opacity-on-dark) so contrast holds on every
+     surface, including the course tiles. Both clear WCAG AA (4.5:1) on white,
+     the page, the subtle overlay, and all 10 card tints — locked by
+     design-tokens.test.ts. `secondary` for labels/headers, `tertiary` for the
+     faintest still-legible text (times, counts, placeholders). */
+  --color-apple-text-secondary: #57575a;
+  --color-apple-text-tertiary: #636366;
+
   /* ===== Colors — Surfaces ===== */
   --color-surface-primary: #ffffff;
   --color-surface-page: #f5f5f7;
@@ -54,6 +62,7 @@
   /* ===== Animations ===== */
   --animate-fade-in: fade-in 400ms ease-out;
   --animate-spinner: spinner-rotate 0.8s linear infinite;
+  --animate-dialog-in: dialog-in 200ms var(--ease-spring);
 }
 
 /* Base styles */
@@ -94,4 +103,11 @@ body {
 
 @keyframes spinner-rotate {
   to { transform: rotate(360deg); }
+}
+
+/* Desktop dialog entrance. Uses the independent `scale` property so it never
+   fights the sheet's `translate`-based mobile slide. */
+@keyframes dialog-in {
+  from { opacity: 0; scale: 0.96; }
+  to { opacity: 1; scale: 1; }
 }
