@@ -83,61 +83,12 @@ $effect(() => {
 	return () => mq.removeEventListener('change', sync)
 })
 
-// Keep each period's「N限」badge readable while scrolling a tall row, without
-// dragging off-screen periods into view. Each badge is centred within the
-// *overlap* of its own cell and the visible band (below the day header, above
-// the bottom edge): a short in-view cell → its own centre; a tall cell → the
-// viewport centre; a cell scrolled out of view → left alone (moves away with
-// its cell). rAF-throttled; recomputed on scroll/resize/grid change.
-let scroller = $state<HTMLElement>()
+// The「N限」badge stays readable while scrolling a tall row via native
+// `position: sticky` (top: header height, bottom: 6px). Compositor-driven, so it
+// tracks the scroll with zero jank; it rests at the row centre for short cells,
+// glides within the band for tall ones, and — being confined to its own cell —
+// never pulls an off-screen period into the rail. `headerH` feeds the top inset.
 let headerH = $state(0)
-let rafId = 0
-
-function reposition() {
-	rafId = 0
-	const sc = scroller
-	if (!sc) return
-	const scTop = sc.getBoundingClientRect().top
-	const bandTop = headerH + 6
-	const bandBottom = sc.clientHeight - 6
-	for (const badge of sc.querySelectorAll<HTMLElement>('[data-period-badge]')) {
-		const cell = badge.closest<HTMLElement>('[data-period-label]')
-		if (!cell) continue
-		const r = cell.getBoundingClientRect() // the cell carries no transform → stable anchor
-		const cellTop = r.top - scTop
-		const cellBottom = r.bottom - scTop
-		const lo = Math.max(cellTop, bandTop)
-		const hi = Math.min(cellBottom, bandBottom)
-		if (hi <= lo) {
-			// Cell not within the visible band — keep the badge with its cell.
-			badge.style.transform = ''
-			continue
-		}
-		const cellCenter = (cellTop + cellBottom) / 2
-		badge.style.transform = `translateY(${(lo + hi) / 2 - cellCenter}px)`
-	}
-}
-
-function onScroll() {
-	if (rafId) return
-	rafId = requestAnimationFrame(reposition)
-}
-
-$effect(() => {
-	const sc = scroller
-	if (!isDesktop || !sc) return
-	void grid // re-run when the grid (and thus row heights) changes
-	void headerH
-	reposition()
-	sc.addEventListener('scroll', onScroll, { passive: true })
-	window.addEventListener('resize', onScroll)
-	return () => {
-		sc.removeEventListener('scroll', onScroll)
-		window.removeEventListener('resize', onScroll)
-		if (rafId) cancelAnimationFrame(rafId)
-		rafId = 0
-	}
-})
 </script>
 
 {#if !isDesktop}
@@ -194,7 +145,7 @@ $effect(() => {
 
 <!-- Desktop: full grid -->
 {#if isDesktop}
-<div bind:this={scroller} class="overflow-auto flex-1 bg-surface-page hidden sm:block">
+<div class="overflow-auto flex-1 bg-surface-page hidden sm:block">
 	<div class="grid gap-[2px] bg-surface-page" style="grid-template-columns: {gridCols}; min-width: {minWidth};">
 		<div bind:clientHeight={headerH} class="sticky top-0 left-0 z-30 bg-surface-page"></div>
 
@@ -217,7 +168,7 @@ $effect(() => {
 					{#if PERIOD_TIMES[period]}
 						<div class="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px bg-overlay-strong"></div>
 					{/if}
-					<div data-period-badge class="relative bg-surface-page px-0.5 text-center will-change-transform">
+					<div data-period-badge class="sticky bg-surface-page px-0.5 text-center" style="top: {headerH}px; bottom: 6px;">
 						<div class="font-semibold text-caption text-apple-text-secondary tracking-tight leading-tight">{period}限</div>
 						{#if PERIOD_TIMES[period]?.note}
 							<div class="text-fine text-apple-text-tertiary leading-tight">{PERIOD_TIMES[period].note}</div>

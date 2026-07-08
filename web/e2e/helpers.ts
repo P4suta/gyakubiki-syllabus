@@ -1,4 +1,4 @@
-import { type Page, expect } from '@playwright/test'
+import { type Locator, type Page, expect } from '@playwright/test'
 
 // Shared fixtures/selectors for the E2E suite. The dataset is deterministic
 // (gen-sample, fixed seed): the first courses below are stable regardless of
@@ -100,4 +100,51 @@ export async function swipe(
 	}
 	await client.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
 	await client.detach()
+}
+
+// --- Geometry assertions. `toBeVisible()` only checks the DOM/CSS, so an element
+// scrolled off-screen or overlapping another still passes it. These check the
+// actual rendered rectangles — the class of bug (`toBeVisible` green but visually
+// wrong) that shipped the sticky-period regressions. ---
+
+export interface Box {
+	x: number
+	y: number
+	width: number
+	height: number
+}
+
+/** The element's rendered rectangle; throws if it has none (not laid out). */
+export async function box(locator: Locator): Promise<Box> {
+	const b = await locator.boundingBox()
+	if (!b) throw new Error('element has no bounding box (not rendered)')
+	return b
+}
+
+/** Do two rectangles overlap at all? */
+export function boxesOverlap(a: Box, b: Box): boolean {
+	return a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height
+}
+
+/** Assert `el` lies within `scroller`'s visible band — below `headerH`, above its bottom. */
+export async function expectWithinBand(
+	el: Locator,
+	scroller: Locator,
+	headerH = 0,
+	tol = 2,
+): Promise<void> {
+	const e = await box(el)
+	const s = await box(scroller)
+	expect(e.y, 'top is below the day header').toBeGreaterThanOrEqual(s.y + headerH - tol)
+	expect(e.y + e.height, 'bottom is within the scroller').toBeLessThanOrEqual(s.y + s.height + tol)
+}
+
+/** Assert `el`'s rectangle intersects `scroller` at all (genuinely on screen). */
+export async function expectOnScreen(el: Locator, scroller: Locator): Promise<void> {
+	expect(boxesOverlap(await box(el), await box(scroller)), 'element is on screen').toBe(true)
+}
+
+/** Assert two elements' rectangles do not overlap. */
+export async function expectNoOverlap(a: Locator, b: Locator): Promise<void> {
+	expect(boxesOverlap(await box(a), await box(b)), 'elements must not overlap').toBe(false)
 }
