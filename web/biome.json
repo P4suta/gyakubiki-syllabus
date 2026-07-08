@@ -28,7 +28,14 @@
     }
   },
   "files": {
-    "includes": ["src/**/*.ts", "src/**/*.svelte", "*.ts", "*.js"]
+    "includes": [
+      "src/**/*.ts",
+      "src/**/*.svelte",
+      "*.ts",
+      "*.js",
+      "!src/wasm/**",
+      "!**/*.generated.ts"
+    ]
   },
   "overrides": [
     {

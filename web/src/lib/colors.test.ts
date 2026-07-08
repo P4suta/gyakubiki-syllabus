@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { getColor } from './colors'
+import { COLORS, getColor } from './colors'
+import { contrastRatio } from './contrast'
+
+const AA = 4.5
 
 describe('getColor', () => {
 	it('returns a color object with bg, border, text', () => {
@@ -38,4 +41,17 @@ describe('getColor', () => {
 		const color = getColor('講義コード')
 		expect(color).toHaveProperty('bg')
 	})
+})
+
+describe('course palette contrast (WCAG AA)', () => {
+	// The card's meta line renders `accentText` as text on `bg`; the course name
+	// renders `text` on `bg`. Both must clear 4.5:1, or the tile fails Lighthouse.
+	for (const c of COLORS) {
+		it(`accentText ${c.accentText} on ${c.bg} ≥ ${AA}:1`, () => {
+			expect(contrastRatio(c.accentText, c.bg)).toBeGreaterThanOrEqual(AA)
+		})
+		it(`text ${c.text} on ${c.bg} ≥ ${AA}:1`, () => {
+			expect(contrastRatio(c.text, c.bg)).toBeGreaterThanOrEqual(AA)
+		})
+	}
 })

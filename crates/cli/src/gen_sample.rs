@@ -21,8 +21,10 @@ use crate::detail::{Delivery, Eval, EvalRow, Labelled, OfficeHour, PlanItem, San
 
 #[derive(Args)]
 pub struct GenSampleArgs {
-    /// How many courses to synthesize.
-    #[arg(long, default_value_t = 40)]
+    /// How many courses to synthesize. Defaults to a production-scale few
+    /// thousand so local dev and E2E exercise the real load; pass a small
+    /// `--count` for a quick dataset.
+    #[arg(long, default_value_t = 3000)]
     count: usize,
     /// Seed for the cosmetic randomness (names/keywords); coverage is seed-independent.
     #[arg(long, default_value_t = 42)]

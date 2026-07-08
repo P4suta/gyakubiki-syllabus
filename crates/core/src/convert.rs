@@ -147,7 +147,19 @@ fn first_pass(raw: &[RawCourse]) -> FirstPass {
         courses.push(Course {
             cd: cd.to_owned(),
             nm: nm.to_owned(),
-            st: search_text(nm, sub.as_deref(), prof, cd, dept),
+            st: search_text(
+                nm,
+                sub.as_deref(),
+                prof,
+                cd,
+                dept,
+                // 分野・分類 stay searchable now that the detail prose no longer rides
+                // along in `st` (see the CLI's `detail_search_text`).
+                &[
+                    r.kamoku_bunya.as_deref().unwrap_or_default().trim(),
+                    r.kamoku_bunrui.as_deref().unwrap_or_default().trim(),
+                ],
+            ),
             sub,
             prof: prof.to_owned(),
             raw: r.jikanwari.clone(),

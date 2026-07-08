@@ -5,7 +5,7 @@ import Disclaimer from './components/Disclaimer.svelte'
 import FilterBar from './components/FilterBar.svelte'
 import SearchBar from './components/SearchBar.svelte'
 import Timetable from './components/Timetable.svelte'
-import { SyllabusEngine } from './lib/engine'
+import { type GridKey, SyllabusEngine } from './lib/engine'
 import { defaultSemester } from './lib/semester'
 import type { Course } from './types/course'
 
@@ -21,18 +21,41 @@ let selectedCourse: Course | null = $state(null)
 
 $effect(() => {
 	const value = searchText
-	const timer = setTimeout(() => { debouncedSearch = value }, 180)
+	const timer = setTimeout(() => {
+		debouncedSearch = value
+	}, 180)
 	return () => clearTimeout(timer)
 })
 
-// filter → course indices; grid → resolved cells + distinct count. The flat
-// filtered list never materializes — it only ever fed the grid.
-let filtered = $derived(
-	engine ? engine.filter(semester, department, campus, debouncedSearch) : new Uint32Array(),
-)
-let layout = $derived(engine ? engine.grid(filtered, semester) : null)
-let grid = $derived(layout ? layout.grid : new Map())
-let displayCount = $derived(layout ? layout.count : 0)
+// The engine now lives in a worker, so filter+grid is async (one round-trip per
+// change). This effect re-runs on any selector/query change; a cancel flag drops
+// a stale result if a newer query resolves first. The last good grid stays on
+// screen until the next one arrives — no flicker between queries.
+let grid = $state<Map<GridKey, Course[]>>(new Map())
+let displayCount = $state(0)
+
+$effect(() => {
+	const sem = semester
+	const dep = department
+	const cam = campus
+	const q = debouncedSearch
+	const e = engine
+	if (!e) return
+	let cancelled = false
+	e.filterAndGrid(sem, dep, cam, q)
+		.then((r) => {
+			if (!cancelled) {
+				grid = r.grid
+				displayCount = r.count
+			}
+		})
+		.catch(() => {
+			// A failed query (e.g. worker hiccup) is non-fatal — keep the last grid.
+		})
+	return () => {
+		cancelled = true
+	}
+})
 
 onMount(async () => {
 	try {
@@ -51,14 +74,14 @@ onMount(async () => {
 	<div class="min-h-screen bg-surface-page flex items-center justify-center">
 		<div class="text-center">
 			<div class="inline-block w-5 h-5 border-2 border-apple-text/20 border-t-apple-text rounded-full mb-4 animate-spinner"></div>
-			<p class="text-body text-apple-text/60 tracking-tight">データを読み込み中...</p>
+			<p class="text-body text-apple-text-secondary tracking-tight">データを読み込み中...</p>
 		</div>
 	</div>
 {:else if error}
 	<div class="min-h-screen bg-surface-page flex items-center justify-center">
 		<div class="bg-surface-primary rounded-xl p-8 max-w-md text-center shadow-card">
 			<p class="text-cta text-apple-text font-semibold mb-2 tracking-tight">読み込みエラー</p>
-			<p class="text-body text-apple-text/60 whitespace-pre-line leading-relaxed tracking-tight">{error}</p>
+			<p class="text-body text-apple-text-secondary whitespace-pre-line leading-relaxed tracking-tight">{error}</p>
 		</div>
 	</div>
 {:else if engine}

@@ -50,12 +50,12 @@ const meta = $derived([mode?.label, topEval].filter(Boolean).join(' · '))
 		{course.nm}
 	</div>
 	{#if prof}
-		<div class="text-micro sm:text-fine text-apple-text/50 truncate">{prof}</div>
+		<div class="text-micro sm:text-fine text-apple-text-tertiary truncate">{prof}</div>
 	{/if}
 	{#if meta || course.unit}
 		<div class="flex items-center gap-1 text-micro sm:text-fine mt-0.5">
-			{#if meta}<span class="truncate font-semibold" style="color: {color.border};">{meta}</span>{/if}
-			{#if course.unit}<span class="ml-auto shrink-0 tabular-nums text-apple-text/45">{course.unit}</span>{/if}
+			{#if meta}<span class="truncate font-semibold" style="color: {color.accentText};">{meta}</span>{/if}
+			{#if course.unit}<span class="ml-auto shrink-0 tabular-nums text-apple-text-tertiary">{course.unit}</span>{/if}
 		</div>
 	{/if}
 </button>

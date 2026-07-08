@@ -1,6 +1,6 @@
 <script lang="ts">
-import type { EvalRow } from '../types/course'
 import { evalKind } from '../lib/syllabus-icons'
+import type { EvalRow } from '../types/course'
 
 interface Props {
 	rows: EvalRow[]
@@ -36,9 +36,7 @@ const arcs = $derived.by(() => {
 	})
 })
 
-const dominant = $derived(
-	[...segments].sort((a, b) => b.pct - a.pct)[0] ?? null,
-)
+const dominant = $derived([...segments].sort((a, b) => b.pct - a.pct)[0] ?? null)
 </script>
 
 <div class="flex items-center gap-4 sm:gap-5">
@@ -74,7 +72,7 @@ const dominant = $derived(
 				<span class="w-2 h-2 rounded-full shrink-0" style="background: {s.style.color};"></span>
 				<span class="text-apple-text/90 truncate">{s.item || s.style.label}</span>
 				{#if s.hasWeight}
-					<span class="ml-auto shrink-0 text-apple-text/60 tabular-nums font-medium">{s.pct}%</span>
+					<span class="ml-auto shrink-0 text-apple-text-secondary tabular-nums font-medium">{s.pct}%</span>
 				{/if}
 			</div>
 		{/each}
