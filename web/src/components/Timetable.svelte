@@ -1,6 +1,6 @@
 <script lang="ts">
 import { type GridKey, PERIODS } from '../lib/engine'
-import { clamp, haptic, type SwipeDir, swipeNavigate } from '../lib/gestures'
+import { haptic, type SwipeDir, swipeNavigate } from '../lib/gestures'
 import { PERIOD_TIMES } from '../lib/schedule'
 import type { Course } from '../types/course'
 import CourseCard from './CourseCard.svelte'
@@ -83,11 +83,12 @@ $effect(() => {
 	return () => mq.removeEventListener('change', sync)
 })
 
-// Keep each period's「N限」badge visible while scrolling a tall row. The badge
-// rests at its row's centre; once the row is taller than the viewport it is
-// clamped to stay on screen (below the day header, above the bottom edge), so it
-// glides — bottom → centre → top — as you traverse the period. Pure CSS sticky
-// can't do "centred at rest AND always visible", hence this rAF-throttled pass.
+// Keep each period's「N限」badge readable while scrolling a tall row, without
+// dragging off-screen periods into view. Each badge is centred within the
+// *overlap* of its own cell and the visible band (below the day header, above
+// the bottom edge): a short in-view cell → its own centre; a tall cell → the
+// viewport centre; a cell scrolled out of view → left alone (moves away with
+// its cell). rAF-throttled; recomputed on scroll/resize/grid change.
 let scroller = $state<HTMLElement>()
 let headerH = $state(0)
 let rafId = 0
@@ -97,15 +98,23 @@ function reposition() {
 	const sc = scroller
 	if (!sc) return
 	const scTop = sc.getBoundingClientRect().top
-	const viewH = sc.clientHeight
-	const margin = 6
+	const bandTop = headerH + 6
+	const bandBottom = sc.clientHeight - 6
 	for (const badge of sc.querySelectorAll<HTMLElement>('[data-period-badge]')) {
 		const cell = badge.closest<HTMLElement>('[data-period-label]')
 		if (!cell) continue
 		const r = cell.getBoundingClientRect() // the cell carries no transform → stable anchor
-		const centerVY = (r.top + r.bottom) / 2 - scTop
-		const clamped = clamp(centerVY, headerH + margin, viewH - margin)
-		badge.style.transform = `translateY(${clamped - centerVY}px)`
+		const cellTop = r.top - scTop
+		const cellBottom = r.bottom - scTop
+		const lo = Math.max(cellTop, bandTop)
+		const hi = Math.min(cellBottom, bandBottom)
+		if (hi <= lo) {
+			// Cell not within the visible band — keep the badge with its cell.
+			badge.style.transform = ''
+			continue
+		}
+		const cellCenter = (cellTop + cellBottom) / 2
+		badge.style.transform = `translateY(${(lo + hi) / 2 - cellCenter}px)`
 	}
 }
 
