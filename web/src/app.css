@@ -140,22 +140,34 @@
 }
 
 /* The one stacking ladder. Every z-index in the app is a named rung here — no
-   magic numbers scattered through components. The `sticky-*` rungs order the
-   sticky siblings inside the scrolling grid (rail < headers < corner); `nav` is
-   the sticky chrome; `overlay`/`sheet` sit above everything.
-   (Overlays could instead move to the native top layer via `<dialog>` and drop
-   their z entirely — a deliberate follow-up, since the sheet's drag/history
-   state machine would need porting.) */
+   magic numbers in components. The `sticky-*` rungs order the sticky siblings
+   inside the scrolling grid (rail < headers < corner); `nav` is the sticky
+   chrome. Overlays don't appear here at all: they render in the native top layer
+   via `<dialog>.showModal()` (see `dialog.overlay`), above everything with no z. */
 @utility z-sticky { z-index: 10; }
 @utility z-sticky-head { z-index: 20; }
 @utility z-sticky-corner { z-index: 30; }
 @utility z-nav { z-index: 50; }
-@utility z-overlay { z-index: 100; }
-@utility z-sheet { z-index: 200; }
 
 /* Modal / sheet max height — dynamic viewport on mobile, classic vh on desktop. */
 @utility max-h-overlay { max-height: 92dvh; }
 @utility max-h-overlay-sm { max-height: 86vh; }
+
+/* Overlay dialogs render in the native top layer (via `.showModal()`), so they
+   sit above everything with no z-index and get a free focus trap + inert page.
+   Strip the UA chrome to a transparent shell; the inner backdrop element dims. */
+dialog.overlay {
+  max-width: 100vw;
+  max-height: 100dvh;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  overflow: visible;
+}
+dialog.overlay::backdrop {
+  background: transparent;
+}
 
 /* Base styles */
 html {

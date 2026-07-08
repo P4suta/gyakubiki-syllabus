@@ -53,12 +53,16 @@ describe('BottomSheet close routing', () => {
 		expect(onclose).toHaveBeenCalledTimes(1)
 	})
 
-	it('routes an Escape dismissal through the history entry (mobile slide-out)', () => {
+	it('routes an Escape (native dialog cancel) through the history entry (mobile slide-out)', () => {
 		vi.useFakeTimers()
-		render(Harness, { props: { onclose: vi.fn() } })
+		const { container } = render(Harness, { props: { onclose: vi.fn() } })
 		flushSync()
 		back.mockClear()
-		fireEvent.keyDown(window, { key: 'Escape' })
+		// The dialog is in the top layer; Esc fires the native `cancel`, which we
+		// preventDefault and route through our dismiss instead of the native close.
+		const dialog = container.querySelector('dialog')
+		if (!dialog) throw new Error('dialog not found')
+		dialog.dispatchEvent(new Event('cancel', { cancelable: true }))
 		flushSync()
 		vi.advanceTimersByTime(240) // mobile dismiss waits for the slide-out
 		expect(back).toHaveBeenCalledTimes(1) // → popstate → actualClose, one path
