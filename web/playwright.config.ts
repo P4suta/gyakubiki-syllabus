@@ -18,6 +18,16 @@ export default defineConfig({
 	use: {
 		baseURL: 'http://localhost:5173',
 		trace: 'on-first-retry',
+		// Headless Chromium throttles rAF/timers in "background" renderers, which
+		// makes scroll- and animation-linked assertions flaky. Disable it so the
+		// geometry/visual specs observe the same frame timing as a real, focused tab.
+		launchOptions: {
+			args: [
+				'--disable-background-timer-throttling',
+				'--disable-renderer-backgrounding',
+				'--disable-backgrounding-occluded-windows',
+			],
+		},
 	},
 	projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
 	webServer: {
