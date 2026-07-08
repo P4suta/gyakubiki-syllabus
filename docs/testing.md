@@ -63,7 +63,7 @@ is on-screen-but-mispositioned. The layers below close those gaps.
 - **Visual baselines** are rendered on the CI OS (Linux) and can't be produced on
   the Windows dev box, so the visual spec is skipped off Linux. The
   `visual-baseline` workflow (`workflow_dispatch`) regenerates them and lands the
-  PNGs as a *signed* commit via `syllabus-cli commit` (a plain Actions push can't
+  PNG files as a *signed* commit via `syllabus-cli commit` (a plain Actions push can't
   satisfy the require-signed-commits ruleset), then opens a PR. Dispatch it on the
   branch whose UI changed; the CI `e2e` job and that workflow install the same
   `fonts-noto-cjk`, so glyphs render identically on both sides.

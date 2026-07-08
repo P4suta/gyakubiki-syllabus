@@ -16,7 +16,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write        # signed commit of the baseline PNGs
+  contents: write        # signed commit of the baseline PNG files
   pull-requests: write   # open the baseline PR
 
 concurrency:

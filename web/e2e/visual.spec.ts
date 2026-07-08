@@ -8,8 +8,8 @@ import { DESKTOP, FIXTURES, MOBILE, enter, openCourse } from './helpers'
 //
 // Skipped off Linux — baselines are OS-specific and only the Linux set is
 // committed (dev here is Windows). Regenerate/refresh them with the
-// `visual-baseline` workflow (workflow_dispatch), which lands the PNGs via a
-// signed commit and opens a PR.
+// `visual-baseline` workflow (workflow_dispatch), which lands the PNG files via
+// a signed commit and opens a PR.
 test.describe('visual regression', () => {
 	test.skip(process.platform !== 'linux', 'baselines are rendered on Linux (CI)')
 
