@@ -198,24 +198,21 @@ function planBadge(kind: string | undefined): string | null {
 	return null
 }
 
-// Copy the 科目情報 as plain「ラベル: 値」lines — this block exists for whoever needs
-// to lift the details, so make that one tap.
-let baseCopied = $state(false)
-let baseCopyTimer: ReturnType<typeof setTimeout> | undefined
-async function copyBase() {
-	const lines = [
-		`科目名: ${course.nm}`,
-		...baseFields.filter(([, v]) => v).map(([label, value]) => `${label}: ${value}`),
-	]
+// 科目情報 exists for whoever needs to lift a detail — so each row copies on its
+// own (the exact code / 学則科目 name / …), not the whole block. `copiedField`
+// holds the label of the row that just copied, for a brief ✓.
+let copiedField = $state<string | null>(null)
+let copyTimer: ReturnType<typeof setTimeout> | undefined
+async function copyField(label: string, value: string) {
 	try {
-		await navigator.clipboard.writeText(lines.join('\n'))
-		baseCopied = true
-		clearTimeout(baseCopyTimer)
-		baseCopyTimer = setTimeout(() => {
-			baseCopied = false
-		}, 1800)
+		await navigator.clipboard.writeText(value)
+		copiedField = label
+		clearTimeout(copyTimer)
+		copyTimer = setTimeout(() => {
+			copiedField = null
+		}, 1500)
 	} catch {
-		baseCopied = false
+		copiedField = null
 	}
 }
 </script>
@@ -572,21 +569,20 @@ async function copyBase() {
 			{/each}
 		</div>
 	{:else if s.render === 'base'}
-		<div class="flex justify-end -mt-1 mb-1">
-			<button
-				type="button"
-				onclick={copyBase}
-				class="inline-flex items-center gap-1 rounded-full bg-overlay-light px-2.5 py-1 text-micro text-apple-text-secondary active:bg-overlay-medium sm:hover:bg-overlay-medium transition-colors cursor-pointer"
-			>
-				{#if baseCopied}<IconCheck class="w-3 h-3" aria-hidden="true" />コピーしました{:else}<IconContentCopy class="w-3 h-3" aria-hidden="true" />コピー{/if}
-			</button>
-		</div>
 		<dl>
 			{#each s.value as [string, string | undefined | null][] as [label, value]}
 				{#if value}
-					<div class="flex gap-3 py-2 border-b border-overlay-subtle last:border-0">
+					<div class="flex items-center gap-3 py-2 border-b border-overlay-subtle last:border-0">
 						<dt class="shrink-0 w-24 text-caption text-apple-text-tertiary tracking-tight">{label}</dt>
-						<dd class="text-body text-apple-text leading-relaxed tracking-tight">{value}</dd>
+						<dd class="min-w-0 flex-1 text-body text-apple-text leading-relaxed tracking-tight">{value}</dd>
+						<button
+							type="button"
+							onclick={() => copyField(label, value)}
+							class="shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-apple-text-tertiary active:bg-overlay-light sm:hover:bg-overlay-light transition-colors cursor-pointer"
+							aria-label="{label}をコピー"
+						>
+							{#if copiedField === label}<IconCheck class="w-3.5 h-3.5 text-apple-blue" aria-hidden="true" />{:else}<IconContentCopy class="w-3.5 h-3.5" aria-hidden="true" />{/if}
+						</button>
 					</div>
 				{/if}
 			{/each}
