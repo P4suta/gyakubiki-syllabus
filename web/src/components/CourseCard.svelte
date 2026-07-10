@@ -1,4 +1,5 @@
 <script lang="ts">
+import IconInfo from '~icons/ic/round-info'
 import IconPushPin from '~icons/ic/round-push-pin'
 import { getColor } from '../lib/colors'
 import { highlights, segment } from '../lib/highlight.svelte'
@@ -50,13 +51,16 @@ const topEval = $derived.by(() => {
 		const [type, w] = e.split(':')
 		byType.set(type, (byType.get(type) ?? 0) + (Number(w) || 0))
 	}
-	const top = [...byType.entries()].sort((a, b) => b[1] - a[1])[0]
+	const sorted = [...byType.entries()].sort((a, b) => b[1] - a[1])
+	const top = sorted[0]
 	if (!top) return null
 	const style = evalKind(top[0])
 	return {
 		label: style.label,
 		pct: sum > 0 ? Math.round((top[1] / sum) * 100) : null,
 		color: theme.isDark ? style.color.dark : style.color.light,
+		// A tie (出席50 vs 試験50) — which to weigh is subjective, so flag it.
+		tie: sorted.length > 1 && sorted[1][1] === top[1],
 	}
 })
 
@@ -101,12 +105,19 @@ const creditHalf = $derived(creditsN - Math.floor(creditsN) >= 0.5)
 				     arc is rotated so the text stays upright; round caps keep it smooth. -->
 				<span class="shrink-0 font-semibold">{topEval.label}</span>
 				{#if topEval.pct != null}
-					<svg class="w-4 h-4 shrink-0" viewBox="0 0 36 36" role="img" aria-label="{topEval.label} {topEval.pct}%">
-						<title>{topEval.label} {topEval.pct}%</title>
-						<circle cx="18" cy="18" r="15" fill="none" class="stroke-overlay-medium" stroke-width="5" />
-						<circle cx="18" cy="18" r="15" fill="none" stroke={topEval.color} stroke-width="5" stroke-linecap="round" pathLength="100" stroke-dasharray="{topEval.pct} 100" transform="rotate(-90 18 18)" />
-						<text x="18" y="18" text-anchor="middle" dominant-baseline="central" font-size="11" font-weight="700" fill="currentColor">{topEval.pct}%</text>
-					</svg>
+					<span class="relative inline-flex shrink-0">
+						<svg class="w-4 h-4" viewBox="0 0 36 36" role="img" aria-label="{topEval.label} {topEval.pct}%{topEval.tie ? '（同率あり）' : ''}">
+							<title>{topEval.label} {topEval.pct}%{topEval.tie ? '（同率あり）' : ''}</title>
+							<circle cx="18" cy="18" r="15" fill="none" class="stroke-overlay-medium" stroke-width="5" />
+							<circle cx="18" cy="18" r="15" fill="none" stroke={topEval.color} stroke-width="5" stroke-linecap="round" pathLength="100" stroke-dasharray="{topEval.pct} 100" transform="rotate(-90 18 18)" />
+							<text x="18" y="18" text-anchor="middle" dominant-baseline="central" font-size="11" font-weight="700" fill="currentColor">{topEval.pct}%</text>
+						</svg>
+						{#if topEval.tie}
+							<!-- Tie: another axis has the same share — flag that the「main」is
+							     one reading, not the only one. -->
+							<IconInfo class="absolute -top-1 -right-1 w-2.5 h-2.5" style="color: {color.mutedText};" aria-hidden="true" />
+						{/if}
+					</span>
 				{/if}
 			{/if}
 			{#if creditsN > 0}
