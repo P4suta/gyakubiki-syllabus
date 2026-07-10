@@ -60,7 +60,11 @@ pub struct SanshoDetail {
     // re-presentations of the fields above; the originals are kept for fallback. ---
     /// 教科書 split into 教科書/参考書/… sections; `None` when there is no textbook
     /// text. Book titles are linkified at render, not here.
-    #[serde(rename = "textbookInfo", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "textbookInfo",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub textbook_info: Option<TextbookInfo>,
     /// 授業時間外の学習: an extracted study-time and 予習/復習 split, when the text
     /// states them unambiguously. The full `prep` text is still shown.

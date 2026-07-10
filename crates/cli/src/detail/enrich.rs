@@ -117,17 +117,22 @@ static HOUR_RE: LazyLock<regex::Regex> =
 fn split_textbooks(s: &str) -> TextbookInfo {
     let trimmed = s.trim();
     let has_title = trimmed.contains('『') || trimmed.contains('「');
-    let null_kw = ["特になし", "なし", "無し", "使用しない", "指定しない", "指定なし"];
-    let is_none = trimmed.chars().count() <= 20
-        && !has_title
-        && null_kw.iter().any(|k| trimmed.contains(k));
+    let null_kw = [
+        "特になし",
+        "なし",
+        "無し",
+        "使用しない",
+        "指定しない",
+        "指定なし",
+    ];
+    let is_none =
+        trimmed.chars().count() <= 20 && !has_title && null_kw.iter().any(|k| trimmed.contains(k));
 
     let labels = ["教科書", "参考書", "参考資料", "参考文献", "テキスト"];
     let is_label = |line: &str| {
         labels.iter().any(|l| {
             line.strip_prefix(l).is_some_and(|rest| {
-                rest.is_empty()
-                    || rest.starts_with(['：', ':', '【', '［', '[', ' ', '\u{3000}'])
+                rest.is_empty() || rest.starts_with(['：', ':', '【', '［', '[', ' ', '\u{3000}'])
             })
         })
     };
@@ -245,7 +250,8 @@ fn classify_plan_kind(text: &str, n: i64) -> Option<String> {
         return Some("milestone".into());
     }
     // Start: only the first session, and only when it names an intro.
-    if n == 1 && (has("オリエンテーション") || has("ガイダンス") || has("イントロダクション")) {
+    if n == 1 && (has("オリエンテーション") || has("ガイダンス") || has("イントロダクション"))
+    {
         return Some("start".into());
     }
     None
@@ -258,7 +264,10 @@ mod tests {
     #[test]
     fn exam_needs_a_compound_exam_term() {
         assert_eq!(classify_plan_kind("期末試験", 15).as_deref(), Some("exam"));
-        assert_eq!(classify_plan_kind("定期試験を行う", 16).as_deref(), Some("exam"));
+        assert_eq!(
+            classify_plan_kind("定期試験を行う", 16).as_deref(),
+            Some("exam")
+        );
         assert_eq!(classify_plan_kind("中間テスト", 8).as_deref(), Some("exam"));
     }
 
@@ -267,7 +276,10 @@ mod tests {
         // Real false-positives caught by the fidelity review — none is an exam.
         assert_eq!(classify_plan_kind("臨床試験とEBM", 3), None);
         assert_eq!(classify_plan_kind("ソフトウェアテスト1", 11), None);
-        assert_eq!(classify_plan_kind("基本情報技術者試験 科目B試験対策", 5), None);
+        assert_eq!(
+            classify_plan_kind("基本情報技術者試験 科目B試験対策", 5),
+            None
+        );
         assert_eq!(classify_plan_kind("試験管に植菌する", 6), None);
         assert_eq!(classify_plan_kind("中国語音読コンテスト", 12), None);
         assert_eq!(classify_plan_kind("毎回の小テスト", 5), None);
@@ -278,13 +290,22 @@ mod tests {
         // 期末レポート is a report, not an exam — bare 期末 must not trip exam.
         assert_eq!(classify_plan_kind("期末レポートの作成", 14), None);
         // 中間発表 is a presentation → milestone (via 発表), never exam.
-        assert_eq!(classify_plan_kind("中間発表", 8).as_deref(), Some("milestone"));
+        assert_eq!(
+            classify_plan_kind("中間発表", 8).as_deref(),
+            Some("milestone")
+        );
     }
 
     #[test]
     fn milestone_matches_deliverables() {
-        assert_eq!(classify_plan_kind("成果発表会", 14).as_deref(), Some("milestone"));
-        assert_eq!(classify_plan_kind("全体のまとめ", 16).as_deref(), Some("milestone"));
+        assert_eq!(
+            classify_plan_kind("成果発表会", 14).as_deref(),
+            Some("milestone")
+        );
+        assert_eq!(
+            classify_plan_kind("全体のまとめ", 16).as_deref(),
+            Some("milestone")
+        );
         assert_eq!(
             classify_plan_kind("グループプレゼンテーション", 13).as_deref(),
             Some("milestone")
@@ -334,24 +355,45 @@ mod tests {
         assert!(!info.is_none);
         assert_eq!(info.sections.len(), 1);
         assert_eq!(info.sections[0].label, None);
-        assert_eq!(info.sections[0].lines[0], "進化の教科書 第1－3巻 カール・ジンマー著");
+        assert_eq!(
+            info.sections[0].lines[0],
+            "進化の教科書 第1－3巻 カール・ジンマー著"
+        );
     }
 
     #[test]
     fn prep_extracts_a_single_unambiguous_hour_figure() {
-        assert_eq!(super::parse_prep("毎回およそ2時間の予習・復習を行うこと。").hours, Some(2.0));
+        assert_eq!(
+            super::parse_prep("毎回およそ2時間の予習・復習を行うこと。").hours,
+            Some(2.0)
+        );
         // 「N時間半」→ +0.5h.
-        assert_eq!(super::parse_prep("毎回1時間半程度の学習が必要。").hours, Some(1.5));
+        assert_eq!(
+            super::parse_prep("毎回1時間半程度の学習が必要。").hours,
+            Some(1.5)
+        );
         // No 時間 figure → no badge (the full text is still shown).
-        assert_eq!(super::parse_prep("予習に45分、復習に45分をあてること。").hours, None);
-        assert_eq!(super::parse_prep("相当な授業時間外の学習が必要です。").hours, None);
+        assert_eq!(
+            super::parse_prep("予習に45分、復習に45分をあてること。").hours,
+            None
+        );
+        assert_eq!(
+            super::parse_prep("相当な授業時間外の学習が必要です。").hours,
+            None
+        );
     }
 
     #[test]
     fn prep_skips_ranges_and_multi_figure_to_avoid_a_wrong_sum() {
         // Range double-count and scope-mixing produced fabricated totals — skip.
-        assert_eq!(super::parse_prep("復習2時間～3時間、予習1時間～2時間。").hours, None);
-        assert_eq!(super::parse_prep("授業期間中に1日1時間、終了後に5時間程度の復習。").hours, None);
+        assert_eq!(
+            super::parse_prep("復習2時間～3時間、予習1時間～2時間。").hours,
+            None
+        );
+        assert_eq!(
+            super::parse_prep("授業期間中に1日1時間、終了後に5時間程度の復習。").hours,
+            None
+        );
     }
 
     #[test]
@@ -385,7 +427,10 @@ mod tests {
     #[test]
     fn purify_folds_full_width_ascii_but_keeps_typography() {
         // Full-width latin/digits → half-width.
-        assert_eq!(super::purify_text("ＴＯＥＩＣ ８００点、Ｗで始まる"), "TOEIC 800点、Wで始まる");
+        assert_eq!(
+            super::purify_text("ＴＯＥＩＣ ８００点、Ｗで始まる"),
+            "TOEIC 800点、Wで始まる"
+        );
         // Full-width punctuation/parens and half-width kana are preserved.
         assert_eq!(super::purify_text("（重要）：ﾃｽﾄ"), "（重要）：ﾃｽﾄ");
     }
@@ -399,7 +444,11 @@ mod tests {
         ]);
         assert_eq!(
             got,
-            vec!["機械学習", "データサイエンス", "正準変換(canonical transformation)"]
+            vec![
+                "機械学習",
+                "データサイエンス",
+                "正準変換(canonical transformation)"
+            ]
         );
     }
 }

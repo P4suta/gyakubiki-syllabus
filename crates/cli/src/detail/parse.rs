@@ -465,7 +465,10 @@ mod tests {
     #[test]
     fn split_keywords_splits_commas_and_newlines_only_outside_parens() {
         let got = split_keywords("機械学習、深層学習\n分類(教師あり, 教師なし)");
-        assert_eq!(got, vec!["機械学習", "深層学習", "分類(教師あり, 教師なし)"]);
+        assert_eq!(
+            got,
+            vec!["機械学習", "深層学習", "分類(教師あり, 教師なし)"]
+        );
     }
 
     #[test]
@@ -474,9 +477,11 @@ mod tests {
         let html = "<table><tr><th>キーワード</th>\
                     <td>data science\u{3000}機械学習\u{3000}Euler Lagrange</td></tr></table>";
         let d = parse_sansho_html("x", html);
-        assert_eq!(d.keywords, vec!["data science", "機械学習", "Euler Lagrange"]);
+        assert_eq!(
+            d.keywords,
+            vec!["data science", "機械学習", "Euler Lagrange"]
+        );
     }
-
 
     #[test]
     fn to_ascii_digits_converts_full_width_only() {
