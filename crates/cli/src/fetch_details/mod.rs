@@ -21,6 +21,7 @@ use clap::Args;
 
 use crate::detail::{SanshoDetail, parse_sansho_html};
 use crate::io;
+use crate::net::{Politeness, backoff};
 use client::{CourseRef, DetailError, DetailFetcher, SanshoClient};
 
 const TOKEN_ENV: &str = "KULAS_API_TOKEN";
@@ -434,40 +435,6 @@ fn resolve_token_override(flag: Option<&str>) -> Option<String> {
 }
 
 // --- Orchestration (network-agnostic; unit-tested with a fake fetcher) ---
-
-/// Sleep policy between courses.
-struct Politeness {
-    base: Duration,
-    jitter_ms: u64,
-}
-
-impl Politeness {
-    /// The next delay: `base` plus `[0, jitter_ms)` of random jitter. Pure, so the
-    /// bounds are testable without sleeping.
-    fn delay(&self) -> Duration {
-        let extra = if self.jitter_ms == 0 {
-            0
-        } else {
-            rand::random_range(0..self.jitter_ms)
-        };
-        self.base + Duration::from_millis(extra)
-    }
-
-    fn wait(&self) {
-        let d = self.delay();
-        if !d.is_zero() {
-            std::thread::sleep(d);
-        }
-    }
-}
-
-/// Backoff before a retry: `base * 2^tryno`, capped, so we back off *faster* when
-/// a server is struggling instead of hammering it. Pure, so the schedule is
-/// testable; saturating math keeps large `tryno` from overflowing.
-fn backoff(base: Duration, tryno: u32) -> Duration {
-    const CAP: Duration = Duration::from_secs(60);
-    base.saturating_mul(2u32.saturating_pow(tryno)).min(CAP)
-}
 
 struct CrawlOpts {
     retries: u32,
@@ -903,49 +870,8 @@ mod tests {
         assert_eq!(report.fetched, 1);
     }
 
-    // --- Deterministic timing / rate-limit invariants (no real sleeping) ---
-
-    #[test]
-    fn politeness_delay_respects_base_and_jitter_bounds() {
-        // jitter=0 is fully deterministic; base=0 never sleeps.
-        let fixed = Politeness {
-            base: Duration::from_millis(2000),
-            jitter_ms: 0,
-        };
-        assert_eq!(fixed.delay(), Duration::from_millis(2000));
-        assert!(
-            Politeness {
-                base: Duration::ZERO,
-                jitter_ms: 0,
-            }
-            .delay()
-            .is_zero()
-        );
-
-        // With jitter, every draw stays in [base, base + jitter_ms).
-        let jittered = Politeness {
-            base: Duration::from_millis(2000),
-            jitter_ms: 1000,
-        };
-        for _ in 0..1000 {
-            let d = jittered.delay();
-            assert!(d >= Duration::from_millis(2000));
-            assert!(d < Duration::from_millis(3000));
-        }
-    }
-
-    #[test]
-    fn backoff_grows_exponentially_and_caps() {
-        let base = Duration::from_millis(3000);
-        assert_eq!(backoff(base, 0), Duration::from_millis(3000));
-        assert_eq!(backoff(base, 1), Duration::from_millis(6000));
-        assert_eq!(backoff(base, 2), Duration::from_millis(12000));
-        // 3s * 2^5 = 96s would exceed the 60s cap.
-        assert_eq!(backoff(base, 5), Duration::from_secs(60));
-        // Saturating math: a huge exponent caps rather than overflowing.
-        assert_eq!(backoff(base, 99), Duration::from_secs(60));
-        assert!(backoff(Duration::ZERO, 5).is_zero());
-    }
+    // Politeness delay + backoff are unit-tested in `crate::net`; here we cover
+    // the crawler behaviours that use them (breaker, retry, tombstoning).
 
     #[test]
     fn breaker_of_one_aborts_on_the_first_block() {

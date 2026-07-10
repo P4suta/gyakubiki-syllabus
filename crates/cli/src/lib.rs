@@ -15,4 +15,5 @@ pub mod fetch_details;
 pub mod fields;
 pub mod gen_sample;
 pub mod io;
+pub mod net;
 pub mod term;
