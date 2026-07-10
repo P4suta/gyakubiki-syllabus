@@ -138,13 +138,18 @@ export function formatProse(s: string): ProseBlock[] {
 export interface TextPart {
 	text: string
 	href?: string
+	kind?: 'title' | 'email' | 'url'
 }
 
-// One pass over the text linkifies 『…』 book/work titles (→ Google search, kept
-// wrapped in 『』 so a generic title like「経済学基礎」reads as a book) and email
+// One pass over the text linkifies, in priority order: http(s) URLs (→ open in a
+// new tab, shown with an icon), 『…』 book/work titles (→ Google search, kept
+// wrapped in 『』 so a generic title like「経済学基礎」reads as a book), and email
 // addresses (→ mailto). ONLY 『』 counts as a title: 「…」 is the general Japanese
-// quote (dialogue, emphasis, terms) and must never become a book link.
-const LINK_RE = /『[^』]*』|[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g
+// quote (dialogue, emphasis, terms) and must never become a book link. The URL
+// class stops at whitespace and Japanese closing punctuation so it never eats a
+// trailing 」。）.
+const LINK_RE =
+	/https?:\/\/[^\s<>"'）」』】、。，]+|『[^』]*』|[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g
 
 export interface RelatedPart {
 	text: string
@@ -188,16 +193,19 @@ export function linkifyText(s: string): TextPart[] {
 		const i = m.index ?? 0
 		if (i > last) parts.push({ text: s.slice(last, i) })
 		const tok = m[0]
-		if (tok.startsWith('『')) {
+		if (tok.startsWith('http')) {
+			parts.push({ text: tok, href: tok, kind: 'url' })
+		} else if (tok.startsWith('『')) {
 			const inner = tok.slice(1, -1).trim()
 			parts.push({
 				text: tok,
+				kind: 'title',
 				href: inner
 					? `https://www.google.com/search?q=${encodeURIComponent(`『${inner}』`)}`
 					: undefined,
 			})
 		} else {
-			parts.push({ text: tok, href: `mailto:${tok}` })
+			parts.push({ text: tok, href: `mailto:${tok}`, kind: 'email' })
 		}
 		last = i + tok.length
 	}

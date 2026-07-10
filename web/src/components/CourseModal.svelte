@@ -8,6 +8,7 @@ import IconCheckCircle from '~icons/ic/round-check-circle'
 import IconClose from '~icons/ic/round-close'
 import IconExam from '~icons/ic/round-history-edu'
 import IconExpandMore from '~icons/ic/round-expand-more'
+import IconLink from '~icons/ic/round-link'
 import IconOpenInNew from '~icons/ic/round-open-in-new'
 import IconPerson from '~icons/ic/round-person'
 import IconPlace from '~icons/ic/round-place'
@@ -337,9 +338,10 @@ function planBadge(kind: string | undefined): string | null {
 	{/if}
 {/snippet}
 
-<!-- Free text with book titles (→ search) and emails (→ mailto) linked. -->
+<!-- Free text with URLs (→ new tab, iconed), book titles (→ search) and emails
+     (→ mailto) linked. -->
 {#snippet linked(text: string)}
-	{#each linkifyText(text) as part}{#if part.href}<a href={part.href} target={part.href.startsWith('mailto:') ? undefined : '_blank'} rel="noopener noreferrer" class="text-apple-blue hover:underline">{part.text}</a>{:else}{part.text}{/if}{/each}
+	{#each linkifyText(text) as part}{#if part.href}<a href={part.href} target={part.kind === 'email' ? undefined : '_blank'} rel="noopener noreferrer" class="text-apple-blue hover:underline {part.kind === 'url' ? 'inline-flex items-baseline gap-0.5' : ''}">{#if part.kind === 'url'}<IconLink class="w-3.5 h-3.5 shrink-0 self-center" aria-hidden="true" />{/if}{part.text}</a>{:else}{part.text}{/if}{/each}
 {/snippet}
 
 {#snippet sectionBody(s: Section)}

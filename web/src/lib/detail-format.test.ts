@@ -118,6 +118,13 @@ describe('linkifyText', () => {
 			expect(linkifyText(s).every((p) => !p.href), s).toBe(true)
 		}
 	})
+	it('linkifies a URL and stops before trailing Japanese punctuation', () => {
+		const parts = linkifyText('詳細は https://www.ipa.go.jp/security/vuln/websecurity.html を参照。')
+		const url = parts.find((p) => p.kind === 'url')
+		expect(url?.href).toBe('https://www.ipa.go.jp/security/vuln/websecurity.html')
+		// The trailing「。」is not swallowed into the link.
+		expect(parts.some((p) => !p.href && p.text.includes('。'))).toBe(true)
+	})
 	it('only 『…』 (not 「…」) is treated as a title link', () => {
 		const parts = linkifyText('『経済学基礎』と「経済学」は別物')
 		const links = parts.filter((p) => p.href)
