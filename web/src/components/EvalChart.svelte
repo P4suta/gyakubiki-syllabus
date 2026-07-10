@@ -1,4 +1,5 @@
 <script lang="ts">
+import IconInfo from '~icons/ic/round-info'
 import { evalArcs, evalSegments } from '../lib/eval-chart'
 import { evalKind } from '../lib/syllabus-icons'
 import { useTheme } from '../lib/theme.svelte'
@@ -81,9 +82,7 @@ const dominant = $derived([...segments].sort((a, b) => b.pct - a.pct)[0] ?? null
 	<!-- Grading caveats (e.g.「小テストは毎回実施」) are decision-critical — give them
 	     the accent colour and a tinted callout instead of a faint gray line. -->
 	<p class="mt-3 flex gap-1.5 rounded-lg bg-apple-blue/10 px-3 py-2 text-micro text-apple-blue leading-relaxed whitespace-pre-line">
-		<svg class="w-3.5 h-3.5 shrink-0 mt-px" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-			<path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m0 3.75h.008M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-		</svg>
+		<IconInfo class="w-3.5 h-3.5 shrink-0 mt-px" />
 		<span>{note}</span>
 	</p>
 {/if}

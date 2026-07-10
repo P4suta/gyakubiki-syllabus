@@ -1,7 +1,8 @@
-import { svelteTesting } from '@testing-library/svelte/vite'
-import tailwindcss from '@tailwindcss/vite'
 import { svelte } from '@sveltejs/vite-plugin-svelte'
+import tailwindcss from '@tailwindcss/vite'
+import { svelteTesting } from '@testing-library/svelte/vite'
 import { minify } from 'html-minifier-terser'
+import Icons from 'unplugin-icons/vite'
 import type { PluginOption } from 'vite'
 import { defineConfig } from 'vitest/config'
 
@@ -27,7 +28,9 @@ export default defineConfig({
 	base: process.env.GITHUB_PAGES === 'true' ? '/gyakubiki-syllabus/' : '/',
 	// svelteTesting adds the jsdom `resolve.conditions` (browser build) and an
 	// afterEach unmount so component tests don't leak between cases.
-	plugins: [svelte(), tailwindcss(), svelteTesting(), minifyHtml()],
+	// Icons are inlined from the Iconify `ic` set at build time (offline, tree-
+	// shaken, zero runtime fetch): `import Foo from '~icons/ic/round-foo'`.
+	plugins: [svelte(), tailwindcss(), svelteTesting(), Icons({ compiler: 'svelte' }), minifyHtml()],
 	// Unit tests live in src/; the Playwright E2E specs in e2e/ run separately.
 	test: {
 		// Two projects: pure logic in `node` (fast, DOM-free) and component /

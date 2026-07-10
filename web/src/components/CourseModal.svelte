@@ -1,6 +1,11 @@
 <script lang="ts">
 import { quadOut } from 'svelte/easing'
 import { slide } from 'svelte/transition'
+import IconClose from '~icons/ic/round-close'
+import IconExpandMore from '~icons/ic/round-expand-more'
+import IconOpenInNew from '~icons/ic/round-open-in-new'
+import IconPlace from '~icons/ic/round-place'
+import IconSchedule from '~icons/ic/round-schedule'
 import { getColor } from '../lib/colors'
 import { loadDetail } from '../lib/details'
 import { plan } from '../lib/plan.svelte'
@@ -103,7 +108,13 @@ const allSections = $derived.by<Section[]>(() => {
 		if (detail.extra?.length) {
 			for (const e of detail.extra) {
 				if (e.text?.trim()) {
-					rows.push({ key: `extra:${e.label}`, label: e.label, group: OTHER_GROUP, render: 'longtext', value: e.text })
+					rows.push({
+						key: `extra:${e.label}`,
+						label: e.label,
+						group: OTHER_GROUP,
+						render: 'longtext',
+						value: e.text,
+					})
 				}
 			}
 		}
@@ -204,9 +215,7 @@ function hasValue(v: unknown): boolean {
 						onclick={close}
 						aria-label="閉じる"
 					>
-						<svg class="w-3.5 h-3.5 text-apple-text-secondary" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
-							<path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
-						</svg>
+						<IconClose class="w-3.5 h-3.5 text-apple-text-secondary" />
 					</button>
 				</div>
 			</div>
@@ -240,9 +249,7 @@ function hasValue(v: unknown): boolean {
 						onclick={() => { openGroups[g] = !open }}
 					>
 						<h3 class="text-headline font-semibold text-apple-text tracking-tight">{g}</h3>
-						<svg class="w-4 h-4 shrink-0 text-apple-text-tertiary transition-transform duration-200 {open ? 'rotate-180' : ''}" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
-							<path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
-						</svg>
+						<IconExpandMore class="w-4 h-4 shrink-0 text-apple-text-tertiary transition-transform duration-200 {open ? 'rotate-180' : ''}" />
 					</button>
 					{#if open}
 						<div class="pb-4 space-y-6" transition:slide={{ duration: 200, easing: quadOut }}>
@@ -267,9 +274,7 @@ function hasValue(v: unknown): boolean {
 				class="inline-flex items-center gap-1 text-body text-apple-blue hover:underline tracking-tight"
 			>
 				公式シラバスで見る
-				<svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-					<path stroke-linecap="round" stroke-linejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
-				</svg>
+				<IconOpenInNew class="w-3.5 h-3.5" />
 			</a>
 		</div>
 	</div>
@@ -277,14 +282,9 @@ function hasValue(v: unknown): boolean {
 
 {#snippet icon(name: 'clock' | 'pin')}
 	{#if name === 'clock'}
-		<svg class="w-3.5 h-3.5 shrink-0 text-apple-text-tertiary" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
-			<path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
-		</svg>
+		<IconSchedule class="w-3.5 h-3.5 shrink-0 text-apple-text-tertiary" />
 	{:else}
-		<svg class="w-3.5 h-3.5 shrink-0 text-apple-text-tertiary" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
-			<path stroke-linecap="round" stroke-linejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" />
-			<path stroke-linecap="round" stroke-linejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" />
-		</svg>
+		<IconPlace class="w-3.5 h-3.5 shrink-0 text-apple-text-tertiary" />
 	{/if}
 {/snippet}
 
