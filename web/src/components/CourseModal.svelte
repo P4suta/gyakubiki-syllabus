@@ -213,6 +213,9 @@ function planBadge(kind: string | undefined): string | null {
 								<DIcon class="w-3 h-3" aria-hidden="true" />{delivery.label}
 							</span>
 						{/if}
+						{#if detail?.delivery?.isMedia}
+							<span class="inline-flex items-center rounded-full bg-overlay-medium px-2 py-0.5 text-micro" style="color: {tint.text};">メディア授業</span>
+						{/if}
 						{#if creditsN > 0}
 							<span class="inline-flex items-center gap-1.5 text-micro" aria-label="{detail?.unit}単位">
 								<span class="flex items-center gap-0.5" aria-hidden="true">
