@@ -1,6 +1,6 @@
 <script lang="ts">
+import IconCheckCircle from '~icons/ic/round-check-circle'
 import IconInfo from '~icons/ic/round-info'
-import IconPushPin from '~icons/ic/round-push-pin'
 import { getColor } from '../lib/colors'
 import { highlights, segment } from '../lib/highlight.svelte'
 import { plan } from '../lib/plan.svelte'
@@ -78,8 +78,9 @@ const creditHalf = $derived(creditsN - Math.floor(creditsN) >= 0.5)
 	{onclick}
 >
 	{#if registered}
-		<!-- Registered marker: a pin in the tile's accent (inline colour). -->
-		<IconPushPin class="absolute top-1 right-1 w-3 h-3" style="color: {color.accentText};" aria-label="登録済み" />
+		<!-- Registered marker: a check in the tile's ink, matching the modal's
+		     「登録済み」check so the state reads the same in the grid and the detail. -->
+		<IconCheckCircle class="absolute top-1 right-1 w-3.5 h-3.5" style="color: {color.accentText};" aria-label="登録済み" />
 	{/if}
 	<div class="font-semibold text-caption sm:text-micro leading-snug line-clamp-2" style="color: {color.text};">
 		<!-- Match runs get a soft wash of the tile's own accent hue (inline style —
