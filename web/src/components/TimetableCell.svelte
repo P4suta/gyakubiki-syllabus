@@ -52,7 +52,11 @@ $effect(() => {
 			<IconWarning class="w-2.5 h-2.5" aria-hidden="true" />重複
 		</span>
 	{/if}
-	{#if visible}
+	{#if courses.length === 0}
+		<!-- Free slot: a faint centred marker, quieter than any tile, so filled
+		     cells read first and an empty one is unmistakably empty (not unloaded). -->
+		<span class="absolute inset-0 flex items-center justify-center text-fine text-apple-text-tertiary pointer-events-none">空き</span>
+	{:else if visible}
 		{#each courses as course (course.cd)}
 			<CourseCard {course} onclick={() => onselect(course)} />
 		{/each}

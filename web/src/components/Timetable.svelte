@@ -128,28 +128,38 @@ let headerH = $state(0)
 		{#each PERIODS as period}
 			{@const key = `${days[activeDay]}-${period}` as GridKey}
 			{@const { courses, locked } = cell(key)}
-			<div class="bg-surface-primary rounded-xl p-3 {conflictKeys?.has(key) ? 'ring-2 ring-apple-red' : locked ? 'ring-1 ring-apple-blue' : ''}">
-				<div class="sticky top-0 z-sticky -mx-3 -mt-3 px-3 pt-3 pb-1.5 mb-1.5 flex items-baseline gap-2 bg-surface-primary rounded-t-xl">
-					<span class="text-micro font-medium text-apple-text-tertiary">{period}限</span>
+			{#if courses.length === 0}
+				<!-- Free slot: no surface, muted, compact. An empty period should recede
+				     so the eye lands on what's actually scheduled, not on the gaps. -->
+				<div class="flex items-baseline gap-2 px-3 py-1.5 text-apple-text-tertiary">
+					<span class="text-micro font-medium">{period}限</span>
 					{#if PERIOD_TIMES[period]}
-						<span class="text-fine text-apple-text-tertiary tabular-nums">
+						<span class="text-fine tabular-nums">
 							{PERIOD_TIMES[period].start}–{PERIOD_TIMES[period].end}{#if PERIOD_TIMES[period].note} ・{PERIOD_TIMES[period].note}{/if}
 						</span>
 					{/if}
-					{#if conflictKeys?.has(key)}
-						<span class="ml-auto self-center inline-flex items-center gap-0.5 rounded-full bg-apple-red text-on-accent px-1.5 py-0.5 text-fine font-medium">
-							<IconWarning class="w-2.5 h-2.5" aria-hidden="true" />重複
-						</span>
-					{/if}
+					<span class="ml-auto text-fine">空き</span>
 				</div>
-				{#if courses.length === 0}
-					<div class="text-micro text-apple-text-tertiary py-2">空きコマ</div>
-				{:else}
+			{:else}
+				<div class="bg-surface-primary rounded-xl p-3 {conflictKeys?.has(key) ? 'ring-2 ring-apple-red' : locked ? 'ring-1 ring-apple-blue' : ''}">
+					<div class="sticky top-0 z-sticky -mx-3 -mt-3 px-3 pt-3 pb-1.5 mb-1.5 flex items-baseline gap-2 bg-surface-primary rounded-t-xl">
+						<span class="text-micro font-medium text-apple-text-tertiary">{period}限</span>
+						{#if PERIOD_TIMES[period]}
+							<span class="text-fine text-apple-text-tertiary tabular-nums">
+								{PERIOD_TIMES[period].start}–{PERIOD_TIMES[period].end}{#if PERIOD_TIMES[period].note} ・{PERIOD_TIMES[period].note}{/if}
+							</span>
+						{/if}
+						{#if conflictKeys?.has(key)}
+							<span class="ml-auto self-center inline-flex items-center gap-0.5 rounded-full bg-apple-red text-on-accent px-1.5 py-0.5 text-fine font-medium">
+								<IconWarning class="w-2.5 h-2.5" aria-hidden="true" />重複
+							</span>
+						{/if}
+					</div>
 					{#each courses as course (course.cd)}
 						<CourseCard {course} onclick={() => onselect(course)} />
 					{/each}
-				{/if}
-			</div>
+				</div>
+			{/if}
 		{/each}
 	</div>
 </div>
