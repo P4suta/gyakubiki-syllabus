@@ -169,10 +169,10 @@ const sectionsInGroup = (group: string) => allSections.filter((s) => s.group ===
 let openGroups = $state<Record<string, boolean>>({})
 
 // Taxonomy facets — a quiet middle-dot line, so delivery/credits read first.
-// The timetable slot (course.raw) leads it, moved here from 科目情報 where it read
-// as redundant.
+// The timetable slot (course.raw, moved here from 科目情報) leads it and already
+// names the term, so 開講時期 falls back only when the slot is absent.
 const facets = $derived(
-	[course.raw, dicts.kubun[course.kbn], dicts.kaikojiki[course.ki], dicts.campuses[course.campus]]
+	[course.raw || dicts.kaikojiki[course.ki], dicts.kubun[course.kbn], dicts.campuses[course.campus]]
 		.filter(Boolean)
 		.join(' · '),
 )
