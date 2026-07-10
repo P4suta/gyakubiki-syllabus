@@ -258,6 +258,9 @@ mod tests {
             numbering: vec!["n".into()],
             sdgs: vec!["4".into()],
             extra: vec![Default::default()],
+            // Derived fields (textbookInfo/prepInfo) are added by `enrich`, not
+            // shown as their own sections — left default so they don't serialize.
+            ..Default::default()
         };
         let value = serde_json::to_value(&detail).unwrap();
         let obj = value.as_object().unwrap();

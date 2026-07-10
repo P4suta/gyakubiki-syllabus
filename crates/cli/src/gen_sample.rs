@@ -337,6 +337,7 @@ fn detail_for(i: usize, rng: &mut StdRng) -> SanshoDetail {
         numbering: vec![format!("GEN-{:03}", (i % 400) + 100)],
         sdgs: vec!["4 質の高い教育をみんなに".to_owned()],
         extra,
+        ..Default::default()
     }
 }
 
