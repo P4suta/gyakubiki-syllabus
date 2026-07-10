@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use anyhow::{Context, Result};
 use syllabus_core::convert_v3;
 use syllabus_core::model::{Course, ProcessedData, RawCourse};
-use syllabus_core::{normalize, DocFields, SearchIndex};
+use syllabus_core::{DocFields, SearchIndex, normalize};
 
 use crate::detail::SanshoDetail;
 

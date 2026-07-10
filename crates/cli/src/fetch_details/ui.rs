@@ -335,7 +335,9 @@ mod tests {
         );
         diagnosis(
             "0 fetched · 10 skipped of 10 attempted",
-            Some("The sansho API path/method may have changed — compare the captured body with INIT_FIND_URL."),
+            Some(
+                "The sansho API path/method may have changed — compare the captured body with INIT_FIND_URL.",
+            ),
             std::path::Path::new("diagnostics/fetch-details.md"),
         );
     }

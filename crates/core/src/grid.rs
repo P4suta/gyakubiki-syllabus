@@ -145,7 +145,7 @@ mod tests {
     //! The test dataset has no Saturday, so `saturday = false` throughout;
     //! 通年 sits at semester index 2.
 
-    use super::{build_grid, Grid, GridSlot};
+    use super::{Grid, GridSlot, build_grid};
     use crate::index::{CourseIndex, Day, Period, SemesterIndex};
     use crate::model::Slot;
 

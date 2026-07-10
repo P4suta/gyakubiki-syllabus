@@ -11,7 +11,7 @@
 
 use std::path::Path;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 
 /// One displayable syllabus field.
 pub struct FieldSpec {

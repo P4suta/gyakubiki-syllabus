@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 use proptest::prelude::*;
 use syllabus_core::bitset::BitSet;
 use syllabus_core::model::{ProcessedData, RawCourse};
-use syllabus_core::{convert_v3, Engine, Filters};
+use syllabus_core::{Engine, Filters, convert_v3};
 
 const PINNED_GENERATED_AT: &str = "2026-01-01T00:00:00Z";
 const TSUUNEN_LABEL: &str = "通年";

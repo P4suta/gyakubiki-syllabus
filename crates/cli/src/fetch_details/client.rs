@@ -10,13 +10,12 @@
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::fetch::token::extract_entry_context;
-use crate::fetch::{browser_entry_context, build_http_client, USER_AGENT};
+use crate::fetch::{USER_AGENT, browser_entry_context, build_http_client};
 
-const SANSHO_PAGE_URL: &str =
-    "https://kulas.kochi-u.ac.jp/cpsmart/public/dashboard/main/ja/simple/1900/3000280/wsl/SyllabusSansho";
+const SANSHO_PAGE_URL: &str = "https://kulas.kochi-u.ac.jp/cpsmart/public/dashboard/main/ja/simple/1900/3000280/wsl/SyllabusSansho";
 // The endpoint method is `initFindAndUpdate` (not `initFind`); the server returns
 // HTTP 400 "service method … not found" for the latter.
 const INIT_FIND_URL: &str = "https://kulas.kochi-u.ac.jp/cpsmart/public/wsl/WebRoot/SystemD.Lead.Wsl.SyllabusSansho.App.SyllabusSanshoWebApi/initFindAndUpdate";
@@ -318,7 +317,7 @@ impl DetailFetcher for SanshoClient {
 
 #[cfg(test)]
 mod tests {
-    use super::{classify_html, classify_init_find, parse_retry_after, DetailError};
+    use super::{DetailError, classify_html, classify_init_find, parse_retry_after};
     use std::time::Duration;
 
     /// Test helper: an `Http` error with no `Retry-After` and no body.

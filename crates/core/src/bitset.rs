@@ -1,7 +1,7 @@
 //! A compact bitset over `u64` words, used as the precomputed filter index.
 //! Words are serialized as little-endian bytes then standard base64.
 
-use base64::{engine::general_purpose::STANDARD, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 
 /// Error returned when a base64-encoded bitset cannot be decoded.
 #[derive(Debug, thiserror::Error)]
@@ -151,7 +151,7 @@ impl Iterator for OneBits {
 #[cfg(test)]
 mod tests {
     use super::BitSet;
-    use base64::{engine::general_purpose::STANDARD, Engine as _};
+    use base64::{Engine as _, engine::general_purpose::STANDARD};
 
     /// Base64-encode raw little-endian bytes for test fixtures.
     fn b64(bytes: &[u8]) -> String {

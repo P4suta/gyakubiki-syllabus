@@ -7,7 +7,7 @@
 //! across the boundary.
 
 use crate::bitset::BitSet;
-use crate::grid::{build_grid, Grid, GridSlot};
+use crate::grid::{Grid, GridSlot, build_grid};
 use crate::index::{CourseIndex, SemesterIndex};
 use crate::model::{Dictionaries, IndicesMap, ProcessedData};
 use crate::normalize;
@@ -333,7 +333,7 @@ mod tests {
     use super::{Engine, Filters};
     use crate::index::CourseIndex;
     use crate::model::{Course, Dictionaries, IndicesMap, ProcessedData, Slot};
-    use base64::{engine::general_purpose::STANDARD, Engine as _};
+    use base64::{Engine as _, engine::general_purpose::STANDARD};
 
     fn dicts() -> Dictionaries {
         Dictionaries {
@@ -551,12 +551,13 @@ mod tests {
     #[test]
     fn empty_for_nonexistent_department() {
         let e = engine_of(sample());
-        assert!(e
-            .filter(&Filters {
+        assert!(
+            e.filter(&Filters {
                 department: Some("医学部"),
                 ..Default::default()
             })
-            .is_empty());
+            .is_empty()
+        );
     }
 
     #[test]
@@ -592,12 +593,13 @@ mod tests {
     #[test]
     fn empty_for_nonexistent_campus() {
         let e = engine_of(sample());
-        assert!(e
-            .filter(&Filters {
+        assert!(
+            e.filter(&Filters {
                 campus: Some("岡豊キャンパス"),
                 ..Default::default()
             })
-            .is_empty());
+            .is_empty()
+        );
     }
 
     #[test]
@@ -745,35 +747,38 @@ mod tests {
         )]);
         assert_eq!(e.filter(&Filters::default()).len(), 1);
         // A specific semester has no matching slot → filtered out via the bitset.
-        assert!(e
-            .filter(&Filters {
+        assert!(
+            e.filter(&Filters {
                 semester: Some("1学期"),
                 ..Default::default()
             })
-            .is_empty());
+            .is_empty()
+        );
     }
 
     #[test]
     fn does_not_treat_query_as_regex() {
         let e = engine_of(sample());
-        assert!(e
-            .filter(&Filters {
+        assert!(
+            e.filter(&Filters {
                 query: "[.*+?]",
                 ..Default::default()
             })
-            .is_empty());
+            .is_empty()
+        );
     }
 
     #[test]
     fn department_with_semester_narrows_to_empty() {
         let e = engine_of(sample());
-        assert!(e
-            .filter(&Filters {
+        assert!(
+            e.filter(&Filters {
                 semester: Some("2学期"),
                 department: Some("理工学部"),
                 ..Default::default()
             })
-            .is_empty());
+            .is_empty()
+        );
     }
 
     #[test]

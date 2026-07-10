@@ -24,7 +24,7 @@ pub mod parser;
 pub mod search;
 pub mod text;
 
-pub use convert::{convert_v3, ConvertResult};
+pub use convert::{ConvertResult, convert_v3};
 pub use engine::{Engine, EngineError, Filters};
 pub use grid::Grid;
 pub use index::{CampusIndex, CourseIndex, Day, DepartmentIndex, Period, SemesterIndex};

@@ -32,8 +32,7 @@ fn unknown_label_is_preserved_in_extra() {
 #[test]
 fn mobile_duplicate_table_is_not_processed() {
     // The `is-hidden-tablet` copy must be skipped so a field isn't counted twice.
-    let html =
-        "<table class=\"is-hidden-tablet\"><tr><th>モバイル専用</th><td>skip</td></tr></table>\
+    let html = "<table class=\"is-hidden-tablet\"><tr><th>モバイル専用</th><td>skip</td></tr></table>\
                 <table><tr><th>通常ラベル</th><td>keep</td></tr></table>";
     let d = parse_sansho_html("X", html);
     assert!(d.extra.iter().any(|e| e.label == "通常ラベル"));

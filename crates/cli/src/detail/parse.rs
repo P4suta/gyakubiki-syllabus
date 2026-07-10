@@ -201,10 +201,10 @@ fn parse_goals(rows: &[Vec<Cell>], detail: &mut SanshoDetail) {
                     .chars()
                     .all(|ch| ch.is_ascii_digit())
         };
-        if row.iter().any(is_number) {
-            if let Some(text) = row.iter().find(|c| !c.is_th && !c.text.is_empty()) {
-                detail.goals.push(text.text.clone());
-            }
+        if row.iter().any(is_number)
+            && let Some(text) = row.iter().find(|c| !c.is_th && !c.text.is_empty())
+        {
+            detail.goals.push(text.text.clone());
         }
     }
 }

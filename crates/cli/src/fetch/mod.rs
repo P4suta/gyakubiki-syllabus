@@ -8,12 +8,12 @@
 mod client;
 pub(crate) mod token;
 
-pub(crate) use client::{browser_entry_context, build_http_client, USER_AGENT};
+pub(crate) use client::{USER_AGENT, browser_entry_context, build_http_client};
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use chrono::Datelike;
 use clap::Args;
 use serde::Deserialize;

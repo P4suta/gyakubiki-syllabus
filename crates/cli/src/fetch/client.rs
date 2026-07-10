@@ -9,11 +9,11 @@
 
 use std::time::Duration;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use serde_json::Value;
 
-use super::token::extract_entry_context;
 use super::PageFetcher;
+use super::token::extract_entry_context;
 
 const SEARCH_PAGE_URL: &str = "https://kulas.kochi-u.ac.jp/cpsmart/public/dashboard/main/ja/Simple/1900/3000120/wsl/SyllabusKensaku";
 const FIND_PAGE_URL: &str = "https://kulas.kochi-u.ac.jp/cpsmart/public/wsl/WebRoot/SystemD.Lead.Gkm.Com.KogiKensaku.App.KogiKensakuWebApi/findPage";
@@ -199,8 +199,8 @@ pub(crate) fn browser_entry_context(entry_context: &Value) -> Value {
 
 #[cfg(test)]
 mod tests {
-    use super::{browser_entry_context, build_body, BODY_TEMPLATE};
-    use serde_json::{json, Value};
+    use super::{BODY_TEMPLATE, browser_entry_context, build_body};
+    use serde_json::{Value, json};
 
     fn sample_entry_context() -> Value {
         json!({

@@ -359,7 +359,7 @@ mod tests {
     use super::generate;
     use std::collections::BTreeSet;
     use syllabus_core::model::RawCourse;
-    use syllabus_core::{convert_v3, Engine, Filters};
+    use syllabus_core::{Engine, Filters, convert_v3};
 
     fn raw_courses(g: &super::Generated) -> Vec<RawCourse> {
         serde_json::from_value(serde_json::Value::Array(g.raw.clone()))

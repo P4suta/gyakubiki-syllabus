@@ -143,13 +143,29 @@ pub struct RawCourse {
         deserialize_with = "lenient_string"
     )]
     pub gakusoku_kamoku_nm: String,
-    #[serde(rename = "taishoGakka", default, deserialize_with = "lenient_opt_string")]
+    #[serde(
+        rename = "taishoGakka",
+        default,
+        deserialize_with = "lenient_opt_string"
+    )]
     pub taisho_gakka: Option<String>,
-    #[serde(rename = "taishoNenji", default, deserialize_with = "lenient_opt_string")]
+    #[serde(
+        rename = "taishoNenji",
+        default,
+        deserialize_with = "lenient_opt_string"
+    )]
     pub taisho_nenji: Option<String>,
-    #[serde(rename = "kamokuBunrui", default, deserialize_with = "lenient_opt_string")]
+    #[serde(
+        rename = "kamokuBunrui",
+        default,
+        deserialize_with = "lenient_opt_string"
+    )]
     pub kamoku_bunrui: Option<String>,
-    #[serde(rename = "kamokuBunya", default, deserialize_with = "lenient_opt_string")]
+    #[serde(
+        rename = "kamokuBunya",
+        default,
+        deserialize_with = "lenient_opt_string"
+    )]
     pub kamoku_bunya: Option<String>,
     #[serde(
         rename = "syllabusKomokuPatternId",
@@ -157,11 +173,19 @@ pub struct RawCourse {
         deserialize_with = "lenient_opt_string"
     )]
     pub syllabus_komoku_pattern_id: Option<String>,
-    #[serde(rename = "kaikoNendo", default, deserialize_with = "lenient_opt_string")]
+    #[serde(
+        rename = "kaikoNendo",
+        default,
+        deserialize_with = "lenient_opt_string"
+    )]
     pub kaiko_nendo: Option<String>,
     /// Last-updated timestamp (`"20260310175914381"`), used by `fetch-details` to
     /// skip courses whose syllabus is unchanged since the previous crawl.
-    #[serde(rename = "lastUpdate", default, deserialize_with = "lenient_opt_string")]
+    #[serde(
+        rename = "lastUpdate",
+        default,
+        deserialize_with = "lenient_opt_string"
+    )]
     pub last_update: Option<String>,
 }
 

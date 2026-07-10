@@ -11,7 +11,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use syllabus_core::model::RawCourse;
-use syllabus_core::{convert_v3, Engine, Filters};
+use syllabus_core::{Engine, Filters, convert_v3};
 
 /// A fixed timestamp so `generated_at` in the fingerprint is stable.
 const PINNED_GENERATED_AT: &str = "2026-01-01T00:00:00Z";
