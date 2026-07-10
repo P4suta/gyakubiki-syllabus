@@ -72,10 +72,26 @@ const creditHalf = $derived(creditsN - Math.floor(creditsN) >= 0.5)
 </script>
 
 <button
-	class="relative w-full text-left rounded-lg p-3 sm:p-2 mb-1 sm:mb-1 cursor-pointer transition-transform active:brightness-95 sm:hover:scale-[1.02] sm:hover:shadow-card-hover border-l-3 min-h-tap sm:min-h-0"
-	style="background: {color.bg}; border-left-color: {color.border};"
+	data-course-card
+	class="group relative w-full text-left rounded-lg p-3 sm:p-2 mb-1 sm:mb-1 cursor-pointer transition-transform active:brightness-95 sm:hover:scale-[1.02] sm:hover:shadow-card-hover min-h-tap sm:min-h-0"
+	style="background: {color.bg};"
 	{onclick}
 >
+	<!-- The accent line IS this trace: at rest it draws only the left edge (the
+	     card's identity), and on hover it grows all the way around (see .card-trace
+	     in app.css). One line, no doubling. Path starts at the top-left and runs
+	     down the left edge first so the growth reads as「左から一周」. -->
+	<svg class="pointer-events-none absolute inset-0 h-full w-full" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+		<path
+			class="card-trace"
+			d="M1 1 V99 H99 V1 H1 Z"
+			fill="none"
+			stroke={color.border}
+			stroke-width="2.5"
+			pathLength="100"
+			vector-effect="non-scaling-stroke"
+		/>
+	</svg>
 	{#if registered}
 		<!-- Registered marker: a pin in the tile's accent (inline colour). -->
 		<IconPushPin class="absolute top-1 right-1 w-3 h-3" style="color: {color.accentText};" aria-label="登録済み" />

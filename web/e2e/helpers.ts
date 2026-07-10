@@ -4,8 +4,8 @@ import { type Locator, type Page, expect } from '@playwright/test'
 // (gen-sample, fixed seed): the first courses below are stable regardless of
 // `--count`, so tests can anchor on them.
 
-/** Course cards render as left-accent-bordered buttons in the grid/day view. */
-export const CARD = 'button[class*="border-l-3"]'
+/** Course cards render as `data-course-card` buttons in the grid/day view. */
+export const CARD = '[data-course-card]'
 
 /** Stable anchor courses (index-derived in gen-sample, seed-independent). */
 export const FIXTURES = {
