@@ -6,11 +6,14 @@
 //! [`Engine::from_json`], so the WASM layer only ever marshals **indices**
 //! across the boundary.
 
+use std::collections::{BTreeSet, HashMap};
+
 use crate::bitset::BitSet;
 use crate::grid::{Grid, GridSlot, build_grid};
 use crate::index::{CourseIndex, SemesterIndex};
 use crate::model::{Dictionaries, IndicesMap, ProcessedData};
 use crate::normalize;
+use crate::plan::{PlanSummary, conflicts_in_grid, summarize_credits};
 use crate::search::{IndexError, SearchHit, SearchIndex};
 
 /// The semester label whose courses appear under every *other* semester filter.
@@ -74,6 +77,9 @@ pub struct Engine {
     /// engine is built (it ships separately from `data.json`). `None` until then;
     /// text queries fall back to the `st` haystack meanwhile.
     search_index: Option<SearchIndex>,
+    /// `cd` → course index, for resolving a shared plan (a list of stable course
+    /// codes) back to indices. Built once here so `resolve_cds` is O(n).
+    cd_to_index: HashMap<String, CourseIndex>,
 }
 
 impl Engine {
@@ -130,6 +136,11 @@ impl Engine {
             .map(|c| c.slots.iter().filter_map(GridSlot::from_wire).collect())
             .collect();
         let has_saturday = timetables.iter().flatten().any(|s| s.is_saturday());
+        let cd_to_index = courses
+            .iter()
+            .enumerate()
+            .map(|(i, c)| (c.cd.clone(), CourseIndex::new(i)))
+            .collect();
 
         Ok(Self {
             courses,
@@ -144,7 +155,53 @@ impl Engine {
             tsuunen_index,
             has_saturday,
             search_index: None,
+            cd_to_index,
         })
+    }
+
+    /// Resolve a plan's stable course codes to indices, dropping any `cd` not in
+    /// this dataset (a shared link may predate a data refresh), ascending and
+    /// de-duplicated.
+    #[must_use]
+    pub fn resolve_cds(&self, cds: &[String]) -> Vec<CourseIndex> {
+        let mut out: Vec<CourseIndex> = cds
+            .iter()
+            .filter_map(|cd| self.cd_to_index.get(cd).copied())
+            .collect();
+        out.sort_unstable_by_key(|i| i.get());
+        out.dedup();
+        out
+    }
+
+    /// Summarize a plan (registered course indices): every timetable collision
+    /// and the credit tallies.
+    ///
+    /// Conflicts are found per semester (so 1学期 月1 and 2学期 月1 never collide),
+    /// reusing [`Engine::grid`] so 通年 propagation is handled the same way as the
+    /// display grid; a 通年×通年 pair that appears under every term is counted once.
+    #[must_use]
+    pub fn plan_summary(&self, indices: &[CourseIndex]) -> PlanSummary {
+        let mut seen: BTreeSet<(u8, u8, Vec<usize>)> = BTreeSet::new();
+        let mut conflicts = Vec::new();
+        for (si, name) in self.dicts.semesters.iter().enumerate() {
+            if self.tsuunen_index.is_some_and(|t| t.get() == si) {
+                continue; // 通年 is surfaced under the real terms, not on its own
+            }
+            let grid = self.grid(indices, Some(name));
+            for c in conflicts_in_grid(&grid) {
+                let key = (
+                    c.day.get(),
+                    c.period.get(),
+                    c.courses.iter().map(|i| i.get()).collect(),
+                );
+                if seen.insert(key) {
+                    conflicts.push(c);
+                }
+            }
+        }
+        let courses = indices.iter().filter_map(|i| self.courses.get(i.get()));
+        let credits = summarize_credits(courses, &self.dicts.kubun);
+        PlanSummary { conflicts, credits }
     }
 
     /// Load the companion `search.idx` (fetched separately from `data.json`),
@@ -911,6 +968,52 @@ mod tests {
     fn load_search_index_rejects_a_bad_blob() {
         let mut e = engine_of(sample());
         assert!(e.load_search_index(b"garbage").is_err());
+    }
+
+    // === plan ===
+
+    #[test]
+    fn resolve_cds_drops_unknown_dedups_and_sorts() {
+        let e = engine_of(sample()); // cds 001, 002, 003 at indices 0, 1, 2
+        let got = e.resolve_cds(&[
+            "003".into(),
+            "999".into(), // not in the dataset — dropped
+            "001".into(),
+            "001".into(), // duplicate — collapsed
+        ]);
+        assert_eq!(got, [CourseIndex::new(0), CourseIndex::new(2)]);
+    }
+
+    #[test]
+    fn plan_summary_flags_a_same_cell_collision() {
+        // Two 1学期 courses both at 月1 collide; a third elsewhere does not.
+        let mut a = course("001", &[(0, 0, 1)], 1, 0, "A 001");
+        a.unit = Some("2".into());
+        let mut b = course("002", &[(0, 0, 1)], 1, 0, "B 002");
+        b.unit = Some("1.5".into());
+        let c = course("003", &[(0, 2, 3)], 1, 0, "C 003");
+        let e = engine_of(vec![a, b, c]);
+
+        let plan = e.resolve_cds(&["001".into(), "002".into(), "003".into()]);
+        let summary = e.plan_summary(&plan);
+        assert_eq!(summary.conflicts.len(), 1);
+        assert_eq!(
+            summary.conflicts[0].courses,
+            [CourseIndex::new(0), CourseIndex::new(1)]
+        );
+        assert_eq!(summary.credits.total_courses, 3);
+        assert!((summary.credits.total_credits - 3.5).abs() < 1e-6);
+        assert_eq!(summary.credits.uncredited, 1); // course C has no unit
+    }
+
+    #[test]
+    fn plan_summary_does_not_collide_across_semesters() {
+        // Same 月1 cell but different terms — not a conflict.
+        let a = course("001", &[(0, 0, 1)], 1, 0, "A 001"); // 1学期
+        let b = course("002", &[(1, 0, 1)], 1, 0, "B 002"); // 2学期
+        let e = engine_of(vec![a, b]);
+        let plan = e.resolve_cds(&["001".into(), "002".into()]);
+        assert!(e.plan_summary(&plan).conflicts.is_empty());
     }
 
     #[test]

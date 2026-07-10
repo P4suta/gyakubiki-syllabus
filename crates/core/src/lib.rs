@@ -21,6 +21,7 @@ pub mod grid;
 pub mod index;
 pub mod model;
 pub mod parser;
+pub mod plan;
 pub mod search;
 pub mod text;
 
@@ -28,5 +29,6 @@ pub use convert::{ConvertResult, convert_v3};
 pub use engine::{Engine, EngineError, Filters};
 pub use grid::Grid;
 pub use index::{CampusIndex, CourseIndex, Day, DepartmentIndex, Period, SemesterIndex};
+pub use plan::{CategoryTally, Conflict, CreditSummary, PlanSummary};
 pub use search::{DocFields, Field, IndexError, SearchHit, SearchIndex, Span};
 pub use text::{fold_char, normalize, search_text};
