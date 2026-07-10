@@ -259,7 +259,7 @@ onDestroy(() => teardownPlanSync?.())
 				</div>
 			{/if}
 			<button
-				class="relative flex items-center gap-1.5 rounded-full px-3.5 py-2 shadow-card text-cta font-normal cursor-pointer transition-colors
+				class="relative flex items-center gap-1.5 rounded-full px-3.5 py-2 shadow-card text-cta font-normal cursor-pointer transition duration-200 ease-spring active:scale-95
 					{conflictKeys.size > 0 ? 'bg-apple-red text-on-accent' : 'bg-apple-blue text-on-accent'}"
 				onclick={() => { planMenuOpen = !planMenuOpen }}
 				aria-haspopup="menu"

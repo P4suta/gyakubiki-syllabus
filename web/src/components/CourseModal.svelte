@@ -284,7 +284,7 @@ async function copyField(label: string, value: string) {
 				<div class="flex items-center gap-1.5 shrink-0">
 					<!-- Register / unregister this course into the plan. -->
 					<button
-						class="inline-flex items-center gap-1 h-10 sm:h-8 rounded-full px-3.5 text-caption font-medium transition-colors duration-200 cursor-pointer
+						class="inline-flex items-center gap-1 h-10 sm:h-8 rounded-full px-3.5 text-caption font-medium transition duration-200 ease-spring active:scale-95 cursor-pointer
 							{registered ? 'bg-apple-blue text-on-accent' : 'bg-overlay-light text-apple-text active:bg-overlay-strong sm:hover:bg-overlay-strong'}"
 						onclick={() => plan.toggle(course.cd)}
 						aria-pressed={registered}
@@ -540,7 +540,7 @@ async function copyField(label: string, value: string) {
 				<button
 					type="button"
 					onclick={() => onsearch?.(kw)}
-					class="inline-flex items-center gap-1 rounded-full bg-overlay-light px-2 py-0.5 text-micro text-apple-text-secondary active:bg-overlay-medium sm:hover:bg-overlay-medium transition-colors cursor-pointer"
+					class="inline-flex items-center gap-1 rounded-full bg-overlay-light px-2 py-0.5 text-micro text-apple-text-secondary active:bg-overlay-medium sm:hover:bg-overlay-medium transition duration-150 active:scale-95 cursor-pointer"
 				>
 					<IconSearch class="w-3 h-3 text-apple-text-tertiary" aria-hidden="true" />{kw}
 				</button>
@@ -563,7 +563,7 @@ async function copyField(label: string, value: string) {
 						href={g.url}
 						target="_blank"
 						rel="noopener noreferrer"
-						class="inline-flex items-center gap-1.5 rounded-full bg-overlay-light py-0.5 pl-0.5 pr-2.5 text-micro text-apple-text-secondary active:bg-overlay-medium sm:hover:bg-overlay-medium transition-colors"
+						class="inline-flex items-center gap-1.5 rounded-full bg-overlay-light py-0.5 pl-0.5 pr-2.5 text-micro text-apple-text-secondary active:bg-overlay-medium sm:hover:bg-overlay-medium transition duration-150 active:scale-95"
 						aria-label="SDGs目標{g.n} {g.title}（新しいタブで開く）"
 					>
 						<span class="flex h-5 w-5 items-center justify-center rounded-full text-micro font-semibold tabular-nums text-white" style="background: {g.color};" aria-hidden="true">{g.n}</span>
@@ -585,7 +585,7 @@ async function copyField(label: string, value: string) {
 						<button
 							type="button"
 							onclick={() => copyField(label, value)}
-							class="shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-apple-text-tertiary active:bg-overlay-light sm:hover:bg-overlay-light transition-colors cursor-pointer"
+							class="shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-apple-text-tertiary active:bg-overlay-light sm:hover:bg-overlay-light transition duration-150 active:scale-90 cursor-pointer"
 							aria-label="{label}をコピー"
 						>
 							{#if copiedField === label}<IconCheck class="w-3.5 h-3.5 text-apple-blue" aria-hidden="true" />{:else}<IconContentCopy class="w-3.5 h-3.5" aria-hidden="true" />{/if}
