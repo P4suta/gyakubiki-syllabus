@@ -214,7 +214,7 @@ fn write_details_out(
         // Derive display-ready fields (plan highlights, …) at write time so the
         // frozen raw-details stay untouched and only the web copy is enriched.
         let mut detail = detail.clone();
-        crate::detail::enrich(&mut detail);
+        syllabus_cli::detail::enrich(&mut detail);
         let path = out.join(format!("{}.json", detail.cd));
         let bytes = serde_json::to_vec(&detail).context("failed to serialize detail JSON")?;
         fs::write(&path, bytes)
