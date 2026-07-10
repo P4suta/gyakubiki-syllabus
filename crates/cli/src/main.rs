@@ -126,6 +126,16 @@ fn convert(args: ConvertArgs) -> Result<()> {
     }
     if let Some(path) = args.output.as_deref() {
         term::ok(&format!("wrote {} ({} courses)", path.display(), raw.len()));
+        // The binary search index ships beside data.json (loaded lazily in the
+        // worker). Only written in file mode — stdout carries data.json alone.
+        let index_path = path.with_file_name("search.idx");
+        fs::write(&index_path, &rendered.index)
+            .with_context(|| format!("failed to write search index: {}", index_path.display()))?;
+        term::ok(&format!(
+            "wrote {} ({} bytes)",
+            index_path.display(),
+            rendered.index.len()
+        ));
     }
     emit(&rendered.bytes, args.output.as_deref())
 }
