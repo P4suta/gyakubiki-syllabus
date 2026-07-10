@@ -26,23 +26,30 @@ pre-push:
   parallel: false # cargo / wasm / web are heavy; run them sequentially
   commands:
     # Every Rust CI gate in one container: fmt, clippy, tests + the 80% coverage
-    # threshold (via cargo-llvm-cov, exactly as CI), and the FIELD_SPEC sync check
-    # (generated TS + docs/syllabus-fields.md must not be stale).
+    # threshold (via cargo-llvm-cov, exactly as CI), and the two derivation
+    # guards — FIELD_SPEC (generated TS + docs must not be stale) and the OKLCH
+    # palette (colors.ts must match its derivation).
     rust:
       run: >-
         docker compose run --rm -T dev bash -c "cargo fmt --check
         && cargo clippy --locked --all-targets -- -D warnings
         && cargo llvm-cov --locked --workspace --exclude syllabus-wasm --fail-under-lines 80
-        && cargo run --locked -q -p syllabus-cli -- gen-field-docs --check"
-      fail_text: "Rust checks failed (fmt/clippy/test/coverage/gen-field-docs); see `just check`"
+        && cargo run --locked -q -p syllabus-cli -- gen-field-docs --check
+        && cargo run --locked -q -p syllabus-cli -- gen-palette --check"
+      fail_text: "Rust checks failed (fmt/clippy/test/coverage/gen-field-docs/gen-palette); see `just check`"
     # Mirrors the CI "Web (check / test)" job: build the wasm glue first, then
-    # svelte-check/tsc and vitest.
+    # svelte-check/tsc and vitest *with the coverage gate* (test:cov — same
+    # thresholds CI enforces, so a coverage drop fails here, not in Actions).
+    #
+    # NOT mirrored here (the lean dev image ships neither node, CJK fonts, nor
+    # Playwright browsers by design): the CI "wasm boundary tests" (wasm-pack
+    # test --node) and the "E2E (Playwright)" job — both remain CI-only.
     web:
       run: >-
         docker compose run --rm -T dev bash -c "wasm-pack build crates/wasm
         --target web --out-dir ../../web/src/wasm --out-name syllabus
-        && cd web && bun install --frozen-lockfile && bun run check && bun run test"
-      fail_text: "Web checks failed (svelte-check/tsc/vitest)"
+        && cd web && bun install --frozen-lockfile && bun run check && bun run test:cov"
+      fail_text: "Web checks failed (svelte-check/tsc/vitest + coverage gate)"
     typos-full:
       run: typos
     markdown-full:
