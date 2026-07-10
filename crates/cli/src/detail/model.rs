@@ -97,6 +97,11 @@ pub struct PlanItem {
     /// can't be parsed are skipped, so this is always the real session number.
     pub n: i64,
     pub text: String,
+    /// Highlight hint derived at convert time: `exam` | `milestone` | `start`.
+    /// The `text` is never altered; this only tints the timeline node. Absent in
+    /// `raw-details` (added by `enrich`), so default/skip keeps those parseable.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
 }
 
 /// One オフィスアワー entry.

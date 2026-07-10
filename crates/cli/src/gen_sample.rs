@@ -284,6 +284,7 @@ fn detail_for(i: usize, rng: &mut StdRng) -> SanshoDetail {
         .map(|n| PlanItem {
             n: n as i64,
             text: format!("第{n}回の授業内容（テーマ{n}）"),
+            ..Default::default()
         })
         .collect();
     let goal_count = 3 + (i % 3);

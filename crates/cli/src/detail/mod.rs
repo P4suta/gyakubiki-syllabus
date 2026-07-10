@@ -4,8 +4,10 @@
 //! [`crate::fetch_details`].
 
 mod classify;
+mod enrich;
 mod model;
 mod parse;
 
+pub use enrich::enrich;
 pub use model::{Delivery, Eval, EvalRow, Labelled, OfficeHour, PlanItem, SanshoDetail};
 pub use parse::parse_sansho_html;

@@ -174,7 +174,11 @@ fn parse_plan(rows: &[Vec<Cell>], detail: &mut SanshoDetail) {
             .trim()
             .to_owned();
         if !text.is_empty() {
-            detail.plan.push(PlanItem { n, text });
+            detail.plan.push(PlanItem {
+                n,
+                text,
+                ..Default::default()
+            });
         }
     }
 }
