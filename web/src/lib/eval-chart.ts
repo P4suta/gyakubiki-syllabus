@@ -28,6 +28,24 @@ export function evalSegments<T extends Weighted>(
 	})
 }
 
+export interface Typed {
+	type: string
+	pct: number
+}
+
+/**
+ * Sum shares by assessment `type`, largest first — so the "main" axis reflects
+ * the category (中間レポート30 + 期末レポート30 = レポート60 beats 出席40), not the
+ * single biggest row.
+ */
+export function sumByType<T extends Typed>(segs: readonly T[]): Typed[] {
+	const map = new Map<string, number>()
+	for (const s of segs) map.set(s.type, (map.get(s.type) ?? 0) + s.pct)
+	return [...map.entries()]
+		.map(([type, pct]) => ({ type, pct }))
+		.sort((a, b) => b.pct - a.pct)
+}
+
 export interface Arc {
 	/** `stroke-dasharray`: drawn length then the gap. */
 	dash: string

@@ -1,6 +1,19 @@
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
-import { circumference, evalArcs, evalSegments } from './eval-chart'
+import { circumference, evalArcs, evalSegments, sumByType } from './eval-chart'
+
+describe('sumByType', () => {
+	it('makes the category the main axis, not the biggest single row', () => {
+		// 出席 40 is the biggest row, but two レポート rows sum to 60 → report-heavy.
+		const totals = sumByType([
+			{ type: 'attendance', pct: 40 },
+			{ type: 'report', pct: 30 },
+			{ type: 'report', pct: 30 },
+		])
+		expect(totals[0]).toEqual({ type: 'report', pct: 60 })
+		expect(totals[1]).toEqual({ type: 'attendance', pct: 40 })
+	})
+})
 
 describe('evalSegments', () => {
 	it('every share is a percentage in [0,100] with consistent hasWeight', () => {

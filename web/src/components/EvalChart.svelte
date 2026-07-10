@@ -1,6 +1,6 @@
 <script lang="ts">
 import IconInfo from '~icons/ic/round-info'
-import { evalArcs, evalSegments } from '../lib/eval-chart'
+import { evalArcs, evalSegments, sumByType } from '../lib/eval-chart'
 import { evalKind } from '../lib/syllabus-icons'
 import { useTheme } from '../lib/theme.svelte'
 import type { EvalRow } from '../types/course'
@@ -14,29 +14,51 @@ let { rows, note }: Props = $props()
 
 const theme = useTheme()
 
-// Percentages (equal-split when weightless) plus each row's icon/colour style,
-// ordered largest share first — so the donut starts the biggest slice at 12
-// o'clock (svg is -rotate-90) sweeping clockwise, and the bar/legend match.
+// Per-item shares with icon/colour. Colour is keyed by `type`, so same-type
+// items share a hue and read as one band.
 const segments = $derived(
-	evalSegments(rows)
-		.map((s) => {
-			const style = evalKind(s.type)
-			return { ...s, style, color: theme.isDark ? style.color.dark : style.color.light }
-		})
-		.sort((a, b) => b.pct - a.pct),
+	evalSegments(rows).map((s) => {
+		const style = evalKind(s.type)
+		return { ...s, style, color: theme.isDark ? style.color.dark : style.color.light }
+	}),
 )
 
 const hasWeights = $derived(segments.some((s) => s.hasWeight))
 
+// Aggregate by type so the "main" is the category (レポート60 > 出席40), and use
+// that order to keep same-type rows contiguous — the report band reads as a block.
+const typeRank = $derived(new Map(sumByType(segments).map((t, i) => [t.type, i])))
+const ordered = $derived(
+	[...segments].sort(
+		(a, b) => (typeRank.get(a.type) ?? 0) - (typeRank.get(b.type) ?? 0) || b.pct - a.pct,
+	),
+)
+
+// Cumulative offset per row → each row's bar segment sits at its place along the
+// 0–100% track, so the stacked bar and the legend are one object.
+const laid = $derived.by(() => {
+	let acc = 0
+	return ordered.map((s) => {
+		const offset = acc
+		acc += s.pct
+		return { ...s, offset }
+	})
+})
+
+// The dominant *type* (icon + summed %) sits in the donut hole.
+const dominant = $derived.by(() => {
+	const top = sumByType(segments)[0]
+	if (!top) return null
+	return { pct: top.pct, style: evalKind(top.type) }
+})
+
 const R = 42
 const arcs = $derived(
 	evalArcs(
-		segments.map((s) => s.pct),
+		laid.map((s) => s.pct),
 		R,
-	).map((arc, i) => ({ ...arc, color: segments[i].color })),
+	).map((arc, i) => ({ ...arc, color: laid[i].color })),
 )
-
-const dominant = $derived(segments[0] ?? null)
 </script>
 
 <div class="flex items-center gap-4 sm:gap-5">
@@ -59,7 +81,7 @@ const dominant = $derived(segments[0] ?? null)
 		{#if dominant}
 			{@const Icon = dominant.style.icon}
 			<div class="absolute inset-0 flex flex-col items-center justify-center">
-				<Icon class="w-6 h-6" style="color: {dominant.color};" />
+				<Icon class="w-6 h-6" style="color: {theme.isDark ? dominant.style.color.dark : dominant.style.color.light};" />
 				{#if hasWeights}
 					<span class="text-caption font-semibold text-apple-text mt-0.5 tabular-nums">{dominant.pct}%</span>
 				{/if}
@@ -67,31 +89,24 @@ const dominant = $derived(segments[0] ?? null)
 		{/if}
 	</div>
 
-	<div class="min-w-0 flex-1">
-		<!-- A single cumulative bar: each segment's width is its share, laid end to
-		     end — the "横に連続した" reading the vertical list couldn't give. -->
-		<div class="flex h-2.5 w-full overflow-hidden rounded-full bg-overlay-light" aria-hidden="true">
-			{#each segments as s}
-				{#if s.pct > 0}
-					<span class="h-full" style="width: {s.pct}%; background: {s.color};"></span>
-				{/if}
-			{/each}
-		</div>
-		<ul class="mt-2.5 space-y-1.5">
-			{#each segments as s}
-				<li class="flex items-center gap-2 text-caption">
+	<!-- Legend and bar are one object: each row shows its label + its slice sitting
+	     at its cumulative offset, so the segments chain across rows to 100%. -->
+	<ul class="min-w-0 flex-1 space-y-2">
+		{#each laid as s}
+			<li>
+				<div class="flex items-center gap-2 text-caption">
 					<span class="w-2 h-2 rounded-full shrink-0" style="background: {s.color};"></span>
 					<span class="text-apple-text truncate">{s.item || s.style.label}</span>
-					<!-- A 0% here means the source listed this component without a weight
-					     while others had one — assessed but its share is unstated, so no
-					     misleading %. -->
 					{#if s.hasWeight && s.pct > 0}
 						<span class="ml-auto shrink-0 text-apple-text-secondary tabular-nums font-medium">{s.pct}%</span>
 					{/if}
-				</li>
-			{/each}
-		</ul>
-	</div>
+				</div>
+				<div class="mt-1 h-1.5 w-full rounded-full bg-overlay-light overflow-hidden">
+					<span class="block h-full rounded-full" style="margin-left: {s.offset}%; width: {s.pct}%; background: {s.color};"></span>
+				</div>
+			</li>
+		{/each}
+	</ul>
 </div>
 
 {#if note}
