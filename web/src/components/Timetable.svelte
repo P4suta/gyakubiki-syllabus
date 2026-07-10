@@ -1,4 +1,5 @@
 <script lang="ts">
+import IconWarning from '~icons/ic/round-warning'
 import { useDesktop } from '../lib/breakpoint.svelte'
 import { type GridKey, PERIODS } from '../lib/engine'
 import { haptic, type SwipeDir, swipeNavigate } from '../lib/gestures'
@@ -133,6 +134,11 @@ let headerH = $state(0)
 					{#if PERIOD_TIMES[period]}
 						<span class="text-fine text-apple-text-tertiary tabular-nums">
 							{PERIOD_TIMES[period].start}–{PERIOD_TIMES[period].end}{#if PERIOD_TIMES[period].note} ・{PERIOD_TIMES[period].note}{/if}
+						</span>
+					{/if}
+					{#if conflictKeys?.has(key)}
+						<span class="ml-auto self-center inline-flex items-center gap-0.5 rounded-full bg-apple-red text-on-accent px-1.5 py-0.5 text-fine font-medium">
+							<IconWarning class="w-2.5 h-2.5" aria-hidden="true" />重複
 						</span>
 					{/if}
 				</div>
