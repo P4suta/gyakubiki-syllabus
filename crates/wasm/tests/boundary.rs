@@ -75,9 +75,11 @@ fn all_course_views_carry_the_expected_keys() {
     let arr = views.as_array().expect("views is an array");
     assert_eq!(arr.len(), 9);
     let first = arr[0].as_object().expect("course is an object");
-    for key in ["cd", "nm", "st"] {
+    for key in ["cd", "nm"] {
         assert!(first.contains_key(key), "course missing {key}");
     }
+    // The search haystack is no longer a wire field.
+    assert!(!first.contains_key("st"), "st must not cross the boundary");
 }
 
 #[wasm_bindgen_test]

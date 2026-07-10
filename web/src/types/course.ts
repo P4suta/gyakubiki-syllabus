@@ -31,7 +31,6 @@ export interface Course {
 	unit?: string // credits (from syllabus detail)
 	dm?: string // delivery mode: onsite | online | ondemand | hybrid
 	ev?: string[] // assessment summary for the card, e.g. ["attendance:40","exam:60"]
-	st: string // searchText
 }
 
 // --- Full syllabus detail (lazy-loaded from details/{cd}.json) ---

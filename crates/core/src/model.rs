@@ -97,7 +97,6 @@ pub struct Course {
     /// Assessment-type summary for the card, e.g. `["attendance:40","exam:60"]`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ev: Option<Vec<String>>,
-    pub st: String,
 }
 
 // --- Raw KULAS wire format (producer input) ---

@@ -127,7 +127,6 @@ mod tests {
             unit: unit.map(str::to_owned),
             dm: None,
             ev: None,
-            st: String::new(),
         }
     }
 

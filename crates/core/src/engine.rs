@@ -12,9 +12,9 @@ use crate::bitset::BitSet;
 use crate::grid::{Grid, GridSlot, build_grid};
 use crate::index::{CourseIndex, SemesterIndex};
 use crate::model::{Dictionaries, IndicesMap, ProcessedData};
-use crate::normalize;
 use crate::plan::{PlanSummary, conflicts_in_grid, summarize_credits};
 use crate::search::{IndexError, SearchHit, SearchIndex};
+use crate::text::{normalize, search_text};
 
 /// The semester label whose courses appear under every *other* semester filter.
 const TSUUNEN_LABEL: &str = "通年";
@@ -73,9 +73,14 @@ pub struct Engine {
     tsuunen_index: Option<SemesterIndex>,
     /// Whether any course meets on Saturday (drives the extra grid column).
     has_saturday: bool,
+    /// A normalized per-course search haystack (name/subtitle/instructor/code/
+    /// department/taxonomy), built here at load — the wire format no longer
+    /// carries it. Used by [`Engine::filter`] and as [`Engine::search`]'s
+    /// pre-index fallback, so search works even if `search.idx` never arrives.
+    haystack: Vec<String>,
     /// The full-text index, loaded from the companion `search.idx` after the
     /// engine is built (it ships separately from `data.json`). `None` until then;
-    /// text queries fall back to the `st` haystack meanwhile.
+    /// text queries fall back to `haystack` meanwhile.
     search_index: Option<SearchIndex>,
     /// `cd` → course index, for resolving a shared plan (a list of stable course
     /// codes) back to indices. Built once here so `resolve_cds` is O(n).
@@ -141,6 +146,26 @@ impl Engine {
             .enumerate()
             .map(|(i, c)| (c.cd.clone(), CourseIndex::new(i)))
             .collect();
+        let haystack = courses
+            .iter()
+            .map(|c| {
+                let dept = dicts
+                    .departments
+                    .get(c.dept as usize)
+                    .map_or("", String::as_str);
+                search_text(
+                    &c.nm,
+                    c.sub.as_deref(),
+                    &c.prof,
+                    &c.cd,
+                    dept,
+                    &[
+                        c.bunya.as_deref().unwrap_or_default(),
+                        c.bunrui.as_deref().unwrap_or_default(),
+                    ],
+                )
+            })
+            .collect();
 
         Ok(Self {
             courses,
@@ -154,6 +179,7 @@ impl Engine {
             all_bits,
             tsuunen_index,
             has_saturday,
+            haystack,
             search_index: None,
             cd_to_index,
         })
@@ -255,7 +281,7 @@ impl Engine {
         } else {
             let needle = normalize(filters.query);
             candidates
-                .filter(|&i| self.courses[i.get()].st.contains(&needle))
+                .filter(|&i| self.haystack[i.get()].contains(&needle))
                 .collect()
         }
     }
@@ -283,7 +309,7 @@ impl Engine {
             None => {
                 let needle = normalize(filters.query);
                 candidates
-                    .filter(|&i| self.courses[i.get()].st.contains(&needle))
+                    .filter(|&i| self.haystack[i.get()].contains(&needle))
                     .map(SearchHit::unranked)
                     .collect()
             }
@@ -402,11 +428,13 @@ mod tests {
         }
     }
 
-    /// Minimal course builder for tests.
-    fn course(cd: &str, slots: &[(u32, i32, i32)], dept: u32, campus: u32, st: &str) -> Course {
+    /// Minimal course builder for tests. `text` is the searchable content
+    /// (name / instructor / code …); the engine builds its haystack from these
+    /// fields, so putting it in `nm` keeps the filter/search tests self-contained.
+    fn course(cd: &str, slots: &[(u32, i32, i32)], dept: u32, campus: u32, text: &str) -> Course {
         Course {
             cd: cd.into(),
-            nm: "テスト講義".into(),
+            nm: text.into(),
             sub: None,
             prof: "教員 太郎".into(),
             raw: String::new(),
@@ -424,7 +452,6 @@ mod tests {
             unit: None,
             dm: None,
             ev: None,
-            st: st.into(),
         }
     }
 

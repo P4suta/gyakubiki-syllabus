@@ -10,7 +10,6 @@ use crate::bitset::BitSet;
 use crate::dict;
 use crate::model::{Course, Dictionaries, IndicesMap, ProcessedData, RawCourse, Slot};
 use crate::parser::{self, ParsedSlot};
-use crate::text::search_text;
 
 /// The v3 payload plus any warnings raised while converting (empty course codes,
 /// unparsable jikanwari, …). Warnings are surfaced by the CLI, never in `data.json`.
@@ -147,19 +146,6 @@ fn first_pass(raw: &[RawCourse]) -> FirstPass {
         courses.push(Course {
             cd: cd.to_owned(),
             nm: nm.to_owned(),
-            st: search_text(
-                nm,
-                sub.as_deref(),
-                prof,
-                cd,
-                dept,
-                // 分野・分類 stay searchable now that the detail prose no longer rides
-                // along in `st` (see the CLI's `detail_search_text`).
-                &[
-                    r.kamoku_bunya.as_deref().unwrap_or_default().trim(),
-                    r.kamoku_bunrui.as_deref().unwrap_or_default().trim(),
-                ],
-            ),
             sub,
             prof: prof.to_owned(),
             raw: r.jikanwari.clone(),
@@ -559,36 +545,9 @@ mod tests {
         assert_eq!(data.courses[1].gaku.as_deref(), Some("基礎数学"));
     }
 
-    #[test]
-    fn search_text_is_normalized() {
-        let data = convert(&[RawCourse {
-            fukudai: Some("副題テスト".into()),
-            tanto_kyoin: "Smith\u{3000}John".into(),
-            sekinin_busho_nm: "共通教育".into(),
-            ..raw("ABC", "English Communication")
-        }]);
-        let st = &data.courses[0].st;
-        assert!(!st.contains("English"));
-        assert!(st.contains("english communication"));
-        assert!(!st.contains('\u{3000}'));
-        assert!(st.contains("副題テスト"));
-        assert!(st.contains("smith john"));
-    }
-
-    #[test]
-    fn taxonomy_bunya_and_bunrui_are_searchable_in_st() {
-        // 分野・分類 must ride along in the search haystack so they stay searchable
-        // now that the heavy syllabus prose no longer does (see the CLI's convert).
-        let data = convert(&[RawCourse {
-            kamoku_bunya: Some("数理科学".into()),
-            kamoku_bunrui: Some("専門科目".into()),
-            ..raw("001", "線形代数")
-        }]);
-        let st = &data.courses[0].st;
-        assert!(st.contains("数理科学"), "bunya must be in st: {st}");
-        assert!(st.contains("専門科目"), "bunrui must be in st: {st}");
-        assert!(!st.contains('\u{3000}'), "st stays normalized");
-    }
+    // The search haystack is no longer a wire field — the engine builds it from
+    // the course fields via `search_text` (whose join/normalize is unit-tested in
+    // `text`), and engine filter tests cover the end-to-end search.
 
     #[test]
     fn dedups_by_code_and_merges_slots() {
@@ -876,7 +835,6 @@ mod tests {
         fn convert_output_is_structurally_sound(
             raw in prop::collection::vec(any_raw_course(), 0..12)
         ) {
-            let full_width_space = '\u{3000}';
             let data = convert(&raw);
 
             prop_assert_eq!(data.total_raw as usize, raw.len());
@@ -894,9 +852,6 @@ mod tests {
                     prop_assert!((1..=8).contains(&s.p));
                     prop_assert!((s.s as usize) < data.dicts.semesters.len());
                 }
-                // Search haystack is normalized (no full-width space, no upper ASCII).
-                prop_assert!(!c.st.contains(full_width_space));
-                prop_assert!(!c.st.bytes().any(|b| b.is_ascii_uppercase()));
             }
         }
     }

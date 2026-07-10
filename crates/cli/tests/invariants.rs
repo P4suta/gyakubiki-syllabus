@@ -55,9 +55,6 @@ fn check_invariants(data: &ProcessedData) {
             assert!((1..=8).contains(&s.p), "period oob");
             assert!((s.s as usize) < data.dicts.semesters.len(), "semester oob");
         }
-        // (h) Search haystack is canonical.
-        assert!(!c.st.contains('\u{3000}'));
-        assert!(!c.st.bytes().any(|b| b.is_ascii_uppercase()));
     }
 
     // Dictionaries are duplicate-free, and the「その他」catch-all sorts last in the
