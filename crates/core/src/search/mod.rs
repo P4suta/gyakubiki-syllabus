@@ -73,6 +73,19 @@ pub struct SearchHit {
     pub spans: Vec<Span>,
 }
 
+impl SearchHit {
+    /// A candidate carried through with no ranking — score 0, no spans. Used for
+    /// the browse view (empty query) and the pre-index fallback.
+    #[must_use]
+    pub fn unranked(course: CourseIndex) -> Self {
+        Self {
+            course,
+            score: 0.0,
+            spans: Vec::new(),
+        }
+    }
+}
+
 /// The searchable text of one course, borrowed at build time. `keywords` is the
 /// pre-joined department + taxonomy + syllabus-keyword text.
 #[derive(Debug, Default, Clone, Copy)]
