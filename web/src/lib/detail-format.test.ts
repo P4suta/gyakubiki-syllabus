@@ -5,6 +5,7 @@ import {
 	formatProse,
 	linkifyText,
 	parseTeachers,
+	splitRelated,
 } from './detail-format'
 
 describe('classifyGoals', () => {
@@ -73,6 +74,20 @@ describe('formatProse', () => {
 		expect(formatProse('ただの一文です。')).toEqual([
 			{ kind: 'paragraph', items: ['ただの一文です。'] },
 		])
+	})
+})
+
+describe('splitRelated', () => {
+	const known = new Set(['07011', '28008'])
+	it('links only resolvable 5-digit codes; names/others stay plain', () => {
+		const parts = splitRelated('07011はじめての金融経済，28008金融論，99999未開講', known)
+		const links = parts.filter((p) => p.code)
+		expect(links.map((p) => p.code)).toEqual(['07011', '28008'])
+		// The unresolvable 99999 is not linked (stays in a plain part).
+		expect(parts.some((p) => !p.code && p.text.includes('99999'))).toBe(true)
+	})
+	it('a name-only entry produces no links', () => {
+		expect(splitRelated('「学問基礎論」', known).every((p) => !p.code)).toBe(true)
 	})
 })
 

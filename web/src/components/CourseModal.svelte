@@ -18,8 +18,10 @@ import {
 	classifyGoals,
 	decodeNumbering,
 	formatProse,
+	isRelatedLabel,
 	linkifyText,
 	parseTeachers,
+	splitRelated,
 } from '../lib/detail-format'
 import { loadDetail } from '../lib/details'
 import { plan } from '../lib/plan.svelte'
@@ -35,12 +37,16 @@ interface Props {
 	course: Course
 	dicts: Dictionaries
 	year: string
+	/** Course codes that resolve to a real card (for related-course links). */
+	knownCds?: ReadonlySet<string>
 	onclose: () => void
 	/** Tapping a keyword runs it as a search (reverse-lookup) and closes here. */
 	onsearch?: (q: string) => void
+	/** Open another course by code (related courses). */
+	onopencourse?: (cd: string) => void
 }
 
-let { course, dicts, year, onclose, onsearch }: Props = $props()
+let { course, dicts, year, knownCds, onclose, onsearch, onopencourse }: Props = $props()
 
 // Whether this course is in the user's plan (drives the header toggle).
 const registered = $derived(plan.has(course.cd))
@@ -129,9 +135,9 @@ const allSections = $derived.by<Section[]>(() => {
 				if (e.text?.trim()) {
 					rows.push({
 						key: `extra:${e.label}`,
-						label: e.label,
+						label: isRelatedLabel(e.label) ? '関連科目' : e.label,
 						group: OTHER_GROUP,
-						render: 'longtext',
+						render: isRelatedLabel(e.label) ? 'related' : 'longtext',
 						value: e.text,
 					})
 				}
@@ -510,6 +516,12 @@ function planBadge(kind: string | undefined): string | null {
 				</span>
 			{/each}
 		</div>
+	{:else if s.render === 'related'}
+		<!-- Related courses: a 5-digit code that resolves to a real card becomes a
+		     tap-to-open link; names and unresolvable codes stay as plain text. -->
+		<p class="text-body text-apple-text leading-relaxed whitespace-pre-line tracking-tight">
+			{#each splitRelated(s.value as string, knownCds ?? new Set()) as part}{#if part.code}<button type="button" onclick={() => part.code && onopencourse?.(part.code)} class="text-apple-blue hover:underline cursor-pointer tabular-nums">{part.text}</button>{:else}{part.text}{/if}{/each}
+		</p>
 	{:else if s.render === 'sdgs'}
 		<!-- Each goal links out to its UNICEF page; the official-colour badge is a
 		     decorative sign (aria-hidden), the title carries the meaning as ink. -->

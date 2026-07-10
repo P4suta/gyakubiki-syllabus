@@ -24,6 +24,14 @@ let debouncedSearch = $state('')
 let selectedCourse: Course | null = $state(null)
 let planSummary = $state<PlanSummaryResult | null>(null)
 
+// cd → Course, so a related-course code in the modal can open that card.
+const courseByCd = $derived(new Map((engine?.courses ?? []).map((c) => [c.cd, c])))
+const knownCds = $derived(new Set(courseByCd.keys()))
+function openByCd(cd: string) {
+	const c = courseByCd.get(cd)
+	if (c) selectedCourse = c
+}
+
 // Floating plan control: the pill toggles a small action menu (share / clear).
 // There is no separate「マイ時間割」screen — the grid itself is the plan.
 let planMenuOpen = $state(false)
@@ -235,8 +243,10 @@ onDestroy(() => teardownPlanSync?.())
 			course={selectedCourse}
 			dicts={engine.dicts}
 			year={engine.year}
+			{knownCds}
 			onclose={() => { selectedCourse = null }}
 			onsearch={(q) => { searchText = q; selectedCourse = null }}
+			onopencourse={openByCd}
 		/>
 	{/if}
 {/if}

@@ -146,6 +146,40 @@ export interface TextPart {
 // quote (dialogue, emphasis, terms) and must never become a book link.
 const LINK_RE = /『[^』]*』|[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g
 
+export interface RelatedPart {
+	text: string
+	/** When set, `text` is a 5-digit course code that opens that course. */
+	code?: string
+}
+
+const CODE_RE = /(?<!\d)\d{5}(?!\d)/g
+
+/** Split a「関連科目」blob so 5-digit codes that resolve to a real course become
+ *  in-app links; everything else (names, unresolvable codes) stays verbatim. */
+export function splitRelated(text: string, known: ReadonlySet<string>): RelatedPart[] {
+	const parts: RelatedPart[] = []
+	let last = 0
+	for (const m of text.matchAll(CODE_RE)) {
+		const code = m[0]
+		if (!known.has(code)) continue // leave unresolvable codes as plain text
+		const i = m.index ?? 0
+		if (i > last) parts.push({ text: text.slice(last, i) })
+		parts.push({ text: code, code })
+		last = i + code.length
+	}
+	if (last < text.length) parts.push({ text: text.slice(last) })
+	return parts
+}
+
+/** Is this an extra-field label for the related-courses (COMPUTER LINK) block? */
+export function isRelatedLabel(label: string): boolean {
+	return (
+		label.includes('関連科目') ||
+		label.includes('RELATED COURSES') ||
+		label.includes('COMPUTER LINK')
+	)
+}
+
 /** Split text into plain / linked parts (book titles + emails). */
 export function linkifyText(s: string): TextPart[] {
 	const parts: TextPart[] = []
