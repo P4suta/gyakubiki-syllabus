@@ -66,7 +66,10 @@ const dominant = $derived([...segments].sort((a, b) => b.pct - a.pct)[0] ?? null
 			<div class="flex items-center gap-2 text-caption">
 				<span class="w-2 h-2 rounded-full shrink-0" style="background: {s.color};"></span>
 				<span class="text-apple-text truncate">{s.item || s.style.label}</span>
-				{#if s.hasWeight}
+				<!-- A 0% here means the source listed this component without a weight
+				     while others had one (e.g.「レポート」+「試験:60」) — it's assessed but
+				     its share is unstated, not literally zero, so show no misleading %. -->
+				{#if s.hasWeight && s.pct > 0}
 					<span class="ml-auto shrink-0 text-apple-text-secondary tabular-nums font-medium">{s.pct}%</span>
 				{/if}
 			</div>
