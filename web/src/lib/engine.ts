@@ -20,10 +20,37 @@ interface WasmGridCell {
 	courses: number[]
 }
 
-/** The shape of `WasmEngine.grid`'s return value. */
+/** Per-course match spans as returned by the WASM `query` call: `i` is the
+ *  course index, each span carries its field discriminant `f` and UTF-16
+ *  offset/length `o`/`l`. */
+interface WasmHighlight {
+	i: number
+	spans: { f: number; o: number; l: number }[]
+}
+
+/** The shape of `WasmEngine.query`'s return value (a superset of `grid`'s). */
 interface WasmGridResult {
 	cells: WasmGridCell[]
 	countUnique: number
+	highlights: WasmHighlight[]
+}
+
+/** The `Field::Name` discriminant — the only field highlighted on a card. */
+const FIELD_NAME = 0
+
+/** Match spans keyed by course `cd` (course-name field only). */
+export type Highlights = Map<string, { start: number; len: number }[]>
+
+/** Resolve the WASM highlight list into name-field spans keyed by course cd. */
+function resolveHighlights(list: WasmHighlight[], views: readonly Course[]): Highlights {
+	const byCd: Highlights = new Map()
+	for (const h of list ?? []) {
+		const cd = views[h.i]?.cd
+		if (cd === undefined) continue
+		const spans = h.spans.filter((s) => s.f === FIELD_NAME).map((s) => ({ start: s.o, len: s.l }))
+		if (spans.length > 0) byCd.set(cd, spans)
+	}
+	return byCd
 }
 
 /**
@@ -178,7 +205,7 @@ export class SyllabusEngine {
 		department: string,
 		campus: string,
 		query: string,
-	): Promise<{ grid: Map<GridKey, Course[]>; count: number }> {
+	): Promise<{ grid: Map<GridKey, Course[]>; count: number; highlights: Highlights }> {
 		const res = (await this.send({
 			type: 'filterAndGrid',
 			semester,
@@ -189,6 +216,7 @@ export class SyllabusEngine {
 		return {
 			grid: assembleGrid(res.cells, this.courses, this.days),
 			count: res.countUnique,
+			highlights: resolveHighlights(res.highlights, this.courses),
 		}
 	}
 }

@@ -1,5 +1,6 @@
 <script lang="ts">
 import { getColor } from '../lib/colors'
+import { highlights, segment } from '../lib/highlight.svelte'
 import { deliveryMode, evalKind } from '../lib/syllabus-icons'
 import { useTheme } from '../lib/theme.svelte'
 import type { Course } from '../types/course'
@@ -27,6 +28,10 @@ const prof = $derived.by(() => {
 })
 
 const mode = $derived(deliveryMode(course.dm))
+
+// Search-match runs in the course name (the only highlighted field). Plain text
+// when the active query doesn't hit this course.
+const nameSegs = $derived(segment(course.nm, highlights.get(course.cd)))
 
 // Dominant assessment axis: label, share of the whole grade, and its palette
 // colour (the same hue as the modal's donut, so the card's bar ties to it).
@@ -60,7 +65,10 @@ const creditHalf = $derived(creditsN - Math.floor(creditsN) >= 0.5)
 	{onclick}
 >
 	<div class="font-semibold text-caption sm:text-micro leading-snug line-clamp-2" style="color: {color.text};">
-		{course.nm}
+		<!-- Match runs get a soft wash of the tile's own accent hue (inline style —
+		     dynamic palette colour), so the highlight belongs to the macaron tile
+		     rather than the browser's default yellow. -->
+		{#each nameSegs as seg}{#if seg.mark}<mark style="background: color-mix(in oklab, {color.accentText} 26%, transparent); color: {color.text};">{seg.text}</mark>{:else}{seg.text}{/if}{/each}
 	</div>
 	{#if prof}
 		<div class="text-micro sm:text-fine truncate" style="color: {color.mutedText};">{prof}</div>

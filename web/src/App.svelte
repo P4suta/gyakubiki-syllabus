@@ -6,6 +6,7 @@ import FilterBar from './components/FilterBar.svelte'
 import SearchBar from './components/SearchBar.svelte'
 import Timetable from './components/Timetable.svelte'
 import { type GridKey, SyllabusEngine } from './lib/engine'
+import { highlights } from './lib/highlight.svelte'
 import { defaultSemester } from './lib/semester'
 import type { Course } from './types/course'
 
@@ -47,6 +48,7 @@ $effect(() => {
 			if (!cancelled) {
 				grid = r.grid
 				displayCount = r.count
+				highlights.set(r.highlights)
 			}
 		})
 		.catch(() => {
