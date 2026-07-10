@@ -103,21 +103,16 @@ const creditHalf = $derived(creditsN - Math.floor(creditsN) >= 0.5)
 				<!-- Assessment group: label then donut, so the ring clearly belongs to
 				     試験 (not to 対面 on its left). % printed teeny in the hole; only the
 				     arc is rotated so the text stays upright; round caps keep it smooth. -->
-				<span class="shrink-0 font-semibold">{topEval.label}</span>
+				<!-- A tie (出席50 vs 試験50) — which to weigh is subjective, so flag the
+				     label with a small circled-i; the「main」is one reading, not the only. -->
+				<span class="relative shrink-0 font-semibold">{topEval.label}{#if topEval.tie}<IconInfo class="absolute -top-1 -right-2 w-2.5 h-2.5" style="color: {color.mutedText};" aria-hidden="true" />{/if}</span>
 				{#if topEval.pct != null}
-					<span class="relative inline-flex shrink-0">
-						<svg class="w-4 h-4" viewBox="0 0 36 36" role="img" aria-label="{topEval.label} {topEval.pct}%{topEval.tie ? '（同率あり）' : ''}">
-							<title>{topEval.label} {topEval.pct}%{topEval.tie ? '（同率あり）' : ''}</title>
-							<circle cx="18" cy="18" r="15" fill="none" class="stroke-overlay-medium" stroke-width="5" />
-							<circle cx="18" cy="18" r="15" fill="none" stroke={topEval.color} stroke-width="5" stroke-linecap="round" pathLength="100" stroke-dasharray="{topEval.pct} 100" transform="rotate(-90 18 18)" />
-							<text x="18" y="18" text-anchor="middle" dominant-baseline="central" font-size="11" font-weight="700" fill="currentColor">{topEval.pct}%</text>
-						</svg>
-						{#if topEval.tie}
-							<!-- Tie: another axis has the same share — flag that the「main」is
-							     one reading, not the only one. -->
-							<IconInfo class="absolute -top-1 -right-1 w-2.5 h-2.5" style="color: {color.mutedText};" aria-hidden="true" />
-						{/if}
-					</span>
+					<svg class="w-4 h-4 shrink-0" viewBox="0 0 36 36" role="img" aria-label="{topEval.label} {topEval.pct}%{topEval.tie ? '（同率あり）' : ''}">
+						<title>{topEval.label} {topEval.pct}%{topEval.tie ? '（同率あり）' : ''}</title>
+						<circle cx="18" cy="18" r="15" fill="none" class="stroke-overlay-medium" stroke-width="5" />
+						<circle cx="18" cy="18" r="15" fill="none" stroke={topEval.color} stroke-width="5" stroke-linecap="round" pathLength="100" stroke-dasharray="{topEval.pct} 100" transform="rotate(-90 18 18)" />
+						<text x="18" y="18" text-anchor="middle" dominant-baseline="central" font-size="11" font-weight="700" fill="currentColor">{topEval.pct}%</text>
+					</svg>
 				{/if}
 			{/if}
 			{#if creditsN > 0}
