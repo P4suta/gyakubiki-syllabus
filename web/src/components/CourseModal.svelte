@@ -81,7 +81,9 @@ const baseFields: [string, string | undefined | null][] = $derived([
 	['授業コード', course.cd],
 	...(detail?.teachers?.length ? [] : [['担当教員', course.prof] as [string, string]]),
 	['開講責任部署', dicts.departments[course.dept]],
-	['学則科目', course.gaku ?? course.nm],
+	// gaku is set only when it differs from the course name (convert.rs), so no
+	// nm fallback — an identical 学則科目 is just a redundant repeat of 科目名.
+	['学則科目', course.gaku],
 	['対象学科', course.gakka],
 	['対象年次', course.nen],
 	['科目分類', course.bunrui],
@@ -535,7 +537,7 @@ async function copyField(label: string, value: string) {
 				{@const dec = decodeNumbering(code)}
 				<span class="inline-flex items-center gap-1.5 rounded-full bg-overlay-light px-2.5 py-0.5 text-micro text-apple-text-secondary">
 					<span class="tabular-nums tracking-tight">{code}</span>
-					{#if dec}<span class="text-apple-text-tertiary">· {dec.field}</span>{/if}
+					{#if dec.length}<span class="text-apple-text-tertiary">· {dec.join(' · ')}</span>{/if}
 				</span>
 			{/each}
 		</div>

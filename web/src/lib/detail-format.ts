@@ -66,30 +66,45 @@ export function parseTeachers(list: string[]): TeacherInfo {
 	return { rep, others }
 }
 
-// Conservative numbering decode: only the leading 2 digits, only for verified
-// faculty prefixes, else null. The raw code is always shown alongside — this is
-// a supplemental hint, never a replacement (fidelity).
-const NUMBERING_FIELDS: Record<string, string> = {
-	'01': '共通教育',
-	'02': '共通教育',
-	'03': '共通教育',
-	'04': '共通教育',
-	'05': '共通教育',
-	'32': '理工学部',
-	'33': '理工学部',
-	'34': '理工学部',
-	'35': '理工学部',
-	'36': '理工学部',
-	'41': '医学部 医学科',
-	'42': '医学部 看護学科',
-	'61': '地域協働学部',
+// 科目ナンバリング(##-####-##) decode tables. Structure per the official spec
+// (download.pdf p1): 区分A[学部,学科] / 区分B[レベル,大,中,小] / 区分C[授業形態,言語].
+// We decode only the digits we could verify against the real data (学部・レベル・
+// 授業形態・言語); 学科 and 大/中/小分類 are per-department (huge, alphanumeric) and
+// left undecoded, and unknown values (e.g. a newer 授業形態 5) are skipped. The raw
+// code is always shown, so this is a supplemental, cohort-dependent best-effort.
+const NB_FACULTY: Record<string, string> = {
+	'0': '共通教育',
+	'1': '人文社会科学部',
+	'2': '教育学部',
+	'3': '理工学部',
+	'4': '医学部',
+	'5': '農林海洋科学部',
+	'6': '地域協働学部',
+}
+const NB_LEVEL: Record<string, string> = {
+	'0': '初年次・教養',
+	'1': '基礎',
+	'2': 'プラットフォーム科目',
+	'3': '専門科目',
+	'4': '卒業論文',
+}
+const NB_FORMAT: Record<string, string> = { '1': '講義', '2': '演習', '3': '実験', '4': '実習' }
+const NB_LANG: Record<string, string> = {
+	'1': '日本語',
+	'2': '英語',
+	'3': '日本語・英語',
+	'4': '外国語',
+	'5': 'その他',
 }
 
-/** A faculty label for a `##-####-##` numbering code, or null when unverified. */
-export function decodeNumbering(code: string): { field: string } | null {
-	if (!/^\d{2}-\d{2}[0-9A-Z]{2}-\d{2}$/.test(code)) return null
-	const field = NUMBERING_FIELDS[code.slice(0, 2)]
-	return field ? { field } : null
+/** Decoded facets for a numbering code — 学部・レベル・授業形態・言語, skipping any
+ *  digit we can't resolve. `[]` when the code doesn't match the standard shape. */
+export function decodeNumbering(code: string): string[] {
+	// AB-CDEF-GH → A=学部 B=学科 C=レベル DEF=大中小 G=授業形態 H=言語.
+	const m = /^(\d)\d-(\d)[0-9A-Z]{3}-(\d)(\d)$/.exec(code)
+	if (!m) return []
+	const [, faculty, level, format, lang] = m
+	return [NB_FACULTY[faculty], NB_LEVEL[level], NB_FORMAT[format], NB_LANG[lang]].filter(Boolean)
 }
 
 export interface ProseBlock {

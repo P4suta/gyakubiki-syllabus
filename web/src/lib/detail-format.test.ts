@@ -53,14 +53,23 @@ describe('parseTeachers', () => {
 })
 
 describe('decodeNumbering', () => {
-	it('decodes a verified faculty prefix', () => {
-		expect(decodeNumbering('01-0200-11')).toEqual({ field: '共通教育' })
-		expect(decodeNumbering('41-0100-21')).toEqual({ field: '医学部 医学科' })
+	it('decodes 学部・レベル・授業形態・言語 from the code digits', () => {
+		// 01-0200-11 → 学部0=共通教育, レベル0=初年次・教養, 授業形態1=講義, 言語1=日本語.
+		expect(decodeNumbering('01-0200-11')).toEqual(['共通教育', '初年次・教養', '講義', '日本語'])
+		// 31-2261-31 → 理工学部, 専門科目, 実験, 日本語.
+		expect(decodeNumbering('31-2261-31')).toEqual(['理工学部', 'プラットフォーム科目', '実験', '日本語'])
 	})
-	it('returns null for unknown prefix or bad format', () => {
-		expect(decodeNumbering('99-0000-11')).toBeNull()
-		expect(decodeNumbering('GEN-100')).toBeNull()
-		expect(decodeNumbering('')).toBeNull()
+	it('tolerates a letter in the 大/中/小分類 region and decodes the rest', () => {
+		// 11-13A2-11 → 学部1, レベル1, (中分類 A), 授業形態1, 言語1.
+		expect(decodeNumbering('11-13A2-11')).toEqual(['人文社会科学部', '基礎', '講義', '日本語'])
+	})
+	it('skips an unknown 授業形態 (e.g. the newer code 5)', () => {
+		// 02-0420-51 → 授業形態5 is undecodable, so it is omitted (not fabricated).
+		expect(decodeNumbering('02-0420-51')).toEqual(['共通教育', '初年次・教養', '日本語'])
+	})
+	it('returns [] for a non-standard shape', () => {
+		expect(decodeNumbering('GEN-100')).toEqual([])
+		expect(decodeNumbering('')).toEqual([])
 	})
 })
 
