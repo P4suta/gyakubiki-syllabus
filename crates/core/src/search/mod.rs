@@ -128,48 +128,6 @@ impl FieldText {
         Self { folded, char_utf16 }
     }
 
-    /// The best typo-tolerant match of `query` within this field: the window
-    /// whose edit distance to the query is minimal and within `max_dist`. Pushes
-    /// its span and returns `true` if one is found. Used only as a fallback when
-    /// no field matched exactly.
-    fn fuzzy_find(
-        &self,
-        field: Field,
-        query: &[char],
-        max_dist: usize,
-        out: &mut Vec<Span>,
-    ) -> bool {
-        let chars: Vec<char> = self.folded.chars().collect();
-        let q = query.len();
-        if q == 0 || chars.len() + max_dist < q {
-            return false;
-        }
-        let lo = q.saturating_sub(max_dist).max(1);
-        let hi = (q + max_dist).min(chars.len());
-        let mut best: Option<(usize, usize, usize)> = None; // (char_start, len, dist)
-        for win_len in lo..=hi {
-            for start in 0..=chars.len() - win_len {
-                if let Some(d) = levenshtein_within(&chars[start..start + win_len], query, max_dist)
-                    && best.is_none_or(|(_, _, bd)| d < bd)
-                {
-                    best = Some((start, win_len, d));
-                }
-            }
-        }
-        if let Some((start, len, _)) = best {
-            let s = self.char_utf16[start];
-            let e = self.char_utf16[start + len];
-            out.push(Span {
-                field,
-                start: s,
-                len: e - s,
-            });
-            true
-        } else {
-            false
-        }
-    }
-
     /// Push a [`Span`] for every non-overlapping occurrence of the folded query,
     /// returning the number of matches.
     fn find(
@@ -199,35 +157,6 @@ impl FieldText {
         }
         count
     }
-}
-
-/// Score given to a fuzzy (typo-tolerant) hit — below the weight of any exact
-/// field match (min exact weight is 1.0), so exact always ranks first.
-const FUZZY_SCORE: f32 = 0.5;
-
-/// Bounded Levenshtein distance between `a` and `b`: the exact distance if it is
-/// `<= max`, else `None`. Early-outs when a row's minimum exceeds `max`, so a
-/// far-off pair is rejected fast.
-fn levenshtein_within(a: &[char], b: &[char], max: usize) -> Option<usize> {
-    let (n, m) = (a.len(), b.len());
-    if n.abs_diff(m) > max {
-        return None;
-    }
-    let mut prev: Vec<usize> = (0..=m).collect();
-    for i in 1..=n {
-        let mut cur = vec![i; m + 1];
-        let mut row_min = i;
-        for j in 1..=m {
-            let cost = usize::from(a[i - 1] != b[j - 1]);
-            cur[j] = (prev[j] + 1).min(cur[j - 1] + 1).min(prev[j - 1] + cost);
-            row_min = row_min.min(cur[j]);
-        }
-        if row_min > max {
-            return None;
-        }
-        prev = cur;
-    }
-    (prev[m] <= max).then_some(prev[m])
 }
 
 /// A searchable index over every course, in ascending course-index order.
@@ -278,19 +207,12 @@ impl SearchIndex {
         query: &str,
         candidates: impl IntoIterator<Item = CourseIndex>,
     ) -> Vec<SearchHit> {
-        let query: Vec<char> = query.chars().map(fold_char).collect();
-        let folded_query: String = query.iter().collect();
-        let query_chars = query.len();
+        let folded_query: String = query.chars().map(fold_char).collect();
+        let query_chars = folded_query.chars().count();
         let mut hits = Vec::new();
         if query_chars == 0 {
             return hits;
         }
-        // Edit-distance budget for the fuzzy fallback: a quarter of the query
-        // length, capped at 2. That is 0 for a 1–3 char query — so a short query
-        // like 哲学 never fuzzy-matches everything that merely shares 学 (a
-        // 1-edit window like 分学) — 1 for 4–7 chars, 2 for 8+. Only genuine
-        // typos in a reasonably long query get rescued.
-        let max_dist = (query_chars / 4).min(2);
         for course in candidates {
             let Some(doc) = self.docs.get(course.get()) else {
                 continue;
@@ -302,15 +224,6 @@ impl SearchIndex {
                 if count > 0 {
                     score += field.weight() * count as f32;
                 }
-            }
-            // No exact hit anywhere: try a typo-tolerant match on the name only, so
-            // "微文積分" still finds 微分積分学. Only when the budget is non-zero
-            // (query long enough). Fuzzy hits score below any exact hit.
-            if spans.is_empty()
-                && max_dist > 0
-                && doc[Field::Name as usize].fuzzy_find(Field::Name, &query, max_dist, &mut spans)
-            {
-                score = FUZZY_SCORE;
             }
             if !spans.is_empty() {
                 hits.push(SearchHit {
@@ -553,48 +466,24 @@ mod tests {
     }
 
     #[test]
-    fn fuzzy_matches_a_one_edit_typo_in_the_name() {
+    fn a_typo_does_not_match_search_is_exact() {
+        // Search is exact substring only (no typo tolerance) — 微文積分 is not a
+        // substring of 微分積分学, so it finds nothing.
         let idx = SearchIndex::build([doc("微分積分学", "山田", "001")]);
-        // 微文積分 — 分→文 substitution; still finds the course, with a name span.
-        let hits = idx.search("微文積分", all(1));
-        assert_eq!(hits.len(), 1);
-        assert_eq!(hits[0].spans[0].field, Field::Name);
+        assert!(idx.search("微文積分", all(1)).is_empty());
     }
 
     #[test]
-    fn fuzzy_matches_an_ascii_typo() {
-        let idx = SearchIndex::build([doc("english communication", "", "")]);
-        assert_eq!(idx.search("englsh", all(1)).len(), 1); // dropped 'i'
-    }
-
-    #[test]
-    fn exact_hits_rank_above_fuzzy_hits() {
-        // Course 0 fuzzily matches "科学" (typo of 科学→料学? no — use a real typo);
-        // course 1 matches exactly. Exact must come first.
-        let idx = SearchIndex::build([doc("情祝科学", "", "001"), doc("情報科学", "", "002")]);
-        let hits = idx.search("情報科学", all(2));
-        assert_eq!(hits.len(), 2);
-        assert_eq!(hits[0].course, CourseIndex::new(1)); // exact
-        assert!(hits[0].score > hits[1].score);
-    }
-
-    #[test]
-    fn fuzzy_does_not_match_a_wildly_different_query() {
-        let idx = SearchIndex::build([doc("微分積分学", "山田", "001")]);
-        assert!(idx.search("物理化学実験", all(1)).is_empty());
-    }
-
-    #[test]
-    fn short_query_never_fuzzy_floods_a_shared_character() {
-        // 哲学 (2 chars) must not match 微分積分学 just because both end in 学 — the
-        // fuzzy budget is 0 for short queries, so only an exact 哲学 substring hits.
+    fn a_short_query_matches_only_the_exact_substring() {
+        // 哲学 must find only the real 哲学 course, never 微分積分学 (which merely
+        // shares 学) — the flooding a fuzzy fallback caused.
         let idx = SearchIndex::build([
             doc("微分積分学", "山田", "001"),
             doc("哲学概論", "佐藤", "002"),
         ]);
         let hits = idx.search("哲学", all(2));
         assert_eq!(hits.len(), 1);
-        assert_eq!(hits[0].course, CourseIndex::new(1)); // only the real 哲学 course
+        assert_eq!(hits[0].course, CourseIndex::new(1));
     }
 
     #[test]
