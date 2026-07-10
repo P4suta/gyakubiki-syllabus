@@ -49,6 +49,9 @@ jobs:
       # FIELD_SPEC drives both the generated TS and docs; fail if they are stale.
       - name: field spec generated files up to date
         run: cargo run --locked -q -p syllabus-cli -- gen-field-docs --check
+      # The course/eval colours are derived (OKLCH); fail on a hand-edit that drifts.
+      - name: palette matches its derivation
+        run: cargo run --locked -q -p syllabus-cli -- gen-palette --check
 
   typos:
     name: typos (spell check)

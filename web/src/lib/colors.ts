@@ -21,7 +21,9 @@ export interface CourseColor {
  * at the lightest lightness that can carry it (so yellow stays light, blue a
  * touch deeper — each hue clean, none muddy/olive). `mutedText` / `accentText`
  * lightness is solved to clear WCAG AA (4.5:1) on the tile — all locked by
- * colors.test.ts. See DESIGN.md for the derivation; regenerate, don't hand-edit.
+ * colors.test.ts. The derivation lives in `syllabus-cli gen-palette` (Rust);
+ * `gen-palette --check` fails CI on any hand-edit that drifts from it — so
+ * regenerate from the tool, don't hand-edit these hexes.
  */
 export const COLORS: CourseColor[] = [
 	{ light: { bg: '#fec7df', border: '#ff8ec6', text: '#4d2e3d', mutedText: '#94406c', accentText: '#ac1f74' }, dark: { bg: '#2e0d1e', border: '#9b3b6e', text: '#d0a4b8', mutedText: '#ca5a95', accentText: '#ea2e9f' } },
