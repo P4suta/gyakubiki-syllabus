@@ -92,4 +92,21 @@ describe('linkifyText', () => {
 		expect(link?.href).toBe('mailto:rshima@kochi-u.ac.jp')
 		expect(link?.text).toBe('rshima@kochi-u.ac.jp')
 	})
+	it('NEVER links 「…」 — it is a quote/emphasis, not a book title', () => {
+		// Regression: 「食」の哲学 quotes/dialogue were all turned into book links.
+		const samples = [
+			'彼は「いただきます」と言った。',
+			'キーワードは「持続可能性」である。',
+			'「なぜ食べるのか」を問う。',
+		]
+		for (const s of samples) {
+			expect(linkifyText(s).every((p) => !p.href), s).toBe(true)
+		}
+	})
+	it('only 『…』 (not 「…」) is treated as a title link', () => {
+		const parts = linkifyText('『経済学基礎』と「経済学」は別物')
+		const links = parts.filter((p) => p.href)
+		expect(links).toHaveLength(1)
+		expect(links[0].text).toBe('『経済学基礎』')
+	})
 })

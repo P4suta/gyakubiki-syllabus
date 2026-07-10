@@ -19,6 +19,48 @@ pub fn enrich(detail: &mut SanshoDetail) {
         .as_deref()
         .map(parse_prep)
         .filter(|p| p.hours.is_some() || p.yoshu.is_some() || p.fukushu.is_some());
+    detail.keywords = repair_keywords(std::mem::take(&mut detail.keywords));
+}
+
+/// Repair keywords that an older space-split fragmented mid-parenthesis: merge
+/// consecutive entries while an opening bracket is still unclosed, so a term like
+/// 「方程式(Euler」「Lagrange's」「equation)」rejoins into one. Conservative — only
+/// the unclosed-open signal drives a merge (capped), balanced entries are kept.
+fn repair_keywords(kw: Vec<String>) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut buf = String::new();
+    let mut merges = 0;
+    for k in kw {
+        if buf.is_empty() {
+            buf = k;
+        } else {
+            buf.push(' ');
+            buf.push_str(&k);
+            merges += 1;
+        }
+        if open_paren_debt(&buf) <= 0 || merges >= 6 {
+            out.push(std::mem::take(&mut buf));
+            merges = 0;
+        }
+    }
+    if !buf.is_empty() {
+        out.push(buf);
+    }
+    out
+}
+
+/// Count of unclosed opening brackets (half- and full-width); stray closes are
+/// ignored so a lone「equation)」isn't treated as needing a merge.
+fn open_paren_debt(s: &str) -> i32 {
+    let mut depth = 0i32;
+    for c in s.chars() {
+        match c {
+            '(' | '（' => depth += 1,
+            ')' | '）' if depth > 0 => depth -= 1,
+            _ => {}
+        }
+    }
+    depth
 }
 
 static HOUR_RE: LazyLock<regex::Regex> =
@@ -273,5 +315,39 @@ mod tests {
         let p = super::parse_prep("予習内容：参考文献の熟読\n復習内容：配布資料の整理");
         assert_eq!(p.yoshu.as_deref(), Some("参考文献の熟読"));
         assert_eq!(p.fukushu.as_deref(), Some("配布資料の整理"));
+    }
+
+    #[test]
+    fn repair_keywords_rejoins_broken_parentheses() {
+        // The real 71609 breakage: 括弧内の英語句がスペースで寸断されていた。
+        let got = super::repair_keywords(vec![
+            "Euler-Lagrange".into(),
+            "方程式(Euler".into(),
+            "Lagrange's".into(),
+            "equation)".into(),
+            "Hamilton方程式(Hamilton's".into(),
+            "equation)".into(),
+        ]);
+        assert_eq!(
+            got,
+            vec![
+                "Euler-Lagrange",
+                "方程式(Euler Lagrange's equation)",
+                "Hamilton方程式(Hamilton's equation)",
+            ]
+        );
+    }
+
+    #[test]
+    fn repair_keywords_leaves_balanced_terms_untouched() {
+        let got = super::repair_keywords(vec![
+            "機械学習".into(),
+            "データサイエンス".into(),
+            "正準変換(canonical transformation)".into(),
+        ]);
+        assert_eq!(
+            got,
+            vec!["機械学習", "データサイエンス", "正準変換(canonical transformation)"]
+        );
     }
 }

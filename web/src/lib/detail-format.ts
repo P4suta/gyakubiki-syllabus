@@ -140,11 +140,11 @@ export interface TextPart {
 	href?: string
 }
 
-// One pass over the text linkifies both 『…』/「…」 book titles (→ Google search,
+// One pass over the text linkifies 『…』 book/work titles (→ Google search, kept
 // wrapped in 『』 so a generic title like「経済学基礎」reads as a book) and email
-// addresses (→ mailto). Composed into a single regex so matches never nest.
-const LINK_RE =
-	/『[^』]*』|「[^」]*」|[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g
+// addresses (→ mailto). ONLY 『』 counts as a title: 「…」 is the general Japanese
+// quote (dialogue, emphasis, terms) and must never become a book link.
+const LINK_RE = /『[^』]*』|[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g
 
 /** Split text into plain / linked parts (book titles + emails). */
 export function linkifyText(s: string): TextPart[] {
@@ -154,7 +154,7 @@ export function linkifyText(s: string): TextPart[] {
 		const i = m.index ?? 0
 		if (i > last) parts.push({ text: s.slice(last, i) })
 		const tok = m[0]
-		if (tok.startsWith('『') || tok.startsWith('「')) {
+		if (tok.startsWith('『')) {
 			const inner = tok.slice(1, -1).trim()
 			parts.push({
 				text: tok,
