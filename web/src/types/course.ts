@@ -56,6 +56,26 @@ export interface Eval {
 export interface PlanItem {
 	n: number
 	text: string
+	/** Highlight hint from `enrich`: exam | milestone | start (else absent). */
+	kind?: string
+}
+
+// --- Derived at convert time (see crates/cli/src/detail/enrich.rs) ---
+
+export interface TextbookSection {
+	label?: string
+	lines: string[]
+}
+
+export interface TextbookInfo {
+	isNone: boolean
+	sections: TextbookSection[]
+}
+
+export interface PrepInfo {
+	hours?: number
+	yoshu?: string
+	fukushu?: string
 }
 
 export interface OfficeHour {
@@ -88,6 +108,8 @@ export interface CourseDetail {
 	numbering?: string[]
 	sdgs?: string[]
 	extra?: Labelled[]
+	textbookInfo?: TextbookInfo
+	prepInfo?: PrepInfo
 }
 
 export interface Dictionaries {

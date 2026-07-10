@@ -1,5 +1,6 @@
 <script lang="ts">
 import { onDestroy, onMount } from 'svelte'
+import IconCheck from '~icons/ic/round-check'
 import IconEventNote from '~icons/ic/round-event-note'
 import CourseModal from './components/CourseModal.svelte'
 import Disclaimer from './components/Disclaimer.svelte'
@@ -200,11 +201,11 @@ onDestroy(() => teardownPlanSync?.())
 				<div class="fixed inset-0" onclick={() => { planMenuOpen = false }}></div>
 				<div class="relative flex flex-col gap-0.5 rounded-2xl bg-surface-primary p-1.5 shadow-modal animate-dialog-in origin-bottom-right" role="menu">
 					<button
-						class="text-left rounded-xl px-4 py-2.5 text-cta text-apple-text active:bg-overlay-light sm:hover:bg-overlay-light transition-colors cursor-pointer"
+						class="flex items-center gap-1.5 text-left rounded-xl px-4 py-2.5 text-cta text-apple-text active:bg-overlay-light sm:hover:bg-overlay-light transition-colors cursor-pointer"
 						onclick={sharePlan}
 						role="menuitem"
 					>
-						{copied ? '✓ コピーしました' : '共有リンクをコピー'}
+						{#if copied}<IconCheck class="w-4 h-4 shrink-0" aria-hidden="true" />コピーしました{:else}共有リンクをコピー{/if}
 					</button>
 					<button
 						class="text-left rounded-xl px-4 py-2.5 text-cta text-apple-red active:bg-overlay-light sm:hover:bg-overlay-light transition-colors cursor-pointer"
@@ -230,6 +231,12 @@ onDestroy(() => teardownPlanSync?.())
 	{/if}
 
 	{#if selectedCourse}
-		<CourseModal course={selectedCourse} dicts={engine.dicts} year={engine.year} onclose={() => { selectedCourse = null }} />
+		<CourseModal
+			course={selectedCourse}
+			dicts={engine.dicts}
+			year={engine.year}
+			onclose={() => { selectedCourse = null }}
+			onsearch={(q) => { searchText = q; selectedCourse = null }}
+		/>
 	{/if}
 {/if}

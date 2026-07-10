@@ -16,7 +16,7 @@ const theme = useTheme()
 
 // Percentages (equal-split when weightless) plus each row's icon/colour style,
 // ordered largest share first — so the donut starts the biggest slice at 12
-// o'clock (svg is -rotate-90) sweeping clockwise, and the legend matches.
+// o'clock (svg is -rotate-90) sweeping clockwise, and the bar/legend match.
 const segments = $derived(
 	evalSegments(rows)
 		.map((s) => {
@@ -57,28 +57,40 @@ const dominant = $derived(segments[0] ?? null)
 			{/each}
 		</svg>
 		{#if dominant}
+			{@const Icon = dominant.style.icon}
 			<div class="absolute inset-0 flex flex-col items-center justify-center">
-				<span class="text-title leading-none">{dominant.style.emoji}</span>
+				<Icon class="w-6 h-6" style="color: {dominant.color};" />
 				{#if hasWeights}
-					<span class="text-caption font-semibold text-apple-text mt-0.5">{dominant.pct}%</span>
+					<span class="text-caption font-semibold text-apple-text mt-0.5 tabular-nums">{dominant.pct}%</span>
 				{/if}
 			</div>
 		{/if}
 	</div>
 
-	<div class="min-w-0 flex-1 space-y-1.5">
-		{#each segments as s}
-			<div class="flex items-center gap-2 text-caption">
-				<span class="w-2 h-2 rounded-full shrink-0" style="background: {s.color};"></span>
-				<span class="text-apple-text truncate">{s.item || s.style.label}</span>
-				<!-- A 0% here means the source listed this component without a weight
-				     while others had one (e.g.「レポート」+「試験:60」) — it's assessed but
-				     its share is unstated, not literally zero, so show no misleading %. -->
-				{#if s.hasWeight && s.pct > 0}
-					<span class="ml-auto shrink-0 text-apple-text-secondary tabular-nums font-medium">{s.pct}%</span>
+	<div class="min-w-0 flex-1">
+		<!-- A single cumulative bar: each segment's width is its share, laid end to
+		     end — the "横に連続した" reading the vertical list couldn't give. -->
+		<div class="flex h-2.5 w-full overflow-hidden rounded-full bg-overlay-light" aria-hidden="true">
+			{#each segments as s}
+				{#if s.pct > 0}
+					<span class="h-full" style="width: {s.pct}%; background: {s.color};"></span>
 				{/if}
-			</div>
-		{/each}
+			{/each}
+		</div>
+		<ul class="mt-2.5 space-y-1.5">
+			{#each segments as s}
+				<li class="flex items-center gap-2 text-caption">
+					<span class="w-2 h-2 rounded-full shrink-0" style="background: {s.color};"></span>
+					<span class="text-apple-text truncate">{s.item || s.style.label}</span>
+					<!-- A 0% here means the source listed this component without a weight
+					     while others had one — assessed but its share is unstated, so no
+					     misleading %. -->
+					{#if s.hasWeight && s.pct > 0}
+						<span class="ml-auto shrink-0 text-apple-text-secondary tabular-nums font-medium">{s.pct}%</span>
+					{/if}
+				</li>
+			{/each}
+		</ul>
 	</div>
 </div>
 
