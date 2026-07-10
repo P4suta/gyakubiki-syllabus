@@ -40,6 +40,32 @@ struct GridResult {
     count_unique: u32,
 }
 
+/// One match span: field discriminant, and UTF-16 offset/length into that
+/// field's original display text. Terse keys keep the per-query payload small.
+#[derive(Serialize)]
+struct HlSpan {
+    f: u8,
+    o: u32,
+    l: u32,
+}
+
+/// Match spans for one course (referenced by index `i`).
+#[derive(Serialize)]
+struct Highlight {
+    i: u32,
+    spans: Vec<HlSpan>,
+}
+
+/// A full-text query result: the score-ordered grid, its distinct-course count,
+/// and per-course highlight spans (empty when the query is empty).
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct QueryResult {
+    cells: Vec<GridCell>,
+    count_unique: u32,
+    highlights: Vec<Highlight>,
+}
+
 /// The browser-facing handle to a loaded dataset.
 #[wasm_bindgen]
 pub struct SyllabusEngine {
@@ -56,6 +82,76 @@ impl SyllabusEngine {
     pub fn from_json(json: &str) -> Result<SyllabusEngine, JsError> {
         let inner = Engine::from_json(json).map_err(|e| JsError::new(&e.to_string()))?;
         Ok(Self { inner })
+    }
+
+    /// Load the companion `search.idx` (fetched separately from `data.json`),
+    /// enabling ranked [`SyllabusEngine::query`]. Until this is called, `query`
+    /// falls back to an unranked substring scan.
+    ///
+    /// # Errors
+    /// Rejects a blob that is not a valid `search.idx`.
+    #[wasm_bindgen(js_name = loadSearchIndex)]
+    pub fn load_search_index(&mut self, bytes: &[u8]) -> Result<(), JsError> {
+        self.inner
+            .load_search_index(bytes)
+            .map_err(|e| JsError::new(&e.to_string()))
+    }
+
+    /// Filter, rank, and lay out in one hop: returns `{ cells, countUnique,
+    /// highlights }`, cells already ordered best-first within each timetable
+    /// slot. `highlights` carries per-course match spans (empty for an empty
+    /// query). Scores never cross the boundary — the ordering already encodes
+    /// them.
+    ///
+    /// # Errors
+    /// Fails only if the result cannot be serialized to a JS value.
+    #[wasm_bindgen]
+    pub fn query(
+        &self,
+        semester: &str,
+        department: &str,
+        campus: &str,
+        query: &str,
+    ) -> Result<JsValue, JsError> {
+        let hits = self.inner.search(&Filters {
+            semester: selector(semester),
+            department: selector(department),
+            campus: selector(campus),
+            query,
+        });
+        let grid = self.inner.search_grid(&hits, selector(semester));
+
+        let cells = grid
+            .cells()
+            .map(|(day, period, courses)| GridCell {
+                day: day.get(),
+                period: period.get(),
+                courses: courses.iter().map(|&i| i.get() as u32).collect(),
+            })
+            .collect();
+
+        let highlights = hits
+            .iter()
+            .filter(|h| !h.spans.is_empty())
+            .map(|h| Highlight {
+                i: h.course.get() as u32,
+                spans: h
+                    .spans
+                    .iter()
+                    .map(|s| HlSpan {
+                        f: s.field as u8,
+                        o: s.start,
+                        l: s.len,
+                    })
+                    .collect(),
+            })
+            .collect();
+
+        to_js(&QueryResult {
+            cells,
+            count_unique: grid.count_unique() as u32,
+            highlights,
+        })
     }
 
     /// Indices of courses matching the filters (`"all"` = no filter), ascending.

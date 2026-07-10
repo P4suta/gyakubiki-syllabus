@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use anyhow::{Context, Result};
 use syllabus_core::convert_v2;
 use syllabus_core::model::{Course, ProcessedData, RawCourse};
-use syllabus_core::normalize;
+use syllabus_core::{normalize, DocFields, SearchIndex};
 
 use crate::detail::SanshoDetail;
 
@@ -18,6 +18,9 @@ pub struct Rendered {
     /// `data.json` bytes: compact-or-pretty JSON, HTML-escaped, with **no**
     /// trailing newline. The binary adds a newline only when writing to stdout.
     pub bytes: Vec<u8>,
+    /// `search.idx` bytes: the compact binary full-text index, shipped alongside
+    /// `data.json` and loaded lazily in the worker.
+    pub index: Vec<u8>,
     pub warnings: Vec<String>,
 }
 
@@ -39,11 +42,58 @@ pub fn render_data_json(
             }
         }
     }
+    let index = build_search_index(&result.data, details);
     let json = encode(&result.data, compact)?;
     Ok(Rendered {
         bytes: json.into_bytes(),
+        index,
         warnings: result.warnings,
     })
+}
+
+/// Build the full-text search index over the converted courses. The display
+/// fields (name/subtitle/instructor/code) carry match spans; `keywords` bundles
+/// the department, taxonomy (分野・分類), and syllabus キーワード — searchable for
+/// recall, never highlighted — mirroring the surface the old `st` haystack held.
+fn build_search_index(data: &ProcessedData, details: &HashMap<String, SanshoDetail>) -> Vec<u8> {
+    // Own the joined keyword text so `DocFields` can borrow it.
+    let keyword_texts: Vec<String> = data
+        .courses
+        .iter()
+        .map(|c| {
+            let dept = data
+                .dicts
+                .departments
+                .get(c.dept as usize)
+                .map_or("", String::as_str);
+            let detail_kw = details
+                .get(&c.cd)
+                .map(|d| d.keywords.join(" ").replace(['\n', '\r'], " "));
+            [
+                dept,
+                c.bunya.as_deref().unwrap_or_default(),
+                c.bunrui.as_deref().unwrap_or_default(),
+                detail_kw.as_deref().unwrap_or_default(),
+            ]
+            .into_iter()
+            .filter(|s| !s.is_empty())
+            .collect::<Vec<_>>()
+            .join(" ")
+        })
+        .collect();
+
+    let docs = data
+        .courses
+        .iter()
+        .zip(&keyword_texts)
+        .map(|(c, kw)| DocFields {
+            name: &c.nm,
+            subtitle: c.sub.as_deref(),
+            instructor: &c.prof,
+            code: &c.cd,
+            keywords: kw,
+        });
+    SearchIndex::build(docs).encode()
 }
 
 /// Fold a course's syllabus detail into its grid record: card fields
@@ -168,6 +218,34 @@ mod tests {
         assert!(json.contains(r#""ev":["report:40","exam:60"]"#));
         // Keyword folded into the search haystack `st`.
         assert!(json.contains("アルゴリズム"));
+    }
+
+    #[test]
+    fn builds_a_searchable_index_covering_name_and_keywords() {
+        use syllabus_core::{CourseIndex, SearchIndex};
+
+        let raw = vec![RawCourse {
+            kogi_cd: "001".into(),
+            kogi_nm: "情報科学".into(),
+            tanto_kyoin: "山田 太郎".into(),
+            ..Default::default()
+        }];
+        let detail = SanshoDetail {
+            cd: "001".into(),
+            keywords: vec!["アルゴリズム".into()],
+            ..Default::default()
+        };
+        let details: HashMap<String, SanshoDetail> =
+            [("001".to_owned(), detail)].into_iter().collect();
+
+        let rendered = render_data_json(&raw, "t".into(), true, &details).unwrap();
+        let index = SearchIndex::decode(&rendered.index).expect("index decodes");
+        let candidates = [CourseIndex::new(0)];
+        // Name, instructor, and the detail keyword are all reachable.
+        assert_eq!(index.search("科学", candidates).len(), 1);
+        assert_eq!(index.search("山田", candidates).len(), 1);
+        assert_eq!(index.search("アルゴリズム", candidates).len(), 1);
+        assert!(index.search("存在しない語", candidates).is_empty());
     }
 
     #[test]

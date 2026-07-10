@@ -1,13 +1,36 @@
 //! Search-string normalization, shared by the haystack and the query.
 
-/// Normalize a string so a query matches the precomputed search haystack (`st`).
+/// Fold one character to its canonical search form — a strict 1:1 (char → char)
+/// map, so folding preserves character positions. This is what lets a match span
+/// found in the folded haystack point straight back into the original display
+/// text (see the search index): a variable-length `to_lowercase` would desync
+/// those offsets.
 ///
-/// Converts the full-width space (U+3000) to an ASCII space, then lowercases.
-/// The haystack (`st`) is normalized the same way at data-generation time; only
-/// the query is normalized here, at search time — so both share one definition.
+/// Folds the ideographic space (U+3000) to ASCII space, full-width ASCII
+/// (U+FF01..=U+FF5E) to its half-width form, and ASCII upper- to lower-case, so a
+/// query typed either width matches the haystack. Other characters (Japanese,
+/// accented Latin) pass through unchanged.
+#[must_use]
+pub fn fold_char(c: char) -> char {
+    match c {
+        '\u{3000}' => ' ',
+        '\u{FF01}'..='\u{FF5E}' => {
+            // Shift the full-width block down to ASCII, then lower-case it.
+            char::from_u32(c as u32 - 0xFEE0)
+                .unwrap_or(c)
+                .to_ascii_lowercase()
+        }
+        _ => c.to_ascii_lowercase(),
+    }
+}
+
+/// Normalize a string so a query matches the precomputed search haystack (`st`),
+/// by [`fold_char`]-ing every character. The haystack (`st`) is normalized the
+/// same way at data-generation time; only the query is normalized here, at search
+/// time — so both share one definition.
 #[must_use]
 pub fn normalize(input: &str) -> String {
-    input.replace('\u{3000}', " ").to_lowercase()
+    input.chars().map(fold_char).collect()
 }
 
 /// Build a course's search haystack and [`normalize`] it. The parts (name,
@@ -35,7 +58,7 @@ pub fn search_text(
 
 #[cfg(test)]
 mod tests {
-    use super::{normalize, search_text};
+    use super::{fold_char, normalize, search_text};
 
     #[test]
     fn converts_full_width_spaces_to_half_width() {
@@ -45,6 +68,14 @@ mod tests {
     #[test]
     fn lowercases_ascii_characters() {
         assert_eq!(normalize("English"), "english");
+    }
+
+    #[test]
+    fn folds_full_width_ascii_to_half_width_lowercase() {
+        // Full-width letters, digits, and punctuation all collapse to the ASCII
+        // form a query would be typed in.
+        assert_eq!(normalize("ＡＢＣ１２３"), "abc123");
+        assert_eq!(normalize("ｅｎｇｌｉｓｈ"), "english");
     }
 
     #[test]
@@ -107,6 +138,20 @@ mod tests {
     use proptest::prelude::*;
 
     proptest! {
+        /// Folding preserves character count (it is strictly 1 char → 1 char) —
+        /// the invariant that lets a match span in the folded haystack map back to
+        /// the same character range in the original display text.
+        #[test]
+        fn fold_preserves_char_count(s in ".*") {
+            prop_assert_eq!(normalize(&s).chars().count(), s.chars().count());
+        }
+
+        /// `fold_char` is itself idempotent, character by character.
+        #[test]
+        fn fold_char_is_idempotent(c in proptest::char::any()) {
+            prop_assert_eq!(fold_char(fold_char(c)), fold_char(c));
+        }
+
         /// Normalizing an already-normalized string is a no-op (the query and the
         /// haystack must land on the same canonical form).
         #[test]
