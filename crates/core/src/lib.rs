@@ -15,10 +15,12 @@ pub mod grid;
 pub mod index;
 pub mod model;
 pub mod parser;
+pub mod search;
 pub mod text;
 
 pub use convert::{convert_v2, ConvertResult};
 pub use engine::{Engine, EngineError, Filters};
 pub use grid::Grid;
 pub use index::{CampusIndex, CourseIndex, Day, DepartmentIndex, Period, SemesterIndex};
+pub use search::{DocFields, Field, SearchHit, SearchIndex, Span};
 pub use text::{fold_char, normalize, search_text};
