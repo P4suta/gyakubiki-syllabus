@@ -7,8 +7,11 @@ import { DESKTOP, FIXTURES, MOBILE, enter, openCourse } from './helpers'
 // can't. Runs in both themes so the dark palette is guarded too. See
 // docs/testing.md.
 //
-// Skipped off Linux — baselines are OS-specific and only the Linux set is
-// committed (dev here is Windows). Regenerate/refresh them with the
+// Gated to CI only — the committed baselines are pixel-specific to the CI
+// runner's OS/font stack, so they only match there. They diff on any other
+// host (the Windows dev box, and even the Linux dev container, whose font
+// rendering differs from the CI image), so we skip unless `CI` is set. The
+// functional E2E specs still run locally. Regenerate/refresh baselines with the
 // `visual-baseline` workflow (workflow_dispatch), which lands the PNG files via
 // a signed commit and opens a PR.
 
@@ -19,7 +22,7 @@ for (const theme of ['light', 'dark'] as const) {
 	const s = theme === 'light' ? '' : '-dark' // keep light baseline names stable
 
 	test.describe(`visual regression (${theme})`, () => {
-		test.skip(process.platform !== 'linux', 'baselines are rendered on Linux (CI)')
+		test.skip(!process.env.CI, 'baselines are pixel-specific to the CI runner')
 		test.use({ colorScheme: theme })
 
 		test('desktop grid — top and scrolled', async ({ page }) => {
