@@ -1,14 +1,14 @@
 <script lang="ts">
 import { onDestroy, onMount } from 'svelte'
+import IconEventNote from '~icons/ic/round-event-note'
 import CourseModal from './components/CourseModal.svelte'
 import Disclaimer from './components/Disclaimer.svelte'
 import FilterBar from './components/FilterBar.svelte'
-import PlanPanel from './components/PlanPanel.svelte'
 import SearchBar from './components/SearchBar.svelte'
 import Timetable from './components/Timetable.svelte'
 import { type GridKey, type PlanSummaryResult, SyllabusEngine } from './lib/engine'
 import { highlights } from './lib/highlight.svelte'
-import { initPlanSync, plan } from './lib/plan.svelte'
+import { initPlanSync, plan, shareUrl } from './lib/plan.svelte'
 import { defaultSemester } from './lib/semester'
 import type { Course } from './types/course'
 
@@ -21,8 +21,27 @@ let campus = $state('all')
 let searchText = $state('')
 let debouncedSearch = $state('')
 let selectedCourse: Course | null = $state(null)
-let showPlan = $state(false)
 let planSummary = $state<PlanSummaryResult | null>(null)
+
+// Floating plan control: the pill toggles a small action menu (share / clear).
+// There is no separate「マイ時間割」screen — the grid itself is the plan.
+let planMenuOpen = $state(false)
+let copied = $state(false)
+let copyTimer: ReturnType<typeof setTimeout> | undefined
+const totalCredits = $derived(planSummary?.credits.totalCredits ?? 0)
+
+async function sharePlan() {
+	try {
+		await navigator.clipboard.writeText(shareUrl())
+		copied = true
+		clearTimeout(copyTimer)
+		copyTimer = setTimeout(() => {
+			copied = false
+		}, 1800)
+	} catch {
+		copied = false
+	}
+}
 
 $effect(() => {
 	const value = searchText
@@ -168,24 +187,46 @@ onDestroy(() => teardownPlanSync?.())
 		<Timetable {grid} {planGrid} {conflictKeys} days={engine.days} onselect={(c) => { selectedCourse = c }} />
 	</div>
 
-	<!-- Floating「マイ時間割」button: opens the plan panel; badges the count and
-	     turns red when the plan has a timetable conflict. -->
+	<!-- Floating plan control: a compact pill showing the total credits (red on a
+	     timetable conflict) that toggles a small action menu — share / clear.
+	     There is one plan, not many; the grid itself is it. -->
 	{#if plan.count > 0}
-		<button
-			class="fixed right-4 bottom-4 safe-bottom z-nav flex items-center gap-2 rounded-full px-4 py-3 shadow-card text-cta font-normal cursor-pointer transition-colors
-				{conflictKeys.size > 0 ? 'bg-apple-red text-on-accent' : 'bg-apple-blue text-on-accent'}"
-			onclick={() => { showPlan = true }}
-		>
-			マイ時間割 {plan.count}
-		</button>
-	{/if}
-
-	{#if showPlan}
-		<PlanPanel
-			summary={planSummary}
-			courses={engine.courses}
-			onclose={() => { showPlan = false }}
-		/>
+		<div class="fixed right-4 bottom-4 safe-bottom z-nav flex flex-col items-end gap-2">
+			{#if planMenuOpen}
+				<!-- Click-away catcher: a fixed full-screen layer under the menu/pill
+				     (both made `relative` so DOM order paints them above it). -->
+				<!-- svelte-ignore a11y_click_events_have_key_events -->
+				<!-- svelte-ignore a11y_no_static_element_interactions -->
+				<div class="fixed inset-0" onclick={() => { planMenuOpen = false }}></div>
+				<div class="relative flex flex-col gap-0.5 rounded-2xl bg-surface-primary p-1.5 shadow-modal animate-dialog-in origin-bottom-right" role="menu">
+					<button
+						class="text-left rounded-xl px-4 py-2.5 text-cta text-apple-text active:bg-overlay-light sm:hover:bg-overlay-light transition-colors cursor-pointer"
+						onclick={sharePlan}
+						role="menuitem"
+					>
+						{copied ? '✓ コピーしました' : '共有リンクをコピー'}
+					</button>
+					<button
+						class="text-left rounded-xl px-4 py-2.5 text-cta text-apple-red active:bg-overlay-light sm:hover:bg-overlay-light transition-colors cursor-pointer"
+						onclick={() => { plan.clear(); planMenuOpen = false }}
+						role="menuitem"
+					>
+						全消去
+					</button>
+				</div>
+			{/if}
+			<button
+				class="relative flex items-center gap-1.5 rounded-full px-3.5 py-2 shadow-card text-cta font-normal cursor-pointer transition-colors
+					{conflictKeys.size > 0 ? 'bg-apple-red text-on-accent' : 'bg-apple-blue text-on-accent'}"
+				onclick={() => { planMenuOpen = !planMenuOpen }}
+				aria-haspopup="menu"
+				aria-expanded={planMenuOpen}
+				aria-label="履修プラン {totalCredits > 0 ? `合計${totalCredits}単位` : `${plan.count}科目`}"
+			>
+				<IconEventNote class="w-4 h-4 shrink-0" aria-hidden="true" />
+				<span class="tabular-nums">{totalCredits > 0 ? `${totalCredits}単位` : `${plan.count}科目`}</span>
+			</button>
+		</div>
 	{/if}
 
 	{#if selectedCourse}

@@ -2,9 +2,9 @@
 //!
 //! Three axes are aggregated because the data spreads "kind" across three
 //! fields: `kbn` → 授業形態 (講義/演習…, via `Dictionaries::kubun`), `bunrui` →
-//! 科目分類 (free text), and `nen` → the 必修/選択 marker. The UI leads with the
-//! total and the 必修/選択 (`by_nen`) split; the others are there for whoever
-//! wants them.
+//! 科目分類 (free text), and `nen` → 対象年次 (`taishoNenji`, e.g. 「1年」). KULAS
+//! carries no 必修/選択 field, so none is tallied. The UI leads with the total;
+//! the per-axis splits are there for whoever wants them.
 
 use std::collections::BTreeMap;
 
@@ -145,8 +145,8 @@ mod tests {
     fn totals_are_the_sum_of_parts_and_count_uncredited() {
         let kubun = ["講義".to_owned(), "演習".to_owned()];
         let courses = [
-            course(Some("2"), 0, Some("専門"), Some("必修")),
-            course(Some("1.5"), 1, Some("専門"), Some("選択")),
+            course(Some("2"), 0, Some("専門"), Some("1年")),
+            course(Some("1.5"), 1, Some("専門"), Some("2年")),
             course(None, 0, None, None), // uncredited
         ];
         let s = summarize_credits(courses.iter(), &kubun);
@@ -157,7 +157,7 @@ mod tests {
         let lecture = s.by_kubun.iter().find(|t| t.key == "講義").unwrap();
         assert_eq!(lecture.count, 2);
         assert!((lecture.credits - 2.0).abs() < 1e-6);
-        // by_nen carries the 必修/選択 split.
+        // by_nen carries the 対象年次 split.
         assert_eq!(s.by_nen.len(), 2);
         // The sum of each axis's credits equals the total (minus uncredited zeros).
         let sum_nen: f32 = s.by_nen.iter().map(|t| t.credits).sum();

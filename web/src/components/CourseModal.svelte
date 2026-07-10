@@ -9,6 +9,7 @@ import IconSchedule from '~icons/ic/round-schedule'
 import { getColor } from '../lib/colors'
 import { loadDetail } from '../lib/details'
 import { plan } from '../lib/plan.svelte'
+import { sdgGoal } from '../lib/sdgs'
 import { FIELD_SPEC } from '../lib/syllabus-fields.generated'
 import { deliveryMode } from '../lib/syllabus-icons'
 import { useTheme } from '../lib/theme.svelte'
@@ -51,8 +52,8 @@ const baseFields: [string, string | undefined | null][] = $derived([
 	['担当教員', course.prof],
 	['開講責任部署', dicts.departments[course.dept]],
 	['学則科目', course.gaku ?? course.nm],
-	['対象学科/年次', course.gakka],
-	['必須/選択', course.nen],
+	['対象学科', course.gakka],
+	['対象年次', course.nen],
 	['科目分類', course.bunrui],
 	['科目分野', course.bunya],
 ])
@@ -155,9 +156,30 @@ function hasValue(v: unknown): boolean {
 	if (typeof v === 'object') return Object.keys(v as object).length > 0
 	return true
 }
+
+// Textbook fields are free text, but book titles are conventionally wrapped in
+// 『』/「」. Turn each such title into a Google search link; leave the rest plain.
+type TextPart = { text: string; href?: string }
+const TITLE_RE = /『[^』]*』|「[^」]*」/g
+function linkifyTitles(s: string): TextPart[] {
+	const parts: TextPart[] = []
+	let last = 0
+	for (const m of s.matchAll(TITLE_RE)) {
+		const i = m.index ?? 0
+		if (i > last) parts.push({ text: s.slice(last, i) })
+		const inner = m[0].slice(1, -1).trim()
+		parts.push({
+			text: m[0],
+			href: inner ? `https://www.google.com/search?q=${encodeURIComponent(inner)}` : undefined,
+		})
+		last = i + m[0].length
+	}
+	if (last < s.length) parts.push({ text: s.slice(last) })
+	return parts
+}
 </script>
 
-<BottomSheet {onclose} ariaLabel={course.nm}>
+<BottomSheet {onclose} ariaLabel={course.nm} accent={tint.bg}>
 	{#snippet header(close)}
 		<!-- Tinted band: the card's colour carries into the sheet so the two read as
 		     one object. Body text uses AA-locked tint ink (text/mutedText). -->
@@ -295,7 +317,7 @@ function hasValue(v: unknown): boolean {
 			<EvalChart rows={ev.rows} note={ev.note} />
 		</div>
 	{:else if s.render === 'longtext'}
-		<p class="text-body text-apple-text leading-relaxed whitespace-pre-line tracking-tight">{s.value as string}</p>
+		<p class="text-body text-apple-text leading-relaxed whitespace-pre-line tracking-tight">{#if s.key === 'textbooks'}{#each linkifyTitles(s.value as string) as part}{#if part.href}<a href={part.href} target="_blank" rel="noopener noreferrer" class="text-apple-blue hover:underline">{part.text}</a>{:else}{part.text}{/if}{/each}{:else}{s.value as string}{/if}</p>
 	{:else if s.render === 'list'}
 		<!-- Hand-numbered so the marker is a calm tabular figure, not a browser
 		     bullet — a designed step list rather than a raw <ol>. -->
@@ -351,6 +373,29 @@ function hasValue(v: unknown): boolean {
 		<div class="flex flex-wrap gap-1.5">
 			{#each s.value as string[] as chip}
 				<span class="inline-flex items-center rounded-full bg-overlay-light px-2 py-0.5 text-micro text-apple-text-secondary">{chip}</span>
+			{/each}
+		</div>
+	{:else if s.render === 'sdgs'}
+		<!-- Each goal links out to its UNICEF page; the official-colour badge is a
+		     decorative sign (aria-hidden), the title carries the meaning as ink. -->
+		<div class="flex flex-wrap gap-1.5">
+			{#each s.value as string[] as raw}
+				{@const g = sdgGoal(raw)}
+				{#if g}
+					<a
+						href={g.url}
+						target="_blank"
+						rel="noopener noreferrer"
+						class="inline-flex items-center gap-1.5 rounded-full bg-overlay-light py-0.5 pl-0.5 pr-2.5 text-micro text-apple-text-secondary active:bg-overlay-medium sm:hover:bg-overlay-medium transition-colors"
+						aria-label="SDGs目標{g.n} {g.title}（新しいタブで開く）"
+					>
+						<span class="flex h-5 w-5 items-center justify-center rounded-full text-micro font-semibold tabular-nums text-white" style="background: {g.color};" aria-hidden="true">{g.n}</span>
+						<span>{g.title}</span>
+						<IconOpenInNew class="w-3 h-3 shrink-0 text-apple-text-tertiary" aria-hidden="true" />
+					</a>
+				{:else}
+					<span class="inline-flex items-center rounded-full bg-overlay-light px-2 py-0.5 text-micro text-apple-text-secondary">{raw}</span>
+				{/if}
 			{/each}
 		</div>
 	{:else if s.render === 'base'}

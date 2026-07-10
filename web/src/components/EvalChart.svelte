@@ -14,12 +14,16 @@ let { rows, note }: Props = $props()
 
 const theme = useTheme()
 
-// Percentages (equal-split when weightless) plus each row's icon/colour style.
+// Percentages (equal-split when weightless) plus each row's icon/colour style,
+// ordered largest share first — so the donut starts the biggest slice at 12
+// o'clock (svg is -rotate-90) sweeping clockwise, and the legend matches.
 const segments = $derived(
-	evalSegments(rows).map((s) => {
-		const style = evalKind(s.type)
-		return { ...s, style, color: theme.isDark ? style.color.dark : style.color.light }
-	}),
+	evalSegments(rows)
+		.map((s) => {
+			const style = evalKind(s.type)
+			return { ...s, style, color: theme.isDark ? style.color.dark : style.color.light }
+		})
+		.sort((a, b) => b.pct - a.pct),
 )
 
 const hasWeights = $derived(segments.some((s) => s.hasWeight))
@@ -32,7 +36,7 @@ const arcs = $derived(
 	).map((arc, i) => ({ ...arc, color: segments[i].color })),
 )
 
-const dominant = $derived([...segments].sort((a, b) => b.pct - a.pct)[0] ?? null)
+const dominant = $derived(segments[0] ?? null)
 </script>
 
 <div class="flex items-center gap-4 sm:gap-5">

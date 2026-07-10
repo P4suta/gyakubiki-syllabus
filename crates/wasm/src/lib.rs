@@ -82,7 +82,7 @@ struct TallyView {
     count: u32,
 }
 
-/// Credit totals plus the per-axis tallies (授業形態 / 科目分類 / 必修選択).
+/// Credit totals plus the per-axis tallies (授業形態 / 科目分類 / 対象年次).
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct CreditsView {

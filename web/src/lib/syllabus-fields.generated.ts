@@ -26,5 +26,5 @@ export const FIELD_SPEC: readonly FieldSpec[] = [
 	{ key: 'teachers', label: '担当教員', tier: 3, group: 'その他', render: 'list' },
 	{ key: 'keywords', label: 'キーワード', tier: 3, group: 'その他', render: 'chips' },
 	{ key: 'numbering', label: 'ナンバリング', tier: 3, group: 'その他', render: 'chips' },
-	{ key: 'sdgs', label: 'SDGs', tier: 3, group: 'その他', render: 'chips' },
+	{ key: 'sdgs', label: 'SDGs', tier: 3, group: 'その他', render: 'sdgs' },
 ] as const

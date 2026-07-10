@@ -1,13 +1,16 @@
 <script lang="ts">
 import type { Snippet } from 'svelte'
 import { matchesDesktop, useDesktop } from '../lib/breakpoint.svelte'
-import { haptic, rubberBand, shouldCommit } from '../lib/gestures'
+import { haptic, shouldCommit } from '../lib/gestures'
 
 interface Props {
 	/** Perform the actual teardown (the parent unmounts this via `{#if}`). */
 	onclose: () => void
 	/** Accessible name for the dialog. */
 	ariaLabel: string
+	/** Optional background for the handle strip, so a tinted header reads as one
+	 *  continuous band from the grab-bar down (mobile only; desktop hides it). */
+	accent?: string
 	/** Non-scrolling top region (also a drag handle). Receives a `close` fn. */
 	header?: Snippet<[close: () => void]>
 	/** Non-scrolling bottom region (safe-area padded). Receives a `close` fn. */
@@ -16,7 +19,7 @@ interface Props {
 	children: Snippet
 }
 
-let { onclose, ariaLabel, header, footer, children }: Props = $props()
+let { onclose, ariaLabel, accent, header, footer, children }: Props = $props()
 
 const initialMobile = !matchesDesktop()
 
@@ -163,7 +166,9 @@ function onMove(e: TouchEvent) {
 		} else return
 	}
 	e.preventDefault()
-	dragY = dy > 0 ? dy : -rubberBand(-dy, sheetHeight)
+	// Only track downward drag (toward dismiss); clamp upward pulls to 0 so the
+	// bottom-anchored sheet never lifts to expose the blurred backdrop beneath it.
+	dragY = dy > 0 ? dy : 0
 }
 
 function onEnd(e: TouchEvent) {
@@ -228,7 +233,7 @@ $effect(() => {
 			class="relative flex flex-col w-full max-h-overlay overflow-hidden bg-surface-primary rounded-t-2xl shadow-modal safe-bottom sm:max-w-lg sm:max-h-overlay-sm sm:rounded-2xl {isDesktop ? 'animate-dialog-in' : ''}"
 			style="translate: 0 {isDesktop ? 0 : dragY}px; transition: {settling ? 'translate 0.26s var(--ease-spring)' : 'none'};"
 		>
-			<div class="flex justify-center pt-2 shrink-0 sm:hidden touch-none">
+			<div class="flex justify-center pt-2 shrink-0 sm:hidden touch-none" style={accent ? `background: ${accent};` : undefined}>
 				<div class="w-9 h-1 rounded-full bg-overlay-strong"></div>
 			</div>
 			{#if header}

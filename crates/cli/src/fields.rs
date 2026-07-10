@@ -139,7 +139,7 @@ pub const FIELD_SPEC: &[FieldSpec] = &[
         label: "SDGs",
         tier: 3,
         group: "その他",
-        render: "chips",
+        render: "sdgs",
     },
 ];
 

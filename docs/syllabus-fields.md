@@ -20,4 +20,4 @@
 | 3 | その他 | `teachers` | 担当教員 | `list` |
 | 3 | その他 | `keywords` | キーワード | `chips` |
 | 3 | その他 | `numbering` | ナンバリング | `chips` |
-| 3 | その他 | `sdgs` | SDGs | `chips` |
+| 3 | その他 | `sdgs` | SDGs | `sdgs` |
