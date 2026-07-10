@@ -79,3 +79,58 @@ fn all_course_views_carry_the_expected_keys() {
         assert!(first.contains_key(key), "course missing {key}");
     }
 }
+
+#[wasm_bindgen_test]
+fn query_result_is_camel_case_with_highlights_key() {
+    let e = engine();
+    let obj = as_value(e.query("all", "all", "all", "x").expect("query"));
+    let map = obj.as_object().expect("query is an object");
+    assert!(map.contains_key("countUnique"), "missing countUnique");
+    assert!(!map.contains_key("count_unique"), "snake_case leaked");
+    assert!(map.contains_key("cells"));
+    assert!(
+        map["highlights"].is_array(),
+        "highlights should be an array"
+    );
+}
+
+#[wasm_bindgen_test]
+fn empty_query_yields_no_highlights() {
+    let obj = as_value(engine().query("all", "all", "all", "").expect("query"));
+    let highlights = obj["highlights"].as_array().expect("array");
+    assert!(highlights.is_empty(), "empty query must not highlight");
+}
+
+#[wasm_bindgen_test]
+fn loaded_index_drives_ranked_highlights() {
+    // Build a synthetic index over 9 docs (aligned to the golden's course
+    // indices); a query for the token planted in doc 0 must come back with a
+    // highlight span for course 0, in the terse {i, spans:[{f,o,l}]} shape.
+    use syllabus_core::{DocFields, SearchIndex};
+    let mut docs = vec![DocFields::default(); 9];
+    docs[0] = DocFields {
+        name: "ZEBRA",
+        ..Default::default()
+    };
+    let blob = SearchIndex::build(docs).encode();
+
+    let mut e = engine();
+    e.load_search_index(&blob).expect("index loads");
+    let obj = as_value(e.query("all", "all", "all", "zebra").expect("query"));
+    let highlights = obj["highlights"].as_array().expect("array");
+    assert_eq!(highlights.len(), 1, "exactly course 0 matches");
+    let hit = highlights[0].as_object().expect("highlight is an object");
+    assert_eq!(hit["i"], 0);
+    let span = hit["spans"][0].as_object().expect("span is an object");
+    for key in ["f", "o", "l"] {
+        assert!(span.contains_key(key), "span missing {key}");
+    }
+    assert_eq!(span["o"], 0);
+    assert_eq!(span["l"], 5); // "ZEBRA" → 5 UTF-16 units
+}
+
+#[wasm_bindgen_test]
+fn load_search_index_rejects_a_bad_blob() {
+    let mut e = engine();
+    assert!(e.load_search_index(b"garbage").is_err());
+}
