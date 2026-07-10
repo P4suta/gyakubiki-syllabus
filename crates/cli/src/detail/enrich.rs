@@ -22,9 +22,7 @@ pub fn enrich(detail: &mut SanshoDetail) {
 }
 
 static HOUR_RE: LazyLock<regex::Regex> =
-    LazyLock::new(|| regex::Regex::new(r"(\d+(?:\.\d+)?)\s*時間").expect("re"));
-static MIN_RE: LazyLock<regex::Regex> =
-    LazyLock::new(|| regex::Regex::new(r"(\d+)\s*分").expect("re"));
+    LazyLock::new(|| regex::Regex::new(r"(\d+(?:\.\d+)?)\s*時間(半)?").expect("re"));
 
 /// Split 教科書・参考書 free text into labelled sections, preserving every source
 /// line verbatim (book-title linkifying happens at render). Marks `is_none` only
@@ -74,25 +72,35 @@ fn split_textbooks(s: &str) -> TextbookInfo {
 }
 
 /// Extract a per-session study time and 予習/復習 split from 授業時間外の学習.
-/// Conservative: `hours` is set only for a plausible total (0.25–12h); the full
-/// prep text is always shown regardless, so a miss just omits the badge.
+/// The full prep text is always shown regardless, so a miss just omits the badge.
 fn parse_prep(s: &str) -> PrepInfo {
     let ascii = to_ascii_digits(s);
-    let mut total = 0.0f64;
-    for cap in HOUR_RE.captures_iter(&ascii) {
-        total += cap[1].parse::<f64>().unwrap_or(0.0);
-    }
-    for cap in MIN_RE.captures_iter(&ascii) {
-        total += cap[1].parse::<f64>().unwrap_or(0.0) / 60.0;
-    }
-    let hours = (0.25..=12.0)
-        .contains(&total)
-        .then(|| (total * 10.0).round() / 10.0);
     PrepInfo {
-        hours,
+        hours: study_hours(&ascii),
         yoshu: label_segment(s, "予習"),
         fukushu: label_segment(s, "復習"),
     }
+}
+
+/// A single, unambiguous per-session study time in hours. Conservative on
+/// purpose: ranges (2時間～3時間) and multi-figure texts mix scopes (1時間/日 +
+/// 5時間/学期), so summing would fabricate a wrong number — those return `None`
+/// and the badge is simply omitted. 時間半 counts as +0.5h.
+fn study_hours(ascii: &str) -> Option<f64> {
+    if ascii.contains('～') || ascii.contains('〜') || ascii.contains('~') {
+        return None;
+    }
+    let caps: Vec<_> = HOUR_RE.captures_iter(ascii).collect();
+    if caps.len() != 1 {
+        return None;
+    }
+    let mut h: f64 = caps[0][1].parse().ok()?;
+    if caps[0].get(2).is_some() {
+        h += 0.5; // 「N時間半」
+    }
+    (0.25..=12.0)
+        .contains(&h)
+        .then_some((h * 10.0).round() / 10.0)
 }
 
 /// Text after a `予習[:：]` / `復習[:：]` label (optionally `…内容：`), verbatim.
@@ -123,15 +131,27 @@ fn to_ascii_digits(text: &str) -> String {
 
 /// A 授業計画 session's highlight hint: `exam` | `milestone` | `start`, or `None`
 /// for an ordinary session. The session `text` is never modified — this only
-/// tints the timeline node — so keywords are kept high-precision to avoid a
-/// misleading「試験」badge (e.g.「期末レポート」/「中間発表」must not read as an exam).
+/// tints the timeline node — so exam detection is HIGH-PRECISION: a lecture topic
+/// that merely mentions 試験/テスト (臨床試験・ソフトウェアテスト・試験対策・…コンテスト・
+/// 小テスト) must not read as an exam. We require a compound exam term.
+const EXAM_TERMS: &[&str] = &[
+    "期末試験",
+    "定期試験",
+    "中間試験",
+    "最終試験",
+    "筆記試験",
+    "実技試験",
+    "口述試験",
+    "口頭試験",
+    "期末テスト",
+    "中間テスト",
+    "定期テスト",
+];
+
 fn classify_plan_kind(text: &str, n: i64) -> Option<String> {
     let has = |kw: &str| text.contains(kw);
 
-    // Exam: 「試験」covers 期末試験・中間試験・定期試験; テスト too, but 小テスト is a
-    // quiz, not a graded exam, so it must not force the exam highlight. Bare
-    // 期末/中間 are ambiguous (期末レポート・中間発表) and deliberately excluded.
-    if has("試験") || (has("テスト") && !has("小テスト")) {
+    if EXAM_TERMS.iter().any(|t| has(t)) {
         return Some("exam".into());
     }
     // Milestone: a deliverable / turning point.
@@ -150,11 +170,20 @@ mod tests {
     use super::classify_plan_kind;
 
     #[test]
-    fn exam_matches_shiken_and_test_but_not_small_quiz() {
+    fn exam_needs_a_compound_exam_term() {
         assert_eq!(classify_plan_kind("期末試験", 15).as_deref(), Some("exam"));
         assert_eq!(classify_plan_kind("定期試験を行う", 16).as_deref(), Some("exam"));
-        assert_eq!(classify_plan_kind("到達度テスト", 15).as_deref(), Some("exam"));
-        // 小テスト is a quiz — not a graded exam highlight.
+        assert_eq!(classify_plan_kind("中間テスト", 8).as_deref(), Some("exam"));
+    }
+
+    #[test]
+    fn lecture_topics_that_merely_mention_shiken_are_not_exams() {
+        // Real false-positives caught by the fidelity review — none is an exam.
+        assert_eq!(classify_plan_kind("臨床試験とEBM", 3), None);
+        assert_eq!(classify_plan_kind("ソフトウェアテスト1", 11), None);
+        assert_eq!(classify_plan_kind("基本情報技術者試験 科目B試験対策", 5), None);
+        assert_eq!(classify_plan_kind("試験管に植菌する", 6), None);
+        assert_eq!(classify_plan_kind("中国語音読コンテスト", 12), None);
         assert_eq!(classify_plan_kind("毎回の小テスト", 5), None);
     }
 
@@ -162,7 +191,7 @@ mod tests {
     fn ambiguous_kimatsu_chukan_do_not_force_exam() {
         // 期末レポート is a report, not an exam — bare 期末 must not trip exam.
         assert_eq!(classify_plan_kind("期末レポートの作成", 14), None);
-        // 中間発表 is a presentation → milestone (via 発表), never exam (no 試験).
+        // 中間発表 is a presentation → milestone (via 発表), never exam.
         assert_eq!(classify_plan_kind("中間発表", 8).as_deref(), Some("milestone"));
     }
 
@@ -223,13 +252,20 @@ mod tests {
     }
 
     #[test]
-    fn prep_extracts_plausible_hours() {
+    fn prep_extracts_a_single_unambiguous_hour_figure() {
         assert_eq!(super::parse_prep("毎回およそ2時間の予習・復習を行うこと。").hours, Some(2.0));
-        // 予習45分 + 復習45分 = 1.5h.
-        let p = super::parse_prep("予習に45分、復習に45分をあてること。");
-        assert_eq!(p.hours, Some(1.5));
-        // No figure → no badge, but the text is still (elsewhere) shown.
+        // 「N時間半」→ +0.5h.
+        assert_eq!(super::parse_prep("毎回1時間半程度の学習が必要。").hours, Some(1.5));
+        // No 時間 figure → no badge (the full text is still shown).
+        assert_eq!(super::parse_prep("予習に45分、復習に45分をあてること。").hours, None);
         assert_eq!(super::parse_prep("相当な授業時間外の学習が必要です。").hours, None);
+    }
+
+    #[test]
+    fn prep_skips_ranges_and_multi_figure_to_avoid_a_wrong_sum() {
+        // Range double-count and scope-mixing produced fabricated totals — skip.
+        assert_eq!(super::parse_prep("復習2時間～3時間、予習1時間～2時間。").hours, None);
+        assert_eq!(super::parse_prep("授業期間中に1日1時間、終了後に5時間程度の復習。").hours, None);
     }
 
     #[test]

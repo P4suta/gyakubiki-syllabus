@@ -24,6 +24,13 @@ describe('classifyGoals', () => {
 		expect(g[0].canDo).toBe(false)
 		expect(g[0].text).toBe('歴史的背景に関心を持つ')
 	})
+	it('a leading digit that is real content is never stripped', () => {
+		// Regression: 「2進数」「36の母音」must survive (delimiter required for enum).
+		expect(classifyGoals(['2進数で小数を表せる'])[0].text).toBe('2進数で小数を表せる')
+		expect(classifyGoals(['36の母音を発音できる'])[0].text).toBe('36の母音を発音できる')
+		// But a real enumeration marker is still stripped.
+		expect(classifyGoals(['1. 課題を分析できる'])[0].text).toBe('課題を分析できる')
+	})
 })
 
 describe('parseTeachers', () => {
@@ -31,15 +38,16 @@ describe('parseTeachers', () => {
 		const t = parseTeachers(['◎ 山田太郎', '鈴木花子'])
 		expect(t.rep).toBe('山田太郎')
 		expect(t.others).toEqual(['鈴木花子'])
-		expect(t.omnibus).toBe(false)
 	})
 	it('no ◎ → no assumed rep', () => {
 		const t = parseTeachers(['田中一郎'])
 		expect(t.rep).toBeUndefined()
 		expect(t.others).toEqual(['田中一郎'])
 	})
-	it('detects omnibus by size', () => {
-		expect(parseTeachers(['a', 'b', 'c', 'd', 'e', 'f']).omnibus).toBe(true)
+	it('picks a non-first ◎ as representative', () => {
+		const t = parseTeachers(['鈴木花子', '◎ 山田太郎'])
+		expect(t.rep).toBe('山田太郎')
+		expect(t.others).toEqual(['鈴木花子'])
 	})
 })
 

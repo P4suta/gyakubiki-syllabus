@@ -408,8 +408,8 @@ function planBadge(kind: string | undefined): string | null {
 	{:else if s.render === 'textbooks'}
 		{@const info = detail?.textbookInfo}
 		{#if info?.isNone}
-			<!-- Show the source wording verbatim (「特になし」等), just quieted to a badge. -->
-			<span class="inline-flex items-center rounded-full bg-overlay-light px-2.5 py-1 text-caption text-apple-text-secondary">{info.sections[0]?.lines[0] ?? s.value}</span>
+			<!-- No fixed textbook: show the full source wording verbatim, just quieted. -->
+			<p class="text-body text-apple-text-secondary leading-relaxed whitespace-pre-line tracking-tight">{@render linked(s.value as string)}</p>
 		{:else if info}
 			<!-- Split into 教科書/参考書… sections; every source line kept verbatim,
 			     book titles linkified to a search. -->
@@ -484,9 +484,6 @@ function planBadge(kind: string | undefined): string | null {
 					<IconPerson class="w-3.5 h-3.5 text-apple-text-tertiary" aria-hidden="true" />{name}
 				</span>
 			{/each}
-			{#if t.omnibus}
-				<span class="inline-flex items-center rounded-full bg-overlay-light px-2 py-1 text-caption text-apple-text-secondary">オムニバス</span>
-			{/if}
 		</div>
 	{:else if s.render === 'keywords'}
 		<!-- Keywords are the reverse-lookup surface: tap one to search it. -->

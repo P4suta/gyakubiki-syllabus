@@ -13,7 +13,9 @@ export interface GoalItem {
 }
 
 const GOAL_TAG = /^【([^】]*)】\s*/
-const LEAD_ENUM = /^(?:\(?\d+\)?[.．)、]?|[①-⑳]|[・･])\s*/
+// A leading enumeration marker only — a bare digit that is real content (「2進数」
+// 「36の母音」) must NOT be stripped, so a delimiter is required after digits.
+const LEAD_ENUM = /^(?:\(\d+\)|\d+[.．)、]|[①-⑳]|[・･])\s*/
 const CAN_DO = /(?:できる|出来る)[。.．）)」]*$/
 
 /** Flatten goals into can-do checklist items: split internal newlines, lift a
@@ -43,13 +45,12 @@ export interface TeacherInfo {
 	rep?: string
 	/** Co-instructors, in order. */
 	others: string[]
-	/** Many instructors → an omnibus-style course. */
-	omnibus: boolean
 }
 
 const REP_MARK = /^[◎○]\s*/
 
-/** Split 担当教員 into representative + co-instructors, stripping the ◎ marker. */
+/** Split 担当教員 into representative + co-instructors, stripping the ◎ marker.
+ *  No interpretive labels are added — ◎ is KULAS's own representative mark. */
 export function parseTeachers(list: string[]): TeacherInfo {
 	let rep: string | undefined
 	const others: string[] = []
@@ -62,7 +63,7 @@ export function parseTeachers(list: string[]): TeacherInfo {
 			others.push(trimmed.replace(REP_MARK, '').trim())
 		}
 	}
-	return { rep, others, omnibus: list.length > 5 }
+	return { rep, others }
 }
 
 // Conservative numbering decode: only the leading 2 digits, only for verified
