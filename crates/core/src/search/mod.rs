@@ -96,13 +96,20 @@ struct FieldText {
 
 impl FieldText {
     fn build(original: &str) -> Self {
-        let mut folded = String::with_capacity(original.len());
-        let mut char_utf16 = Vec::with_capacity(original.len() + 1);
+        Self::from_folded(original.chars().map(fold_char).collect())
+    }
+
+    /// Build from an already-folded string. Every fold rule preserves a
+    /// character's UTF-16 length (all are BMP↔BMP, one code unit), so the offset
+    /// of char `i` in the folded text equals its offset in the original — which
+    /// is why the on-disk index need only store the folded text, and a span
+    /// computed here indexes straight into the original display string.
+    fn from_folded(folded: String) -> Self {
+        let mut char_utf16 = Vec::with_capacity(folded.len() + 1);
         let mut utf16 = 0u32;
-        for c in original.chars() {
+        for c in folded.chars() {
             char_utf16.push(utf16);
             utf16 += c.len_utf16() as u32;
-            folded.push(fold_char(c));
         }
         char_utf16.push(utf16);
         Self { folded, char_utf16 }
@@ -224,9 +231,120 @@ impl SearchIndex {
     }
 }
 
+// === Binary format ===
+//
+// The index is serialized once at data-generation time and shipped as its own
+// `search.idx`, so it stays off the payload that gates first paint and is loaded
+// lazily in the worker. Layout (all integers little-endian):
+//
+//   magic "SYX1" | version:u16 | n_docs:u32
+//   per doc, per field (5, in `Field` order): folded_len:u32, folded:UTF-8 bytes
+//
+// Only the folded text is stored — the UTF-16 offset table is recomputed on load
+// (see `FieldText::from_folded`), since folding preserves each char's UTF-16
+// length. Decoding parses once into the owned structure the query uses.
+
+const MAGIC: &[u8; 4] = b"SYX1";
+const FORMAT_VERSION: u16 = 1;
+
+/// Errors from decoding a `search.idx` blob.
+#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+pub enum IndexError {
+    /// The blob does not start with the `search.idx` magic.
+    #[error("not a search index (bad magic)")]
+    BadMagic,
+    /// The format version is newer/older than this build understands.
+    #[error("unsupported search-index version {0}")]
+    UnsupportedVersion(u16),
+    /// The blob ended mid-record.
+    #[error("search index is truncated")]
+    Truncated,
+    /// A field's bytes were not valid UTF-8.
+    #[error("search index holds invalid UTF-8")]
+    BadUtf8,
+}
+
+/// A bounds-checked little-endian cursor over the index blob.
+struct Reader<'a> {
+    bytes: &'a [u8],
+    pos: usize,
+}
+
+impl<'a> Reader<'a> {
+    fn new(bytes: &'a [u8]) -> Self {
+        Self { bytes, pos: 0 }
+    }
+
+    fn take(&mut self, n: usize) -> Result<&'a [u8], IndexError> {
+        let end = self.pos.checked_add(n).ok_or(IndexError::Truncated)?;
+        let slice = self.bytes.get(self.pos..end).ok_or(IndexError::Truncated)?;
+        self.pos = end;
+        Ok(slice)
+    }
+
+    fn u16(&mut self) -> Result<u16, IndexError> {
+        Ok(u16::from_le_bytes(self.take(2)?.try_into().unwrap()))
+    }
+
+    fn u32(&mut self) -> Result<u32, IndexError> {
+        Ok(u32::from_le_bytes(self.take(4)?.try_into().unwrap()))
+    }
+}
+
+impl SearchIndex {
+    /// Serialize the index to its compact binary form (`search.idx`).
+    #[must_use]
+    pub fn encode(&self) -> Vec<u8> {
+        let mut out = Vec::new();
+        out.extend_from_slice(MAGIC);
+        out.extend_from_slice(&FORMAT_VERSION.to_le_bytes());
+        out.extend_from_slice(&(self.docs.len() as u32).to_le_bytes());
+        for doc in &self.docs {
+            for field in doc {
+                let bytes = field.folded.as_bytes();
+                out.extend_from_slice(&(bytes.len() as u32).to_le_bytes());
+                out.extend_from_slice(bytes);
+            }
+        }
+        out
+    }
+
+    /// Parse an index from its binary form.
+    ///
+    /// # Errors
+    /// Returns an [`IndexError`] if the blob is not a `search.idx`, is a version
+    /// this build does not understand, is truncated, or holds invalid UTF-8.
+    pub fn decode(bytes: &[u8]) -> Result<Self, IndexError> {
+        let mut reader = Reader::new(bytes);
+        if reader.take(4)? != MAGIC {
+            return Err(IndexError::BadMagic);
+        }
+        let version = reader.u16()?;
+        if version != FORMAT_VERSION {
+            return Err(IndexError::UnsupportedVersion(version));
+        }
+        let n_docs = reader.u32()? as usize;
+        let mut docs = Vec::with_capacity(n_docs);
+        for _ in 0..n_docs {
+            let mut fields: Vec<FieldText> = Vec::with_capacity(5);
+            for _ in 0..5 {
+                let len = reader.u32()? as usize;
+                let folded = std::str::from_utf8(reader.take(len)?)
+                    .map_err(|_| IndexError::BadUtf8)?
+                    .to_owned();
+                fields.push(FieldText::from_folded(folded));
+            }
+            // Exactly five fields were pushed, so the conversion cannot fail.
+            let doc: [FieldText; 5] = fields.try_into().map_err(|_| IndexError::Truncated)?;
+            docs.push(doc);
+        }
+        Ok(Self { docs })
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{DocFields, Field, SearchIndex, Span};
+    use super::{DocFields, Field, IndexError, SearchIndex, Span};
     use crate::index::CourseIndex;
 
     fn doc(name: &str, instructor: &str, code: &str) -> DocFields<'static> {
@@ -334,9 +452,67 @@ mod tests {
         assert!(idx.search("物理", all(1)).is_empty());
     }
 
+    #[test]
+    fn binary_round_trips_and_preserves_search() {
+        let idx = SearchIndex::build([
+            doc("微分積分学", "山田 太郎", "001"),
+            doc("English Communication", "Smith", "E12"),
+        ]);
+        let bytes = idx.encode();
+        let back = SearchIndex::decode(&bytes).expect("decodes");
+        assert_eq!(back.len(), idx.len());
+        // Same query, same ranked hits (course + score + spans).
+        for q in ["積分", "english", "E12", "山田"] {
+            assert_eq!(idx.search(q, all(2)), back.search(q, all(2)), "query {q:?}");
+        }
+    }
+
+    #[test]
+    fn decode_rejects_bad_magic_and_version() {
+        assert_eq!(
+            SearchIndex::decode(b"nope").unwrap_err(),
+            IndexError::BadMagic
+        );
+        let mut bytes = SearchIndex::build([doc("学", "", "")]).encode();
+        bytes[4] = 9; // bump the version's low byte
+        assert!(matches!(
+            SearchIndex::decode(&bytes).unwrap_err(),
+            IndexError::UnsupportedVersion(_)
+        ));
+    }
+
+    #[test]
+    fn decode_rejects_truncation() {
+        let bytes = SearchIndex::build([doc("微分積分学", "山田", "001")]).encode();
+        assert_eq!(
+            SearchIndex::decode(&bytes[..bytes.len() - 3]).unwrap_err(),
+            IndexError::Truncated
+        );
+    }
+
+    #[test]
+    fn empty_index_round_trips() {
+        let idx = SearchIndex::build([] as [DocFields; 0]);
+        let back = SearchIndex::decode(&idx.encode()).expect("decodes");
+        assert!(back.is_empty());
+    }
+
     use proptest::prelude::*;
 
     proptest! {
+        /// Encoding then decoding yields an index that answers identically.
+        #[test]
+        fn binary_round_trip_is_query_stable(
+            names in proptest::collection::vec("[\\p{Han}a-zA-Z0-9 ]{0,12}", 0..6),
+            query in "[\\p{Han}a-z0-9]{1,5}",
+        ) {
+            let docs: Vec<DocFields> = names.iter().map(|n| DocFields { name: n, ..Default::default() }).collect();
+            let idx = SearchIndex::build(docs);
+            let back = SearchIndex::decode(&idx.encode()).expect("decodes");
+            let candidates = all(names.len());
+            prop_assert_eq!(idx.search(&query, candidates.clone()), back.search(&query, candidates));
+        }
+
         /// Every reported span lies within its field's UTF-16 length, and slicing
         /// the original name at the span recovers exactly the (folded) query — the
         /// contract the highlighter relies on.
