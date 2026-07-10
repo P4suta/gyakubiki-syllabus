@@ -15,12 +15,15 @@ let { rows, note }: Props = $props()
 const theme = useTheme()
 
 // Per-item shares with icon/colour. Colour is keyed by `type`, so same-type
-// items share a hue and read as one band.
+// items share a hue and read as one band. 0% rows (items listed without a weight
+// while others carry one) are dropped — nobody cares about a 0% axis.
 const segments = $derived(
-	evalSegments(rows).map((s) => {
-		const style = evalKind(s.type)
-		return { ...s, style, color: theme.isDark ? style.color.dark : style.color.light }
-	}),
+	evalSegments(rows)
+		.filter((s) => s.pct > 0)
+		.map((s) => {
+			const style = evalKind(s.type)
+			return { ...s, style, color: theme.isDark ? style.color.dark : style.color.light }
+		}),
 )
 
 const hasWeights = $derived(segments.some((s) => s.hasWeight))
