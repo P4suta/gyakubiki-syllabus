@@ -36,7 +36,7 @@ fn in_gamut(l: f64, c: f64, h: f64) -> bool {
         .all(|&v| (-1e-4..=1.0 + 1e-4).contains(&v))
 }
 
-fn gam(x: f64) -> f64 {
+fn gamma(x: f64) -> f64 {
     let x = x.clamp(0.0, 1.0);
     if x <= 0.003_130_8 {
         12.92 * x
@@ -49,7 +49,7 @@ fn oklch_to_hex(l: f64, c: f64, h: f64) -> String {
     let rgb = oklch_to_linear(l, c, h);
     let mut out = String::from("#");
     for v in rgb {
-        let byte = (gam(v) * 255.0).round() as i64;
+        let byte = (gamma(v) * 255.0).round() as i64;
         out.push_str(&format!("{:02x}", byte.clamp(0, 255)));
     }
     out
