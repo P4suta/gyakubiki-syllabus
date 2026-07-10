@@ -408,7 +408,8 @@ function planBadge(kind: string | undefined): string | null {
 	{:else if s.render === 'textbooks'}
 		{@const info = detail?.textbookInfo}
 		{#if info?.isNone}
-			<span class="inline-flex items-center rounded-full bg-overlay-light px-2.5 py-1 text-caption text-apple-text-secondary">指定なし</span>
+			<!-- Show the source wording verbatim (「特になし」等), just quieted to a badge. -->
+			<span class="inline-flex items-center rounded-full bg-overlay-light px-2.5 py-1 text-caption text-apple-text-secondary">{info.sections[0]?.lines[0] ?? s.value}</span>
 		{:else if info}
 			<!-- Split into 教科書/参考書… sections; every source line kept verbatim,
 			     book titles linkified to a search. -->
