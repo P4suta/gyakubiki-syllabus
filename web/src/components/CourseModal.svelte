@@ -6,6 +6,7 @@ import IconAdd from '~icons/ic/round-add'
 import IconCheck from '~icons/ic/round-check'
 import IconCheckCircle from '~icons/ic/round-check-circle'
 import IconClose from '~icons/ic/round-close'
+import IconContentCopy from '~icons/ic/round-content-copy'
 import IconExam from '~icons/ic/round-history-edu'
 import IconExpandMore from '~icons/ic/round-expand-more'
 import IconLink from '~icons/ic/round-link'
@@ -68,13 +69,17 @@ const officialUrl = $derived(
 	`${SANSHO_BASE}?kogiCd=${encodeURIComponent(course.cd)}&kaikoNendo=${encodeURIComponent(year)}&syllabusKomokuPatternId=${encodeURIComponent(course.pat ?? '4')}`,
 )
 
+// Lazily loaded rich syllabus detail.
+let detail = $state<CourseDetail | null>(null)
+let loading = $state(true)
+
 // Base grid fields (always available, no fetch) — shown as one more accordion.
-// Several (対象学科/年次・科目分類/分野) are empty in the real KULAS grid, so they
-// simply omit themselves rather than showing blanks.
+// 時間割 moved to the header; 担当教員 only when the syllabus has no teacher list
+// (avoids showing the same names twice). Several (対象学科/年次・科目分類/分野) are
+// empty in the real KULAS grid, so they simply omit themselves.
 const baseFields: [string, string | undefined | null][] = $derived([
 	['授業コード', course.cd],
-	['時間割', course.raw],
-	['担当教員', course.prof],
+	...(detail?.teachers?.length ? [] : [['担当教員', course.prof] as [string, string]]),
 	['開講責任部署', dicts.departments[course.dept]],
 	['学則科目', course.gaku ?? course.nm],
 	['対象学科', course.gakka],
@@ -82,10 +87,6 @@ const baseFields: [string, string | undefined | null][] = $derived([
 	['科目分類', course.bunrui],
 	['科目分野', course.bunya],
 ])
-
-// Lazily loaded rich syllabus detail.
-let detail = $state<CourseDetail | null>(null)
-let loading = $state(true)
 
 $effect(() => {
 	const cd = course.cd
@@ -168,8 +169,10 @@ const sectionsInGroup = (group: string) => allSections.filter((s) => s.group ===
 let openGroups = $state<Record<string, boolean>>({})
 
 // Taxonomy facets — a quiet middle-dot line, so delivery/credits read first.
+// The timetable slot (course.raw) leads it, moved here from 科目情報 where it read
+// as redundant.
 const facets = $derived(
-	[dicts.kubun[course.kbn], dicts.kaikojiki[course.ki], dicts.campuses[course.campus]]
+	[course.raw, dicts.kubun[course.kbn], dicts.kaikojiki[course.ki], dicts.campuses[course.campus]]
 		.filter(Boolean)
 		.join(' · '),
 )
@@ -193,6 +196,27 @@ function planBadge(kind: string | undefined): string | null {
 	if (kind === 'milestone') return '節目'
 	if (kind === 'start') return '開始'
 	return null
+}
+
+// Copy the 科目情報 as plain「ラベル: 値」lines — this block exists for whoever needs
+// to lift the details, so make that one tap.
+let baseCopied = $state(false)
+let baseCopyTimer: ReturnType<typeof setTimeout> | undefined
+async function copyBase() {
+	const lines = [
+		`科目名: ${course.nm}`,
+		...baseFields.filter(([, v]) => v).map(([label, value]) => `${label}: ${value}`),
+	]
+	try {
+		await navigator.clipboard.writeText(lines.join('\n'))
+		baseCopied = true
+		clearTimeout(baseCopyTimer)
+		baseCopyTimer = setTimeout(() => {
+			baseCopied = false
+		}, 1800)
+	} catch {
+		baseCopied = false
+	}
 }
 </script>
 
@@ -548,6 +572,15 @@ function planBadge(kind: string | undefined): string | null {
 			{/each}
 		</div>
 	{:else if s.render === 'base'}
+		<div class="flex justify-end -mt-1 mb-1">
+			<button
+				type="button"
+				onclick={copyBase}
+				class="inline-flex items-center gap-1 rounded-full bg-overlay-light px-2.5 py-1 text-micro text-apple-text-secondary active:bg-overlay-medium sm:hover:bg-overlay-medium transition-colors cursor-pointer"
+			>
+				{#if baseCopied}<IconCheck class="w-3 h-3" aria-hidden="true" />コピーしました{:else}<IconContentCopy class="w-3 h-3" aria-hidden="true" />コピー{/if}
+			</button>
+		</div>
 		<dl>
 			{#each s.value as [string, string | undefined | null][] as [label, value]}
 				{#if value}
