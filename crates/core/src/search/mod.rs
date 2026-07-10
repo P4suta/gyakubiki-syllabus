@@ -285,9 +285,12 @@ impl SearchIndex {
         if query_chars == 0 {
             return hits;
         }
-        // Edit-distance budget for the fuzzy fallback: 1 for short queries, 2 for
-        // longer ones — enough for a typo without matching everything.
-        let max_dist = if query_chars <= 3 { 1 } else { 2 };
+        // Edit-distance budget for the fuzzy fallback: a quarter of the query
+        // length, capped at 2. That is 0 for a 1–3 char query — so a short query
+        // like 哲学 never fuzzy-matches everything that merely shares 学 (a
+        // 1-edit window like 分学) — 1 for 4–7 chars, 2 for 8+. Only genuine
+        // typos in a reasonably long query get rescued.
+        let max_dist = (query_chars / 4).min(2);
         for course in candidates {
             let Some(doc) = self.docs.get(course.get()) else {
                 continue;
@@ -301,9 +304,10 @@ impl SearchIndex {
                 }
             }
             // No exact hit anywhere: try a typo-tolerant match on the name only, so
-            // "微文積分" still finds 微分積分学. Fuzzy hits score below any exact hit.
+            // "微文積分" still finds 微分積分学. Only when the budget is non-zero
+            // (query long enough). Fuzzy hits score below any exact hit.
             if spans.is_empty()
-                && query_chars >= 2
+                && max_dist > 0
                 && doc[Field::Name as usize].fuzzy_find(Field::Name, &query, max_dist, &mut spans)
             {
                 score = FUZZY_SCORE;
@@ -578,6 +582,19 @@ mod tests {
     fn fuzzy_does_not_match_a_wildly_different_query() {
         let idx = SearchIndex::build([doc("微分積分学", "山田", "001")]);
         assert!(idx.search("物理化学実験", all(1)).is_empty());
+    }
+
+    #[test]
+    fn short_query_never_fuzzy_floods_a_shared_character() {
+        // 哲学 (2 chars) must not match 微分積分学 just because both end in 学 — the
+        // fuzzy budget is 0 for short queries, so only an exact 哲学 substring hits.
+        let idx = SearchIndex::build([
+            doc("微分積分学", "山田", "001"),
+            doc("哲学概論", "佐藤", "002"),
+        ]);
+        let hits = idx.search("哲学", all(2));
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].course, CourseIndex::new(1)); // only the real 哲学 course
     }
 
     #[test]
