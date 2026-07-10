@@ -42,26 +42,37 @@ export const plan = new PlanStore()
 const STORAGE_KEY = 'myPlan'
 const HASH_PREFIX = '#plan='
 
+/** The plan token in the current URL hash, or null. */
 function readHash(): string | null {
 	const h = typeof location === 'undefined' ? '' : location.hash
 	return h.startsWith(HASH_PREFIX) ? h.slice(HASH_PREFIX.length) : null
 }
 
-function writeHash(token: string): void {
-	// replaceState (not a new hash navigation) so sharing never spams history.
-	const url = token ? `${HASH_PREFIX}${token}` : location.pathname + location.search
-	history.replaceState(null, '', url)
+/**
+ * The shareable URL for the current plan (empty plan → no hash). Built on demand
+ * by the share button; the hash is deliberately NOT kept live in the address bar
+ * — that would fight the modal sheet's own history integration (a sheet closing
+ * via Back reverts the URL, which must never clear the plan).
+ */
+export function shareUrl(): string {
+	const token = encodePlan(plan.cds)
+	const base = `${location.origin}${location.pathname}${location.search}`
+	return token ? `${base}${HASH_PREFIX}${token}` : base
 }
 
 /**
- * Wire the plan to the URL hash and localStorage. Call once on mount; returns a
- * teardown. Initial state prefers a shared `#plan=` link over the stored plan;
- * later edits write both, and an external hash change (share link, Back) is
- * pulled back in. A re-entrancy flag stops our own writes from echoing.
+ * Wire the plan to localStorage (persistence) and, one-way, to a shared `#plan=`
+ * link. Call once on mount; returns a teardown.
+ *
+ * On load: a shared `#plan=` link wins, else the stored plan. On change: only
+ * localStorage is written — the URL is set solely by the share button (see
+ * [`shareUrl`]). A `#plan=` link opened while the app runs updates the plan; an
+ * empty hash (e.g. a sheet closing via Back) is ignored, so navigation never
+ * wipes a registration.
  */
 export function initPlanSync(): () => void {
 	const fromHash = readHash()
-	if (fromHash !== null) {
+	if (fromHash) {
 		plan.hydrate(decodePlan(fromHash))
 	} else {
 		try {
@@ -72,34 +83,25 @@ export function initPlanSync(): () => void {
 		}
 	}
 
-	let echoing = false
 	const stop = $effect.root(() => {
 		$effect(() => {
 			const token = encodePlan(plan.cds)
-			echoing = true
 			try {
 				localStorage.setItem(STORAGE_KEY, token)
 			} catch {
 				// ignore storage failures
 			}
-			writeHash(token)
-			queueMicrotask(() => {
-				echoing = false
-			})
 		})
 	})
 
 	const onHashChange = () => {
-		if (echoing) return
-		const h = readHash()
-		plan.hydrate(h !== null ? decodePlan(h) : [])
+		const token = readHash()
+		if (token) plan.hydrate(decodePlan(token)) // only a real share link, never empty
 	}
 	window.addEventListener('hashchange', onHashChange)
-	window.addEventListener('popstate', onHashChange)
 
 	return () => {
 		window.removeEventListener('hashchange', onHashChange)
-		window.removeEventListener('popstate', onHashChange)
 		stop()
 	}
 }

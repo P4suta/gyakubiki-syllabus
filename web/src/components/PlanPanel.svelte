@@ -1,6 +1,6 @@
 <script lang="ts">
 import type { PlanSummaryResult } from '../lib/engine'
-import { plan } from '../lib/plan.svelte'
+import { plan, shareUrl } from '../lib/plan.svelte'
 import type { Course } from '../types/course'
 import BottomSheet from './BottomSheet.svelte'
 
@@ -30,7 +30,7 @@ const conflictNames = $derived(
 let copied = $state(false)
 async function share() {
 	try {
-		await navigator.clipboard.writeText(location.href)
+		await navigator.clipboard.writeText(shareUrl())
 		copied = true
 		setTimeout(() => {
 			copied = false
