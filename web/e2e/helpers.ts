@@ -60,11 +60,12 @@ export async function openCourse(page: Page, name: string | RegExp): Promise<voi
 }
 
 /**
- * A modal disclosure section's `<summary>` by label. Scoped to `summary` so it
- * never collides with a same-named `<option>` (e.g.「その他」is also a filter value).
+ * A modal disclosure section's toggle button by label. Scoped to `[data-section]`
+ * so it never collides with a same-named `<option>` (e.g.「その他」is also a filter
+ * value) — the sections are custom buttons, not native `<summary>`.
  */
 export function section(page: Page, label: string) {
-	return page.locator('summary').filter({ hasText: label })
+	return page.locator('[data-section]').filter({ hasText: label })
 }
 
 export interface Point {

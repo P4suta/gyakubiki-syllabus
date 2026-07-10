@@ -215,16 +215,3 @@ body {
   from { opacity: 0; scale: 0.96; }
   to { opacity: 1; scale: 1; }
 }
-
-/* Disclosure open/close: animate the native <details> height with the app's
-   spring instead of snapping. Progressive — engines without `::details-content`
-   (and jsdom) fall back to an instant toggle; motion-reduced users get the snap. */
-@media (prefers-reduced-motion: no-preference) {
-  :root { interpolate-size: allow-keywords; }
-  details::details-content {
-    height: 0;
-    overflow: clip;
-    transition: height 200ms var(--ease-spring), content-visibility 200ms allow-discrete;
-  }
-  details[open]::details-content { height: auto; }
-}

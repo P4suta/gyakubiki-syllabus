@@ -1,4 +1,6 @@
 <script lang="ts">
+import { quadOut } from 'svelte/easing'
+import { slide } from 'svelte/transition'
 import { getColor } from '../lib/colors'
 import { loadDetail } from '../lib/details'
 import { FIELD_SPEC } from '../lib/syllabus-fields.generated'
@@ -119,6 +121,11 @@ const groupOrder = $derived([
 ])
 const sectionsInGroup = (group: string) => allSections.filter((s) => s.group === group)
 
+// Per-group open state. A custom button disclosure (not native <details>): the
+// `slide` transition animates height in JS, so it needs no `interpolate-size` /
+// `::details-content` — that pair stalled axe-core's contrast pass in CI.
+let openGroups = $state<Record<string, boolean>>({})
+
 // Taxonomy facets — a quiet middle-dot line, so delivery/credits read first.
 const facets = $derived(
 	[dicts.kubun[course.kbn], dicts.kaikojiki[course.ki], dicts.campuses[course.campus]]
@@ -202,19 +209,35 @@ function hasValue(v: unknown): boolean {
 			{/each}
 
 			<!-- Each category is one collapsible group (collapsed by default); its
-			     fields sit inside as labeled blocks, so the default view is short. -->
+			     fields sit inside as labeled blocks, so the default view is short. A
+			     button + `slide` (not <details>) so the open/close animates without
+			     the axe-hanging `::details-content`/`interpolate-size`. -->
 			{#each groupOrder as g (g)}
-				<details class="group border-b border-overlay-subtle">
-					{@render disclosure(g)}
-					<div class="pb-4 space-y-6">
-						{#each sectionsInGroup(g) as s (s.key)}
-							<div>
-								<h4 class="text-caption font-semibold text-apple-text-secondary mb-2 tracking-tight">{s.label}</h4>
-								{@render sectionBody(s)}
-							</div>
-						{/each}
-					</div>
-				</details>
+				{@const open = openGroups[g] ?? false}
+				<div class="border-b border-overlay-subtle">
+					<button
+						type="button"
+						data-section
+						class="w-full flex items-center justify-between gap-2 py-4 cursor-pointer select-none text-left"
+						aria-expanded={open}
+						onclick={() => { openGroups[g] = !open }}
+					>
+						<h3 class="text-headline font-semibold text-apple-text tracking-tight">{g}</h3>
+						<svg class="w-4 h-4 shrink-0 text-apple-text-tertiary transition-transform duration-200 {open ? 'rotate-180' : ''}" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+							<path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
+						</svg>
+					</button>
+					{#if open}
+						<div class="pb-4 space-y-6" transition:slide={{ duration: 200, easing: quadOut }}>
+							{#each sectionsInGroup(g) as s (s.key)}
+								<div>
+									<h4 class="text-caption font-semibold text-apple-text-secondary mb-2 tracking-tight">{s.label}</h4>
+									{@render sectionBody(s)}
+								</div>
+							{/each}
+						</div>
+					{/if}
+				</div>
 			{/each}
 		{/if}
 
@@ -234,17 +257,6 @@ function hasValue(v: unknown): boolean {
 		</div>
 	</div>
 </BottomSheet>
-
-<!-- Group disclosure: a headline label (the section's chapter) + a chevron that
-     rotates when open. The hero labels above are the quieter caption tier. -->
-{#snippet disclosure(label: string)}
-	<summary class="flex items-center justify-between gap-2 py-4 cursor-pointer list-none select-none">
-		<h3 class="text-headline font-semibold text-apple-text tracking-tight">{label}</h3>
-		<svg class="w-4 h-4 shrink-0 text-apple-text-tertiary transition-transform duration-200 group-open:rotate-180" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-			<path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
-		</svg>
-	</summary>
-{/snippet}
 
 {#snippet icon(name: 'clock' | 'pin')}
 	{#if name === 'clock'}
