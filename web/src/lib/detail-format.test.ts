@@ -3,7 +3,7 @@ import {
 	classifyGoals,
 	decodeNumbering,
 	formatProse,
-	linkifyTitles,
+	linkifyText,
 	parseTeachers,
 } from './detail-format'
 
@@ -76,12 +76,20 @@ describe('formatProse', () => {
 	})
 })
 
-describe('linkifyTitles', () => {
-	it('linkifies 『』 and 「」 titles, leaving other text plain', () => {
-		const parts = linkifyTitles('教科書『入門テキスト』を使う')
+describe('linkifyText', () => {
+	it('linkifies 『』 titles (query wrapped in 『』), leaving other text plain', () => {
+		const parts = linkifyText('教科書『入門テキスト』を使う')
 		expect(parts[0]).toEqual({ text: '教科書' })
 		expect(parts[1].text).toBe('『入門テキスト』')
 		expect(parts[1].href).toContain('google.com/search')
+		// Query keeps the 『』 so a generic title reads as a book to Google.
+		expect(decodeURIComponent(parts[1].href ?? '')).toContain('『入門テキスト』')
 		expect(parts[2]).toEqual({ text: 'を使う' })
+	})
+	it('linkifies an email address to mailto', () => {
+		const parts = linkifyText('連絡は rshima@kochi-u.ac.jp まで')
+		const link = parts.find((p) => p.href?.startsWith('mailto:'))
+		expect(link?.href).toBe('mailto:rshima@kochi-u.ac.jp')
+		expect(link?.text).toBe('rshima@kochi-u.ac.jp')
 	})
 })

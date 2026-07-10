@@ -140,21 +140,32 @@ export interface TextPart {
 	href?: string
 }
 
-const TITLE_RE = /『[^』]*』|「[^」]*」/g
+// One pass over the text linkifies both 『…』/「…」 book titles (→ Google search,
+// wrapped in 『』 so a generic title like「経済学基礎」reads as a book) and email
+// addresses (→ mailto). Composed into a single regex so matches never nest.
+const LINK_RE =
+	/『[^』]*』|「[^」]*」|[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g
 
-/** Linkify 『…』/「…」 book titles to a Google search; other text stays plain. */
-export function linkifyTitles(s: string): TextPart[] {
+/** Split text into plain / linked parts (book titles + emails). */
+export function linkifyText(s: string): TextPart[] {
 	const parts: TextPart[] = []
 	let last = 0
-	for (const m of s.matchAll(TITLE_RE)) {
+	for (const m of s.matchAll(LINK_RE)) {
 		const i = m.index ?? 0
 		if (i > last) parts.push({ text: s.slice(last, i) })
-		const inner = m[0].slice(1, -1).trim()
-		parts.push({
-			text: m[0],
-			href: inner ? `https://www.google.com/search?q=${encodeURIComponent(inner)}` : undefined,
-		})
-		last = i + m[0].length
+		const tok = m[0]
+		if (tok.startsWith('『') || tok.startsWith('「')) {
+			const inner = tok.slice(1, -1).trim()
+			parts.push({
+				text: tok,
+				href: inner
+					? `https://www.google.com/search?q=${encodeURIComponent(`『${inner}』`)}`
+					: undefined,
+			})
+		} else {
+			parts.push({ text: tok, href: `mailto:${tok}` })
+		}
+		last = i + tok.length
 	}
 	if (last < s.length) parts.push({ text: s.slice(last) })
 	return parts

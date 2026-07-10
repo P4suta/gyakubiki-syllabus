@@ -18,7 +18,7 @@ import {
 	classifyGoals,
 	decodeNumbering,
 	formatProse,
-	linkifyTitles,
+	linkifyText,
 	parseTeachers,
 } from '../lib/detail-format'
 import { loadDetail } from '../lib/details'
@@ -331,9 +331,9 @@ function planBadge(kind: string | undefined): string | null {
 	{/if}
 {/snippet}
 
-<!-- Free text with 『』/「」 book titles linked to a Google search. -->
+<!-- Free text with book titles (→ search) and emails (→ mailto) linked. -->
 {#snippet linked(text: string)}
-	{#each linkifyTitles(text) as part}{#if part.href}<a href={part.href} target="_blank" rel="noopener noreferrer" class="text-apple-blue hover:underline">{part.text}</a>{:else}{part.text}{/if}{/each}
+	{#each linkifyText(text) as part}{#if part.href}<a href={part.href} target={part.href.startsWith('mailto:') ? undefined : '_blank'} rel="noopener noreferrer" class="text-apple-blue hover:underline">{part.text}</a>{:else}{part.text}{/if}{/each}
 {/snippet}
 
 {#snippet sectionBody(s: Section)}
@@ -351,12 +351,12 @@ function planBadge(kind: string | undefined): string | null {
 					{#each block.items as item}
 						<li class="flex gap-2">
 							<span class="mt-2 h-1 w-1 shrink-0 rounded-full bg-apple-text-tertiary" aria-hidden="true"></span>
-							<span class="text-body text-apple-text leading-relaxed tracking-tight">{item}</span>
+							<span class="text-body text-apple-text leading-relaxed tracking-tight">{@render linked(item)}</span>
 						</li>
 					{/each}
 				</ul>
 			{:else}
-				<p class="text-body text-apple-text leading-relaxed whitespace-pre-line tracking-tight">{block.items[0]}</p>
+				<p class="text-body text-apple-text leading-relaxed whitespace-pre-line tracking-tight">{@render linked(block.items[0])}</p>
 			{/if}
 		{/each}
 	{:else if s.render === 'checklist'}
@@ -453,7 +453,7 @@ function planBadge(kind: string | undefined): string | null {
 			{#each rows as o}
 				<li class="rounded-lg bg-overlay-subtle px-3 py-2.5">
 					{#if o.name}
-						<div class="text-sub font-medium text-apple-text tracking-tight">{o.name}</div>
+						<div class="text-sub font-medium text-apple-text tracking-tight">{@render linked(o.name)}</div>
 					{/if}
 					{#if o.day || o.time || o.place}
 						<div class="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-caption text-apple-text-secondary">
@@ -461,7 +461,7 @@ function planBadge(kind: string | undefined): string | null {
 								<span class="inline-flex items-center gap-1.5">{@render icon('clock')}{[o.day, o.time].filter(Boolean).join(' ')}</span>
 							{/if}
 							{#if o.place}
-								<span class="inline-flex items-center gap-1.5">{@render icon('pin')}{o.place}</span>
+								<span class="inline-flex items-center gap-1.5">{@render icon('pin')}{@render linked(o.place)}</span>
 							{/if}
 						</div>
 					{/if}
