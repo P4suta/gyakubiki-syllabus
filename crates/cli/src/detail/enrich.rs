@@ -10,6 +10,8 @@ use super::model::{PrepInfo, SanshoDetail, TextbookInfo, TextbookSection};
 /// Annotate a `SanshoDetail` in place with derived fields, before it is written
 /// to `web/public/details/{cd}.json`. Applied per course during `convert`.
 pub fn enrich(detail: &mut SanshoDetail) {
+    // Normalise the display text first so the derived views inherit the folding.
+    purify_in_place(detail);
     for item in &mut detail.plan {
         item.kind = classify_plan_kind(&item.text, item.n);
     }
@@ -20,6 +22,48 @@ pub fn enrich(detail: &mut SanshoDetail) {
         .map(parse_prep)
         .filter(|p| p.hours.is_some() || p.yoshu.is_some() || p.fukushu.is_some());
     detail.keywords = repair_keywords(std::mem::take(&mut detail.keywords));
+}
+
+/// Fold full-width ASCII letters/digits to half-width across the display text
+/// (the「表記ゆれ」cleanup). Full-width punctuation/parens and kana are left as-is
+/// — they are legitimate Japanese typography — and the parser has already run, so
+/// 第１回/：markers are unaffected. Only the web-detail copy is touched; the
+/// crawled raw-details stay verbatim.
+fn purify_in_place(d: &mut SanshoDetail) {
+    purify_opt(&mut d.summary);
+    purify_opt(&mut d.aims);
+    purify_opt(&mut d.prereq);
+    purify_opt(&mut d.prep);
+    purify_opt(&mut d.textbooks);
+    for g in &mut d.goals {
+        *g = purify_text(g);
+    }
+    for p in &mut d.plan {
+        p.text = purify_text(&p.text);
+    }
+    for k in &mut d.keywords {
+        *k = purify_text(k);
+    }
+    for e in &mut d.extra {
+        e.text = purify_text(&e.text);
+    }
+}
+
+fn purify_opt(o: &mut Option<String>) {
+    if let Some(s) = o {
+        *s = purify_text(s);
+    }
+}
+
+fn purify_text(s: &str) -> String {
+    s.chars()
+        .map(|c| match c {
+            'Ａ'..='Ｚ' => char::from(b'A' + (c as u32 - 'Ａ' as u32) as u8),
+            'ａ'..='ｚ' => char::from(b'a' + (c as u32 - 'ａ' as u32) as u8),
+            '０'..='９' => char::from(b'0' + (c as u32 - '０' as u32) as u8),
+            other => other,
+        })
+        .collect()
 }
 
 /// Repair keywords that an older space-split fragmented mid-parenthesis: merge
@@ -336,6 +380,14 @@ mod tests {
                 "Hamilton方程式(Hamilton's equation)",
             ]
         );
+    }
+
+    #[test]
+    fn purify_folds_full_width_ascii_but_keeps_typography() {
+        // Full-width latin/digits → half-width.
+        assert_eq!(super::purify_text("ＴＯＥＩＣ ８００点、Ｗで始まる"), "TOEIC 800点、Wで始まる");
+        // Full-width punctuation/parens and half-width kana are preserved.
+        assert_eq!(super::purify_text("（重要）：ﾃｽﾄ"), "（重要）：ﾃｽﾄ");
     }
 
     #[test]
