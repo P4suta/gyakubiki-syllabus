@@ -40,19 +40,22 @@ const registered = $derived(plan.has(course.cd))
 
 // Dominant assessment axis: label, share of the whole grade, and its palette
 // colour (the same hue as the modal's donut, so the card's bar ties to it).
+// Summed by *type* so a「期末試験50 + 中間試験50」course reads as 試験100%, not a
+// single 50% — the card must not hide that it's exam-driven.
 const topEval = $derived.by(() => {
 	if (!course.ev?.length) return null
-	const parsed = course.ev.map((e) => {
+	const sum = course.ev.reduce((acc, e) => acc + (Number(e.split(':')[1]) || 0), 0)
+	const byType = new Map<string, number>()
+	for (const e of course.ev) {
 		const [type, w] = e.split(':')
-		return { type, w: Number(w) || 0 }
-	})
-	const sum = parsed.reduce((acc, r) => acc + r.w, 0)
-	const top = [...parsed].sort((a, b) => b.w - a.w)[0]
+		byType.set(type, (byType.get(type) ?? 0) + (Number(w) || 0))
+	}
+	const top = [...byType.entries()].sort((a, b) => b[1] - a[1])[0]
 	if (!top) return null
-	const style = evalKind(top.type)
+	const style = evalKind(top[0])
 	return {
 		label: style.label,
-		pct: sum > 0 ? Math.round((top.w / sum) * 100) : null,
+		pct: sum > 0 ? Math.round((top[1] / sum) * 100) : null,
 		color: theme.isDark ? style.color.dark : style.color.light,
 	}
 })
