@@ -16,10 +16,12 @@ import IconPerson from '~icons/ic/round-person'
 import IconPlace from '~icons/ic/round-place'
 import IconSchedule from '~icons/ic/round-schedule'
 import IconSearch from '~icons/ic/round-search'
+import IconTag from '~icons/ic/round-tag'
 import { getColor } from '../lib/colors'
 import {
 	classifyGoals,
 	courseLanguage,
+	decodeNumbering,
 	formatProse,
 	isRelatedLabel,
 	linkifyText,
@@ -89,9 +91,6 @@ const baseFields: [string, string | undefined | null][] = $derived([
 	['対象年次', course.nen],
 	['科目分類', course.bunrui],
 	['科目分野', course.bunya],
-	// The numbering code is a cipher — it lives here, low-key (its one useful
-	// decode, 授業言語, is surfaced in the header instead).
-	...(detail?.numbering ?? []).map((c) => ['ナンバリング', c] as [string, string]),
 ])
 
 // 授業言語 (from the numbering code) — surfaced only when it isn't the default
@@ -595,6 +594,25 @@ async function copyField(label: string, value: string) {
 				{/if}
 			{/each}
 		</dl>
+		{#if detail?.numbering?.length}
+			<!-- The numbering code is a cipher; show it with its full, organized
+			     decode so it's actually readable (学部・レベル・授業形態・言語). -->
+			<div class="mt-3 pt-3 border-t border-overlay-subtle">
+				<div class="flex items-center gap-1.5 text-caption text-apple-text-tertiary mb-1.5 tracking-tight">
+					<IconTag class="w-3.5 h-3.5 shrink-0" aria-hidden="true" />ナンバリング
+				</div>
+				<ul class="space-y-1.5">
+					{#each detail.numbering as code}
+						{@const d = decodeNumbering(code)}
+						{@const parts = d ? [d.faculty, d.level, d.format, d.lang].filter(Boolean) : []}
+						<li class="flex items-baseline gap-2">
+							<span class="shrink-0 tabular-nums text-caption text-apple-text-secondary">{code}</span>
+							{#if parts.length}<span class="text-caption text-apple-text-tertiary tracking-tight">{parts.join(' · ')}</span>{/if}
+						</li>
+					{/each}
+				</ul>
+			</div>
+		{/if}
 	{/if}
 {/snippet}
 
