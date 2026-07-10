@@ -46,6 +46,12 @@ async function handleInit(buffer: ArrayBuffer): Promise<InitResult> {
 	// the main thread verbatim.
 	engine = WasmEngine.fromJson(text)
 
+	// Pull in the companion search index lazily, off the init path: it enables
+	// ranked search with match highlights but must never gate first paint.
+	// Queries that arrive before it loads fall back to an unranked substring scan
+	// (handled in the core), so search keeps working meanwhile.
+	void loadSearchIndex()
+
 	return {
 		courses: engine.allCourseViews(),
 		dicts: engine.dicts(),
@@ -55,11 +61,24 @@ async function handleInit(buffer: ArrayBuffer): Promise<InitResult> {
 	}
 }
 
-/** Filter then lay out in one hop — the index array never crosses the boundary. */
+/** Fetch and hand `search.idx` to the core. A missing/late index is non-fatal —
+ *  the query falls back to the substring scan until it arrives. */
+async function loadSearchIndex(): Promise<void> {
+	try {
+		const res = await fetch(`${import.meta.env.BASE_URL}search.idx`)
+		if (!res.ok) return
+		const bytes = new Uint8Array(await res.arrayBuffer())
+		engine?.loadSearchIndex(bytes)
+	} catch {
+		// Leave search on the fallback path; ranking/highlights simply stay off.
+	}
+}
+
+/** Filter, rank, and lay out in one hop — returns `{ cells, countUnique,
+ *  highlights }` with cells already ordered best-first. */
 function handleQuery(msg: Extract<Request, { type: 'filterAndGrid' }>): unknown {
 	if (!engine) throw new Error('エンジンが初期化されていません')
-	const indices = engine.filter(msg.semester, msg.department, msg.campus, msg.query)
-	return engine.grid(indices, msg.semester)
+	return engine.query(msg.semester, msg.department, msg.campus, msg.query)
 }
 
 self.onmessage = async (e: MessageEvent<Request>) => {
