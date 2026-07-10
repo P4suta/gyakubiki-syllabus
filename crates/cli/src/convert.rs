@@ -7,7 +7,7 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 
 use anyhow::{Context, Result};
-use syllabus_core::convert_v2;
+use syllabus_core::convert_v3;
 use syllabus_core::model::{Course, ProcessedData, RawCourse};
 use syllabus_core::{normalize, DocFields, SearchIndex};
 
@@ -34,7 +34,7 @@ pub fn render_data_json(
     compact: bool,
     details: &HashMap<String, SanshoDetail>,
 ) -> Result<Rendered> {
-    let mut result = convert_v2(raw, generated_at);
+    let mut result = convert_v3(raw, generated_at);
     if !details.is_empty() {
         for course in &mut result.data.courses {
             if let Some(detail) = details.get(&course.cd) {

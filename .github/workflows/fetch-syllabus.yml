@@ -23,7 +23,7 @@ on:
         default: ''
 
 permissions:
-  contents: write   # commit raw/ to the data branch
+  contents: write   # commit raw/ straight to main (signed, via the GitHub API)
   actions: write    # trigger deploy.yml via gh workflow run
 
 concurrency:

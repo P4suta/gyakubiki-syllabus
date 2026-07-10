@@ -30,7 +30,7 @@ const TSUUNEN_LABEL: &str = "通年";
 /// values, [`build_dictionaries`] sorts them into the wire dictionaries, and
 /// [`second_pass`] resolves each course's indices and builds the filter bitsets.
 #[must_use]
-pub fn convert_v2(raw: &[RawCourse], generated_at: String) -> ConvertResult {
+pub fn convert_v3(raw: &[RawCourse], generated_at: String) -> ConvertResult {
     let first = first_pass(raw);
     let dicts = build_dictionaries(&first.dict_sets);
     let dict_index = DictIndex::from(&dicts);
@@ -412,7 +412,7 @@ fn encode(bitsets: &[BitSet]) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::convert_v2;
+    use super::convert_v3;
     use crate::bitset::BitSet;
     use crate::model::{ProcessedData, RawCourse};
 
@@ -426,7 +426,7 @@ mod tests {
     }
 
     fn convert(raw: &[RawCourse]) -> ProcessedData {
-        convert_v2(raw, "2026-05-31T00:00:00Z".to_owned()).data
+        convert_v3(raw, "2026-05-31T00:00:00Z".to_owned()).data
     }
 
     /// Position of `label` in a dictionary.
@@ -628,7 +628,7 @@ mod tests {
 
     #[test]
     fn skips_empty_code_with_warning() {
-        let result = convert_v2(&[raw("", "空コード"), raw("001", "正常")], "t".to_owned());
+        let result = convert_v3(&[raw("", "空コード"), raw("001", "正常")], "t".to_owned());
         assert_eq!(result.data.courses.len(), 1);
         assert!(!result.warnings.is_empty());
     }
@@ -805,7 +805,7 @@ mod tests {
 
     #[test]
     fn warns_on_unparsable_jikanwari_but_keeps_course() {
-        let result = convert_v2(
+        let result = convert_v3(
             &[RawCourse {
                 jikanwari: "集中".into(),
                 ..raw("001", "集中講義")
@@ -818,7 +818,7 @@ mod tests {
 
     #[test]
     fn empty_jikanwari_yields_no_slots_no_warning() {
-        let result = convert_v2(&[raw("001", "A")], "t".to_owned());
+        let result = convert_v3(&[raw("001", "A")], "t".to_owned());
         assert_eq!(result.data.courses[0].slots.len(), 0);
         assert!(result.warnings.is_empty());
     }

@@ -359,7 +359,7 @@ mod tests {
     use super::generate;
     use std::collections::BTreeSet;
     use syllabus_core::model::RawCourse;
-    use syllabus_core::{convert_v2, Engine, Filters};
+    use syllabus_core::{convert_v3, Engine, Filters};
 
     fn raw_courses(g: &super::Generated) -> Vec<RawCourse> {
         serde_json::from_value(serde_json::Value::Array(g.raw.clone()))
@@ -435,7 +435,7 @@ mod tests {
     fn converts_to_valid_v3_with_saturday_and_tsuunen() {
         let g = generate(40, 42);
         let raw = raw_courses(&g);
-        let data = convert_v2(&raw, "2026-01-01T00:00:00Z".to_owned()).data;
+        let data = convert_v3(&raw, "2026-01-01T00:00:00Z".to_owned()).data;
 
         // Grid variety: 通年 propagation and a Saturday column both present.
         assert!(data.dicts.semesters.iter().any(|s| s == "通年"));
