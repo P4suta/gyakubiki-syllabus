@@ -31,10 +31,15 @@ classes; they never hardcode `#`, px, or shadow values.
 - **Overlays are slate ink at semantic opacities** (`--color-overlay-*`), used
   for borders, hovers, skeletons, and dividers rather than named greys or pure
   black — the tint keeps them from muddying the light field.
-- **Palettes share one OKLCH basis.** The 10 course tiles and the 6 eval colors
-  are placed on a common lightness/chroma ring per theme (`lib/colors.ts`,
-  `lib/syllabus-icons.ts`) so they read as one calm family. Each tile's
-  `accentText`/`text` clears 4.5:1 on its `bg` — locked by `colors.test.ts`.
+- **Palettes are derived, not hand-picked.** The 10 course tiles ("macaron") are
+  10 hues 36° apart from rose (350°), each held at ONE chroma per theme (equal
+  vividness) but the lightest lightness that still carries it — so hue is even and
+  chroma uniform while lightness varies per hue (yellow light, blue deeper). Each
+  tile's `text`/`mutedText`/`accentText` is its own hue-tinted ink clearing 4.5:1
+  on its `bg`; text on a tile uses that ink, never the global slate greys. The 6
+  eval colours reuse a subset of the ring (`lib/colors.ts`, `lib/syllabus-icons.ts`).
+  Locked by `colors.test.ts` / `palette.test.ts`; regenerate from the derivation
+  script, don't hand-edit.
 
 ## Primitives
 

@@ -1,7 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { COLORS } from './colors'
 import { contrastRatio } from './contrast'
 
 /**
@@ -260,20 +259,21 @@ describe('design token enforcement', () => {
 				}
 			}
 		}
-		// Muted text can land on: the base surfaces, the subtle-overlay badge
-		// (composited hex, computed once — see palette derivation), and any tile.
+		// Muted text lands on the base surfaces + the subtle-overlay badge
+		// (composited hex, computed once — see palette derivation). Course tiles are
+		// NOT checked here: on a tile the muted text is the tile's own hue-tinted
+		// ink (colors.ts text/mutedText/accentText), AA-locked by colors.test.ts —
+		// the global slate greys are never rendered on a tile.
 		checkAA(lightCss, [
 			'#ffffff',
 			'#fbfbfd', // --color-surface-page
 			'#f3f3f6', // --color-overlay-subtle composited over the page
-			...COLORS.map((c) => c.light.bg),
 		])
 		checkAA(darkCss, [
 			'#0f1116', // dark --color-surface-page
 			'#191c22', // dark --color-surface-primary
 			'#1f232b', // dark --color-surface-elevated
 			'#23262d', // dark --color-overlay-subtle composited over the card
-			...COLORS.map((c) => c.dark.bg),
 		])
 	})
 

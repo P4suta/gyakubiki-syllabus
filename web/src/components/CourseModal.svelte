@@ -1,7 +1,11 @@
 <script lang="ts">
+import { quadOut } from 'svelte/easing'
+import { slide } from 'svelte/transition'
+import { getColor } from '../lib/colors'
 import { loadDetail } from '../lib/details'
 import { FIELD_SPEC } from '../lib/syllabus-fields.generated'
 import { deliveryMode } from '../lib/syllabus-icons'
+import { useTheme } from '../lib/theme.svelte'
 import type { Course, CourseDetail, Dictionaries } from '../types/course'
 import BottomSheet from './BottomSheet.svelte'
 import EvalChart from './EvalChart.svelte'
@@ -14,6 +18,15 @@ interface Props {
 }
 
 let { course, dicts, year, onclose }: Props = $props()
+
+// The course's palette tint — the same hue the card carries, so opening a card
+// continues its colour into the sheet header (and the plan-timeline nodes). Used
+// as a surface / non-text sign only; body text stays on the AA-locked ink tokens.
+const theme = useTheme()
+const tint = $derived.by(() => {
+	const c = getColor(course.cd)
+	return theme.isDark ? c.dark : c.light
+})
 
 // Deep link to KULAS's official「シラバス参照」page (plain GET, no token).
 const SANSHO_BASE =
@@ -54,10 +67,15 @@ $effect(() => {
 
 const delivery = $derived(detail?.delivery ? deliveryMode(detail.delivery.mode) : null)
 
+// Credits as blocks (echoes CourseCard): one square per credit, a half for .5,
+// painted in the tile's border colour — the second, non-text use of the tint.
+const creditsN = $derived(Number(detail?.unit) || 0)
+const creditBlocks = $derived(Array.from({ length: Math.min(Math.floor(creditsN), 8) }))
+const creditHalf = $derived(creditsN - Math.floor(creditsN) >= 0.5)
+
 // Spec-driven sections, bundled into groups. Order/group come from FIELD_SPEC;
 // `meta`/`delivery-badge` render as header chips, not rows. Hero fields (group
-// `''` — 成績評価/概要) open at the top with no subheading; the rest sit under a
-// subheading (授業内容 / その他), collapsed, all sharing one disclosure affordance.
+// `''` — 成績評価/概要) sit open at the top; the rest collapse under their group.
 type Section = { key: string; label: string; group: string; render: string; value: unknown }
 
 // 科目情報 (base fields) always exist; treat them as one more row in the last
@@ -73,6 +91,16 @@ const allSections = $derived.by<Section[]>(() => {
 			const value = d[f.key]
 			if (hasValue(value)) {
 				rows.push({ key: f.key, label: f.label, group: f.group, render: f.render, value })
+			}
+		}
+		// `extra` is a variable-length bag of unknown labels (KULAS layout drift),
+		// deliberately kept out of the static FIELD_SPEC — fold it in here so it
+		// isn't silently dropped, as longtext under the last group.
+		if (detail.extra?.length) {
+			for (const e of detail.extra) {
+				if (e.text?.trim()) {
+					rows.push({ key: `extra:${e.label}`, label: e.label, group: OTHER_GROUP, render: 'longtext', value: e.text })
+				}
 			}
 		}
 	}
@@ -93,6 +121,18 @@ const groupOrder = $derived([
 ])
 const sectionsInGroup = (group: string) => allSections.filter((s) => s.group === group)
 
+// Per-group open state. A custom button disclosure (not native <details>): the
+// `slide` transition animates height in JS, so it needs no `interpolate-size` /
+// `::details-content` — that pair stalled axe-core's contrast pass in CI.
+let openGroups = $state<Record<string, boolean>>({})
+
+// Taxonomy facets — a quiet middle-dot line, so delivery/credits read first.
+const facets = $derived(
+	[dicts.kubun[course.kbn], dicts.kaikojiki[course.ki], dicts.campuses[course.campus]]
+		.filter(Boolean)
+		.join(' · '),
+)
+
 function hasValue(v: unknown): boolean {
 	if (v == null) return false
 	if (Array.isArray(v)) return v.length > 0
@@ -104,28 +144,46 @@ function hasValue(v: unknown): boolean {
 
 <BottomSheet {onclose} ariaLabel={course.nm}>
 	{#snippet header(close)}
-		<div class="px-4 pt-2 pb-3 sm:px-7 sm:pt-6 sm:pb-3">
+		<!-- Tinted band: the card's colour carries into the sheet so the two read as
+		     one object. Body text uses AA-locked tint ink (text/mutedText). -->
+		<div class="px-4 pt-2 pb-3 sm:px-7 sm:pt-6 sm:pb-3 border-b border-overlay-subtle" style="background: {tint.bg};">
 			<div class="flex justify-between items-start gap-3">
 				<div class="min-w-0">
-					<h2 class="text-title font-semibold text-apple-text leading-snug tracking-tight">
+					<h2 class="text-title font-semibold leading-snug tracking-tight" style="color: {tint.text};">
 						{course.nm}
 					</h2>
 					{#if course.sub}
-						<p class="text-sub text-apple-text-tertiary mt-1 tracking-tight">{course.sub}</p>
+						<p class="text-sub mt-1 tracking-tight" style="color: {tint.mutedText};">{course.sub}</p>
 					{/if}
-					<div class="flex flex-wrap gap-1.5 mt-2.5">
+					<!-- Meta in three registers (mirrors the card): delivery as a filled
+					     chip, credits as blocks, taxonomy as a quiet middle-dot line. -->
+					<!-- All text on the tinted band uses the tile's own AA-locked ink
+					     (mutedText), never the global slate greys — same as the card. -->
+					<div class="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 mt-2.5" style="color: {tint.mutedText};">
 						{#if delivery}
-							<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-overlay-light text-micro text-apple-text-secondary">
+							<!-- On bg-overlay-medium (tile + slate) mutedText drops below AA;
+							     override to the tile's max-contrast ink. -->
+							<span class="inline-flex items-center gap-1 rounded-full bg-overlay-medium px-2 py-0.5 text-micro" style="color: {tint.text};">
 								{delivery.emoji} {delivery.label}
 							</span>
 						{/if}
-						{#if detail?.unit}
-							<span class="px-2 py-0.5 rounded-full bg-overlay-light text-micro text-apple-text-secondary">{detail.unit}単位</span>
+						{#if creditsN > 0}
+							<span class="inline-flex items-center gap-1.5 text-micro" aria-label="{detail?.unit}単位">
+								<span class="flex items-center gap-0.5" aria-hidden="true">
+									{#each creditBlocks as _}
+										<span class="w-2 h-2" style="background: {tint.border};"></span>
+									{/each}
+									{#if creditHalf}
+										<span class="w-1 h-2" style="background: {tint.border};"></span>
+									{/if}
+								</span>
+								<span class="tabular-nums">{detail?.unit}単位</span>
+							</span>
 						{/if}
-						<span class="px-2 py-0.5 rounded-full bg-overlay-light text-micro text-apple-text-secondary">{dicts.kubun[course.kbn]}</span>
-						<span class="px-2 py-0.5 rounded-full bg-overlay-light text-micro text-apple-text-secondary">{dicts.kaikojiki[course.ki]}</span>
-						<span class="px-2 py-0.5 rounded-full bg-overlay-light text-micro text-apple-text-secondary">{dicts.campuses[course.campus]}</span>
 					</div>
+					{#if facets}
+						<div class="mt-1.5 text-caption tracking-tight" style="color: {tint.mutedText};">{facets}</div>
+					{/if}
 				</div>
 				<button
 					class="shrink-0 w-10 h-10 sm:w-8 sm:h-8 rounded-full bg-overlay-light flex items-center justify-center active:bg-overlay-strong sm:hover:bg-overlay-strong transition-colors duration-200 cursor-pointer"
@@ -142,34 +200,46 @@ function hasValue(v: unknown): boolean {
 
 	<div class="px-4 pb-6 sm:px-7 sm:pb-7">
 		{#if loading}
-			<div class="space-y-3 py-4 animate-pulse">
-				<div class="h-24 rounded-xl bg-overlay-light"></div>
-				<div class="h-4 rounded-lg bg-overlay-light w-3/4"></div>
-				<div class="h-4 rounded-lg bg-overlay-light w-1/2"></div>
-			</div>
+			{@render skeleton()}
 		{:else}
-			<!-- Hero: 成績評価 + 概要, open by default. -->
+			<!-- Hero: 成績評価 + 概要 — always open (decision-critical), no chevron. -->
 			{#each heroSections as s (s.key)}
-				<details class="group border-b border-overlay-subtle" open>
-					{@render disclosure(s.label)}
-					<div class="pb-3.5">{@render sectionBody(s)}</div>
-				</details>
+				<section class="border-b border-overlay-subtle py-4">
+					<h3 class="text-caption font-semibold text-apple-text-secondary mb-2.5 tracking-tight">{s.label}</h3>
+					{@render sectionBody(s)}
+				</section>
 			{/each}
 
 			<!-- Each category is one collapsible group (collapsed by default); its
-			     fields sit inside as labeled blocks, so the default view is short. -->
+			     fields sit inside as labeled blocks, so the default view is short. A
+			     button + `slide` (not <details>) so the open/close animates without
+			     the axe-hanging `::details-content`/`interpolate-size`. -->
 			{#each groupOrder as g (g)}
-				<details class="group border-b border-overlay-subtle">
-					{@render disclosure(g)}
-					<div class="pb-4 space-y-5">
-						{#each sectionsInGroup(g) as s (s.key)}
-							<div>
-								<h4 class="text-caption font-semibold text-apple-text-secondary mb-2 tracking-tight">{s.label}</h4>
-								{@render sectionBody(s)}
-							</div>
-						{/each}
-					</div>
-				</details>
+				{@const open = openGroups[g] ?? false}
+				<div class="border-b border-overlay-subtle">
+					<button
+						type="button"
+						data-section
+						class="w-full flex items-center justify-between gap-2 py-4 cursor-pointer select-none text-left"
+						aria-expanded={open}
+						onclick={() => { openGroups[g] = !open }}
+					>
+						<h3 class="text-headline font-semibold text-apple-text tracking-tight">{g}</h3>
+						<svg class="w-4 h-4 shrink-0 text-apple-text-tertiary transition-transform duration-200 {open ? 'rotate-180' : ''}" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+							<path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
+						</svg>
+					</button>
+					{#if open}
+						<div class="pb-4 space-y-6" transition:slide={{ duration: 200, easing: quadOut }}>
+							{#each sectionsInGroup(g) as s (s.key)}
+								<div>
+									<h4 class="text-caption font-semibold text-apple-text-secondary mb-2 tracking-tight">{s.label}</h4>
+									{@render sectionBody(s)}
+								</div>
+							{/each}
+						</div>
+					{/if}
+				</div>
 			{/each}
 		{/if}
 
@@ -190,59 +260,89 @@ function hasValue(v: unknown): boolean {
 	</div>
 </BottomSheet>
 
-<!-- One disclosure affordance for every collapsible section: label + a chevron
-     that rotates when open. No blue-link "read more" anywhere. -->
-{#snippet disclosure(label: string)}
-	<summary class="flex items-center justify-between gap-2 py-3.5 cursor-pointer list-none select-none">
-		<span class="text-caption font-semibold text-apple-text-secondary tracking-tight">{label}</span>
-		<svg class="w-4 h-4 shrink-0 text-apple-text-tertiary transition-transform duration-200 group-open:rotate-180" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-			<path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
+{#snippet icon(name: 'clock' | 'pin')}
+	{#if name === 'clock'}
+		<svg class="w-3.5 h-3.5 shrink-0 text-apple-text-tertiary" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+			<path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
 		</svg>
-	</summary>
+	{:else}
+		<svg class="w-3.5 h-3.5 shrink-0 text-apple-text-tertiary" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+			<path stroke-linecap="round" stroke-linejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" />
+			<path stroke-linecap="round" stroke-linejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" />
+		</svg>
+	{/if}
 {/snippet}
 
 {#snippet sectionBody(s: Section)}
 	{#if s.render === 'eval-chart'}
 		{@const ev = s.value as import('../types/course').Eval}
-		<EvalChart rows={ev.rows} note={ev.note} />
+		<div class="rounded-lg bg-overlay-subtle p-4 sm:p-5">
+			<EvalChart rows={ev.rows} note={ev.note} />
+		</div>
 	{:else if s.render === 'longtext'}
 		<p class="text-body text-apple-text leading-relaxed whitespace-pre-line tracking-tight">{s.value as string}</p>
 	{:else if s.render === 'list'}
-		<ol class="list-decimal list-outside pl-5 space-y-1">
-			{#each s.value as string[] as item}
-				<li class="text-body text-apple-text leading-relaxed tracking-tight">{item}</li>
+		<!-- Hand-numbered so the marker is a calm tabular figure, not a browser
+		     bullet — a designed step list rather than a raw <ol>. -->
+		<ol class="space-y-2">
+			{#each s.value as string[] as item, i}
+				<li class="flex gap-2.5">
+					<span class="mt-0.5 shrink-0 text-caption font-semibold tabular-nums text-apple-text-tertiary">{i + 1}</span>
+					<span class="text-body text-apple-text leading-relaxed tracking-tight">{item}</span>
+				</li>
 			{/each}
 		</ol>
 	{:else if s.render === 'plan-timeline'}
 		{@const plan = s.value as import('../types/course').PlanItem[]}
-		<ol class="space-y-2">
-			{#each plan as p}
+		<!-- A real timeline: tinted node per session, a hairline rail connecting
+		     them (dropped after the last). Node number sits in the tile hue. -->
+		<ol>
+			{#each plan as p, i}
 				<li class="flex gap-3">
-					<span class="shrink-0 w-12 whitespace-nowrap text-micro font-semibold text-apple-blue tabular-nums">第{p.n}回</span>
-					<span class="text-body text-apple-text leading-relaxed whitespace-pre-line tracking-tight">{p.text}</span>
+					<div class="flex flex-col items-center shrink-0">
+						<span class="flex h-6 w-6 items-center justify-center rounded-full text-micro font-semibold tabular-nums" style="background: {tint.bg}; color: {tint.accentText};">{p.n}</span>
+						{#if i < plan.length - 1}
+							<span class="w-px grow bg-overlay-medium" aria-hidden="true"></span>
+						{/if}
+					</div>
+					<p class="text-body text-apple-text leading-relaxed whitespace-pre-line tracking-tight pb-4">{p.text}</p>
 				</li>
 			{/each}
 		</ol>
 	{:else if s.render === 'office-table'}
 		{@const rows = s.value as import('../types/course').OfficeHour[]}
-		<div class="space-y-1">
+		<!-- Each entry as a small card, keeping name / when / where distinct
+		     instead of the old slash-joined line. -->
+		<ul class="space-y-2">
 			{#each rows as o}
-				<div class="text-body text-apple-text leading-relaxed tracking-tight">
-					{[o.name, o.day, o.time, o.place].filter(Boolean).join(' / ')}
-				</div>
+				<li class="rounded-lg bg-overlay-subtle px-3 py-2.5">
+					{#if o.name}
+						<div class="text-sub font-medium text-apple-text tracking-tight">{o.name}</div>
+					{/if}
+					{#if o.day || o.time || o.place}
+						<div class="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-caption text-apple-text-secondary">
+							{#if o.day || o.time}
+								<span class="inline-flex items-center gap-1.5">{@render icon('clock')}{[o.day, o.time].filter(Boolean).join(' ')}</span>
+							{/if}
+							{#if o.place}
+								<span class="inline-flex items-center gap-1.5">{@render icon('pin')}{o.place}</span>
+							{/if}
+						</div>
+					{/if}
+				</li>
 			{/each}
-		</div>
+		</ul>
 	{:else if s.render === 'chips'}
 		<div class="flex flex-wrap gap-1.5">
 			{#each s.value as string[] as chip}
-				<span class="px-2 py-0.5 rounded-full bg-overlay-light text-micro text-apple-text-secondary">{chip}</span>
+				<span class="inline-flex items-center rounded-full bg-overlay-light px-2 py-0.5 text-micro text-apple-text-secondary">{chip}</span>
 			{/each}
 		</div>
 	{:else if s.render === 'base'}
 		<dl>
 			{#each s.value as [string, string | undefined | null][] as [label, value]}
 				{#if value}
-					<div class="flex gap-3 py-1.5">
+					<div class="flex gap-3 py-2 border-b border-overlay-subtle last:border-0">
 						<dt class="shrink-0 w-24 text-caption text-apple-text-tertiary tracking-tight">{label}</dt>
 						<dd class="text-body text-apple-text leading-relaxed tracking-tight">{value}</dd>
 					</div>
@@ -250,4 +350,28 @@ function hasValue(v: unknown): boolean {
 			{/each}
 		</dl>
 	{/if}
+{/snippet}
+
+{#snippet skeleton()}
+	<!-- Shaped like the loaded view: a donut placeholder + legend rows, then a
+	     few summary lines and two collapsed group bars, so nothing jumps in. -->
+	<div class="py-1 animate-pulse">
+		<div class="rounded-lg bg-overlay-subtle p-4 sm:p-5 flex items-center gap-4">
+			<div class="w-24 h-24 sm:w-28 sm:h-28 rounded-full bg-overlay-light shrink-0"></div>
+			<div class="flex-1 space-y-2">
+				<div class="h-3 rounded-lg bg-overlay-light w-3/4"></div>
+				<div class="h-3 rounded-lg bg-overlay-light w-1/2"></div>
+				<div class="h-3 rounded-lg bg-overlay-light w-2/3"></div>
+			</div>
+		</div>
+		<div class="space-y-2 mt-5">
+			<div class="h-3.5 rounded-lg bg-overlay-light w-full"></div>
+			<div class="h-3.5 rounded-lg bg-overlay-light w-5/6"></div>
+			<div class="h-3.5 rounded-lg bg-overlay-light w-2/3"></div>
+		</div>
+		<div class="mt-6 space-y-4">
+			<div class="h-4 rounded-lg bg-overlay-light w-32"></div>
+			<div class="h-4 rounded-lg bg-overlay-light w-24"></div>
+		</div>
+	</div>
 {/snippet}

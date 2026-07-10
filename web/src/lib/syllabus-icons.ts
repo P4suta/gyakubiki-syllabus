@@ -16,12 +16,12 @@ export interface KindStyle {
 }
 
 export const EVAL_KIND: Record<string, KindStyle> = {
-	exam: { emoji: '✍️', label: '試験', color: { light: '#c65954', dark: '#eb827b' } },
-	report: { emoji: '📝', label: 'レポート', color: { light: '#4780d2', dark: '#70a6f5' } },
-	attendance: { emoji: '🙋', label: '出席・参加', color: { light: '#319751', dark: '#62bb78' } },
-	presentation: { emoji: '💬', label: '発表', color: { light: '#be6517', dark: '#e28d4f' } },
-	quiz: { emoji: '🧩', label: '小テスト', color: { light: '#7d70ce', dark: '#a196f1' } },
-	other: { emoji: '📌', label: 'その他', color: { light: '#79818d', dark: '#9da5b1' } },
+	exam: { emoji: '✍️', label: '試験', color: { light: '#fa285c', dark: '#fb7e8c' } },
+	report: { emoji: '📝', label: 'レポート', color: { light: '#1a8fef', dark: '#65b0fb' } },
+	attendance: { emoji: '🙋', label: '出席・参加', color: { light: '#1da751', dark: '#26cb64' } },
+	presentation: { emoji: '💬', label: '発表', color: { light: '#be7c18', dark: '#e79720' } },
+	quiz: { emoji: '🧩', label: '小テスト', color: { light: '#a362f9', dark: '#ba93fb' } },
+	other: { emoji: '📌', label: 'その他', color: { light: '#788fa7', dark: '#9badc1' } },
 }
 
 export function evalKind(type: string): KindStyle {

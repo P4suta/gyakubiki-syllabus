@@ -1,13 +1,11 @@
 export interface Tint {
 	bg: string
 	border: string
+	/** Course name — the theme ink (max contrast on the tile). */
 	text: string
-	/**
-	 * The accent rendered *as text* on `bg` (the card's meta line). Darker (light
-	 * theme) / lighter (dark theme) than `border`, which is a decoration colour and
-	 * fails WCAG AA as text on its own tint. Each `accentText`/`text` clears 4.5:1
-	 * on its `bg` — locked by colors.test.ts.
-	 */
+	/** Professor / credits line — a calm, tile-tinted text that clears AA on `bg`. */
+	mutedText: string
+	/** The meta line rendered as text on `bg` — a vivid, tile-tinted accent. */
 	accentText: string
 }
 
@@ -18,52 +16,24 @@ export interface CourseColor {
 }
 
 /**
- * The course-tile palette — 10 hues placed on a shared OKLCH ring (equal
- * lightness & chroma per theme) so the tints read as one calm family rather than
- * ad-hoc web primaries. Exported so colors.test.ts can lock every contrast pair.
- * Light tiles: L≈0.955 pastel; dark tiles: L≈0.265 deep. `text` is the theme ink.
+ * "Macaron" course palette — derived, not hand-picked. 10 hues evenly spaced in
+ * OKLCH; every tile holds ONE chroma (equal vividness, no neon/washed outliers)
+ * at the lightest lightness that can carry it (so yellow stays light, blue a
+ * touch deeper — each hue clean, none muddy/olive). `mutedText` / `accentText`
+ * lightness is solved to clear WCAG AA (4.5:1) on the tile — all locked by
+ * colors.test.ts. See DESIGN.md for the derivation; regenerate, don't hand-edit.
  */
 export const COLORS: CourseColor[] = [
-	{
-		light: { bg: '#def2ff', border: '#4885df', text: '#1c1e27', accentText: '#3463a6' },
-		dark: { bg: '#132540', border: '#427fd8', text: '#e9eaf0', accentText: '#74a6ef' },
-	},
-	{
-		light: { bg: '#d9fadf', border: '#429c5a', text: '#1c1e27', accentText: '#21763c' },
-		dark: { bg: '#0a2d15', border: '#3b9555', text: '#e9eaf0', accentText: '#69ba7c' },
-	},
-	{
-		light: { bg: '#fcf0cb', border: '#a28200', text: '#1c1e27', accentText: '#7c5f00' },
-		dark: { bg: '#302400', border: '#9c7c00', text: '#e9eaf0', accentText: '#c0a241' },
-	},
-	{
-		light: { bg: '#ffe4f2', border: '#c55e8a', text: '#1c1e27', accentText: '#964267' },
-		dark: { bg: '#391927', border: '#bf5884', text: '#e9eaf0', accentText: '#df84a8' },
-	},
-	{
-		light: { bg: '#eeecff', border: '#8374da', text: '#1c1e27', accentText: '#6156a3' },
-		dark: { bg: '#24203e', border: '#7e6ed3', text: '#e9eaf0', accentText: '#a198eb' },
-	},
-	{
-		light: { bg: '#ffe8d1', border: '#c56c21', text: '#1c1e27', accentText: '#964d09' },
-		dark: { bg: '#3b1c04', border: '#be6517', text: '#e9eaf0', accentText: '#de8f57' },
-	},
-	{
-		light: { bg: '#fee7ff', border: '#ad65be', text: '#1c1e27', accentText: '#814a8d' },
-		dark: { bg: '#311c36', border: '#a75fb7', text: '#e9eaf0', accentText: '#c68bd3' },
-	},
-	{
-		light: { bg: '#cafbfa', border: '#009c9c', text: '#1c1e27', accentText: '#007778' },
-		dark: { bg: '#002e2e', border: '#009696', text: '#e9eaf0', accentText: '#16bbbc' },
-	},
-	{
-		light: { bg: '#ffe5e1', border: '#d15c56', text: '#1c1e27', accentText: '#9c433f' },
-		dark: { bg: '#3c1917', border: '#ca5551', text: '#e9eaf0', accentText: '#e6857e' },
-	},
-	{
-		light: { bg: '#ebf0f8', border: '#7f8793', text: '#1c1e27', accentText: '#5d646f' },
-		dark: { bg: '#1f2630', border: '#79818d', text: '#e9eaf0', accentText: '#9da5b1' },
-	},
+	{ light: { bg: '#fec7df', border: '#ff8ec6', text: '#4d2e3d', mutedText: '#94406c', accentText: '#ac1f74' }, dark: { bg: '#2e0d1e', border: '#9b3b6e', text: '#d0a4b8', mutedText: '#ca5a95', accentText: '#ea2e9f' } },
+	{ light: { bg: '#ffc3bc', border: '#fe847a', text: '#4b2c29', mutedText: '#943f39', accentText: '#ad1e22' }, dark: { bg: '#310d0b', border: '#a43b36', text: '#cfa5a1', mutedText: '#d45d55', accentText: '#f53739' } },
+	{ light: { bg: '#fed2ac', border: '#ffa348', text: '#45372b', mutedText: '#7c5837', accentText: '#895117' }, dark: { bg: '#381c00', border: '#bc6c00', text: '#d4b498', mutedText: '#b38052', accentText: '#c47725' } },
+	{ light: { bg: '#fef3bd', border: '#d8be34', text: '#4d4937', mutedText: '#796f40', accentText: '#7d6d1b' }, dark: { bg: '#342c00', border: '#b09803', text: '#cec599', mutedText: '#9f9356', accentText: '#a89428' } },
+	{ light: { bg: '#dffdcd', border: '#95d26b', text: '#404e38', mutedText: '#577940', accentText: '#487c1b' }, dark: { bg: '#0e2001', border: '#3f7307', text: '#9cbb89', mutedText: '#668e4c', accentText: '#579322' } },
+	{ light: { bg: '#bffee7', border: '#2cdcaf', text: '#384b44', mutedText: '#437665', accentText: '#1f7b62' }, dark: { bg: '#00382a', border: '#01bc93', text: '#a4d6c3', mutedText: '#60a58e', accentText: '#2fab89' } },
+	{ light: { bg: '#b0f5fe', border: '#00889c', text: '#35474a', mutedText: '#417076', accentText: '#1d737c' }, dark: { bg: '#00444a', border: '#00bccf', text: '#c1e4e9', mutedText: '#69b2bb', accentText: '#34b8c7' } },
+	{ light: { bg: '#acdafe', border: '#3db2fe', text: '#2a3944', mutedText: '#375f7d', accentText: '#18608e' }, dark: { bg: '#00253c', border: '#0285c9', text: '#a2bdd2', mutedText: '#5590bb', accentText: '#2890d1' } },
+	{ light: { bg: '#c6cdff', border: '#8d97fe', text: '#2d3159', mutedText: '#4a49bb', accentText: '#4e2def' }, dark: { bg: '#151636', border: '#5357b1', text: '#aaafcd', mutedText: '#727acf', accentText: '#7074f3' } },
+	{ light: { bg: '#eed0fe', border: '#de9cfe', text: '#493354', mutedText: '#83459f', accentText: '#9723c3' }, dark: { bg: '#24112e', border: '#80469a', text: '#c0a6cd', mutedText: '#ad61d1', accentText: '#c143f4' } },
 ]
 
 export function getColor(kogiCd: string): CourseColor {

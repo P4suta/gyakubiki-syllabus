@@ -12,8 +12,10 @@ test.describe('course modal', () => {
 		await expect(page.getByRole('heading', { level: 2, name: FIXTURES.regular })).toBeVisible()
 		await expect(page.getByText('単位', { exact: false }).first()).toBeVisible()
 		await expect(page.getByText('成績評価')).toBeVisible()
-		// The ratio chart labels its dominant share with a percentage.
-		await expect(page.getByText(/\d+%/).first()).toBeVisible()
+		// The ratio chart labels its dominant share with a percentage. Scope to the
+		// dialog: the cards behind it now carry a mini-donut `<title>…%</title>`
+		// (hidden) that a page-wide match would resolve to first.
+		await expect(page.getByRole('dialog').getByText(/\d+%/).first()).toBeVisible()
 	})
 
 	test('expands 授業内容 and その他 to reveal 授業計画 and 科目情報', async ({ page }) => {
