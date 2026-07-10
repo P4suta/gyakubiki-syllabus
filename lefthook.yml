@@ -40,16 +40,33 @@ pre-push:
     # Mirrors the CI "Web (check / test)" job: build the wasm glue first, then
     # svelte-check/tsc and vitest *with the coverage gate* (test:cov — same
     # thresholds CI enforces, so a coverage drop fails here, not in Actions).
-    #
-    # NOT mirrored here (the lean dev image ships neither node, CJK fonts, nor
-    # Playwright browsers by design): the CI "wasm boundary tests" (wasm-pack
-    # test --node) and the "E2E (Playwright)" job — both remain CI-only.
     web:
       run: >-
         docker compose run --rm -T dev bash -c "wasm-pack build crates/wasm
         --target web --out-dir ../../web/src/wasm --out-name syllabus
         && cd web && bun install --frozen-lockfile && bun run check && bun run test:cov"
       fail_text: "Web checks failed (svelte-check/tsc/vitest + coverage gate)"
+    # CI "wasm boundary tests": run the crate's #[wasm_bindgen] surface under
+    # node (the JsValue shapes the frontend depends on). Needs node — baked into
+    # the dev image.
+    wasm-boundary:
+      run: docker compose run --rm -T dev wasm-pack test --node crates/wasm
+      fail_text: "WASM boundary tests failed (wasm-pack test --node)"
+    # CI "E2E (Playwright)" job: build the wasm glue, synthesize the KULAS-free
+    # sample dataset (the specs anchor on it), then run Playwright. The visual
+    # specs self-skip off CI (their baselines are runner-specific), so this runs
+    # the functional suite. NB: it rewrites web/public with the sample dataset —
+    # run `just convert` afterwards to restore your real data for `bun run dev`.
+    e2e:
+      run: >-
+        docker compose run --rm -T dev bash -c "wasm-pack build crates/wasm
+        --target web --out-dir ../../web/src/wasm --out-name syllabus
+        && cargo run --release -q -p syllabus-cli -- gen-sample
+        && cargo run --release -q -p syllabus-cli -- convert dev-data/sample-raw.json
+        --compact --details-dir dev-data/sample-details
+        --details-out web/public/details -o web/public/data.json
+        && cd web && bun install --frozen-lockfile && bun run test:e2e"
+      fail_text: "E2E (Playwright) failed; see web/test-results/"
     typos-full:
       run: typos
     markdown-full:
