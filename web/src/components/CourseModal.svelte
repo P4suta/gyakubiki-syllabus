@@ -161,13 +161,15 @@ function hasValue(v: unknown): boolean {
 					     (mutedText), never the global slate greys — same as the card. -->
 					<div class="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 mt-2.5" style="color: {tint.mutedText};">
 						{#if delivery}
-							<span class="inline-flex items-center gap-1 rounded-full bg-overlay-medium px-2 py-0.5 text-micro">
+							<!-- On bg-overlay-medium (tile + slate) mutedText drops below AA;
+							     override to the tile's max-contrast ink. -->
+							<span class="inline-flex items-center gap-1 rounded-full bg-overlay-medium px-2 py-0.5 text-micro" style="color: {tint.text};">
 								{delivery.emoji} {delivery.label}
 							</span>
 						{/if}
 						{#if creditsN > 0}
 							<span class="inline-flex items-center gap-1.5 text-micro" aria-label="{detail?.unit}単位">
-								<span class="flex items-center gap-0.5">
+								<span class="flex items-center gap-0.5" aria-hidden="true">
 									{#each creditBlocks as _}
 										<span class="w-2 h-2" style="background: {tint.border};"></span>
 									{/each}

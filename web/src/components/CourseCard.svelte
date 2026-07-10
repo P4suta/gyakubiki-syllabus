@@ -71,7 +71,9 @@ const creditHalf = $derived(creditsN - Math.floor(creditsN) >= 0.5)
 			     of the assessment beside it. `inline-flex items-center` + padding keeps
 			     the (CJK) label optically centred, where a bare bordered span doesn't. -->
 			{#if mode}
-				<span class="inline-flex items-center shrink-0 rounded-full bg-overlay-medium px-1.5 py-0.5 leading-none" style="color: {color.mutedText}; text-box: trim-both cap alphabetic;">{mode.label}</span>
+				<!-- The chip sits on bg-overlay-medium (tile bg + slate), where mutedText
+				     drops below AA; use the tile's max-contrast ink instead. -->
+				<span class="inline-flex items-center shrink-0 rounded-full bg-overlay-medium px-1.5 py-0.5 leading-none" style="color: {color.text};">{mode.label}</span>
 			{/if}
 			{#if topEval}
 				<!-- Assessment group: label then donut, so the ring clearly belongs to
@@ -89,7 +91,7 @@ const creditHalf = $derived(creditsN - Math.floor(creditsN) >= 0.5)
 			{/if}
 			{#if creditsN > 0}
 				<span class="ml-auto flex items-center gap-1 shrink-0" title="{course.unit}単位" aria-label="{course.unit}単位">
-					<span class="flex items-center gap-0.5">
+					<span class="flex items-center gap-0.5" aria-hidden="true">
 						{#each creditBlocks as _}
 							<span class="w-2 h-2" style="background: {color.border};"></span>
 						{/each}
@@ -97,7 +99,7 @@ const creditHalf = $derived(creditsN - Math.floor(creditsN) >= 0.5)
 							<span class="w-1 h-2" style="background: {color.border};"></span>
 						{/if}
 					</span>
-					<span class="text-fine tabular-nums opacity-80">{creditsN}単位</span>
+					<span class="text-fine tabular-nums">{creditsN}単位</span>
 				</span>
 			{/if}
 		</div>
