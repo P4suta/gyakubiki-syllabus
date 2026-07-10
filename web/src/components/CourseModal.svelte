@@ -518,19 +518,31 @@ async function copyField(label: string, value: string) {
 		</ul>
 	{:else if s.render === 'people'}
 		{@const t = parseTeachers(s.value as string[])}
-		<!-- 代表教員 (KULAS's ◎) first with a badge, co-instructors after — the row
-		     of numbers is gone, each name gets a person icon instead. -->
+		<!-- 代表教員 (KULAS's ◎) first with a badge, co-instructors after — each name
+		     gets a person icon. Like keywords, a name is tap-to-search (the box
+		     searches 教員 too), so a teacher's other courses are one click away. -->
 		<div class="flex flex-wrap gap-1.5">
 			{#if t.rep}
-				<span class="inline-flex items-center gap-1.5 rounded-full bg-overlay-light py-1 pl-1.5 pr-2 text-caption text-apple-text">
-					<IconPerson class="w-3.5 h-3.5 text-apple-blue" aria-hidden="true" />{t.rep}
+				{@const rep = t.rep}
+				<button
+					type="button"
+					onclick={() => onsearch?.(rep)}
+					aria-label="{rep}で検索"
+					class="inline-flex items-center gap-1.5 rounded-full bg-overlay-light py-1 pl-1.5 pr-2 text-caption text-apple-text active:bg-overlay-medium sm:hover:bg-overlay-medium transition duration-150 active:scale-95 cursor-pointer"
+				>
+					<IconPerson class="w-3.5 h-3.5 text-apple-blue" aria-hidden="true" />{rep}
 					<span class="rounded-full bg-apple-blue/10 px-1.5 text-fine font-medium text-apple-blue">代表</span>
-				</span>
+				</button>
 			{/if}
 			{#each t.others as name}
-				<span class="inline-flex items-center gap-1.5 rounded-full bg-overlay-light py-1 pl-1.5 pr-2.5 text-caption text-apple-text-secondary">
+				<button
+					type="button"
+					onclick={() => onsearch?.(name)}
+					aria-label="{name}で検索"
+					class="inline-flex items-center gap-1.5 rounded-full bg-overlay-light py-1 pl-1.5 pr-2.5 text-caption text-apple-text-secondary active:bg-overlay-medium sm:hover:bg-overlay-medium transition duration-150 active:scale-95 cursor-pointer"
+				>
 					<IconPerson class="w-3.5 h-3.5 text-apple-text-tertiary" aria-hidden="true" />{name}
-				</span>
+				</button>
 			{/each}
 		</div>
 	{:else if s.render === 'keywords'}
