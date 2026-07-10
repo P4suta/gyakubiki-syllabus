@@ -38,7 +38,11 @@ const REDUNDANT_LABELS: &[&str] = &[
 /// One parsed table cell.
 struct Cell {
     is_th: bool,
+    /// Whitespace-collapsed text (what most fields want).
     text: String,
+    /// Pre-`normalize` text — keeps the full-width space (U+3000) that KULAS uses
+    /// as the keyword delimiter, which `normalize` would fold into an ASCII space.
+    raw: String,
 }
 
 impl Cell {
@@ -114,11 +118,15 @@ fn collect_rows(table: &ElementRef) -> Vec<Vec<Cell>> {
                         .map(|a| a.id())
                         == Some(tr_id)
                 })
-                .map(|c| Cell {
-                    is_th: c.value().name() == "th",
+                .map(|c| {
                     // own text, excluding any nested table, so we get the cell's
                     // value rather than a flattened blob.
-                    text: normalize(&own_text(*c)),
+                    let raw = own_text(*c);
+                    Cell {
+                        is_th: c.value().name() == "th",
+                        text: normalize(&raw),
+                        raw,
+                    }
                 })
                 .collect()
         })
@@ -288,7 +296,17 @@ fn route_row(row: &[Cell], detail: &mut SanshoDetail) {
     } else if has("授業の目的") {
         set_opt(&mut detail.aims, &value);
     } else if has("キーワード") {
-        detail.keywords = split_keywords(&value);
+        // Split the pre-normalize value so the U+3000 keyword delimiter survives
+        // (normalize would fold it into an ASCII space, indistinguishable from the
+        // spaces *inside* English terms like「Euler Lagrange's equation」).
+        let raw = row
+            .iter()
+            .filter(|c| !c.is_th)
+            .map(|c| c.raw.as_str())
+            .filter(|t| !t.trim().is_empty())
+            .collect::<Vec<_>>()
+            .join("\n");
+        detail.keywords = split_keywords(&raw);
     } else if has("求めるもの") || has("PREREQUISITES") {
         set_opt(&mut detail.prereq, &value);
     } else if has("授業時間外") || has("PREPARATION") {
@@ -319,15 +337,42 @@ fn set_opt(slot: &mut Option<String>, value: &str) {
     }
 }
 
-/// Split a keyword blob on separators that are never *inside* a term (spaces and
-/// Japanese/ASCII commas — deliberately not `・`, which joins compound terms).
+/// Split a keyword blob on the real term separators: newlines, Japanese/ASCII
+/// commas, and the full-width space (U+3000) — but NOT the ASCII space, which
+/// appears *inside* English terms (「Euler Lagrange's equation」). A parenthesised
+/// run is never split, so「正準変換(canonical transformation)」stays one term.
+/// (`・` is also kept, as it joins compound terms.)
 fn split_keywords(value: &str) -> Vec<String> {
-    value
-        .split(['、', '，', ',', ' ', '\u{3000}', '\n'])
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(str::to_owned)
-        .collect()
+    let mut out = Vec::new();
+    let mut cur = String::new();
+    let mut depth = 0i32;
+    for c in value.chars() {
+        match c {
+            '(' | '（' => {
+                depth += 1;
+                cur.push(c);
+            }
+            ')' | '）' => {
+                if depth > 0 {
+                    depth -= 1;
+                }
+                cur.push(c);
+            }
+            '、' | '，' | ',' | '\u{3000}' | '\n' if depth == 0 => {
+                let t = cur.trim();
+                if !t.is_empty() {
+                    out.push(t.to_owned());
+                }
+                cur.clear();
+            }
+            _ => cur.push(c),
+        }
+    }
+    let t = cur.trim();
+    if !t.is_empty() {
+        out.push(t.to_owned());
+    }
+    out
 }
 
 /// Extract the SDG goal numbers from a `4 質の高い教育…` style value.
@@ -398,7 +443,40 @@ fn normalize(text: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{kai_number, parse_sansho_html, to_ascii_digits};
+    use super::{kai_number, parse_sansho_html, split_keywords, to_ascii_digits};
+
+    #[test]
+    fn split_keywords_keeps_english_phrases_and_splits_on_real_delimiters() {
+        // Full-width space (U+3000) is the KULAS delimiter; ASCII spaces inside an
+        // English term must be preserved; a parenthesised run stays whole.
+        let got = split_keywords(
+            "Euler-Lagrange方程式(Euler Lagrange's equation)\u{3000}正準変換(canonical transformation)\u{3000}変分原理",
+        );
+        assert_eq!(
+            got,
+            vec![
+                "Euler-Lagrange方程式(Euler Lagrange's equation)",
+                "正準変換(canonical transformation)",
+                "変分原理",
+            ]
+        );
+    }
+
+    #[test]
+    fn split_keywords_splits_commas_and_newlines_only_outside_parens() {
+        let got = split_keywords("機械学習、深層学習\n分類(教師あり, 教師なし)");
+        assert_eq!(got, vec!["機械学習", "深層学習", "分類(教師あり, 教師なし)"]);
+    }
+
+    #[test]
+    fn keyword_cell_uses_the_full_width_space_delimiter() {
+        // A keyword row with U+3000 between terms and an ASCII space inside one.
+        let html = "<table><tr><th>キーワード</th>\
+                    <td>data science\u{3000}機械学習\u{3000}Euler Lagrange</td></tr></table>";
+        let d = parse_sansho_html("x", html);
+        assert_eq!(d.keywords, vec!["data science", "機械学習", "Euler Lagrange"]);
+    }
+
 
     #[test]
     fn to_ascii_digits_converts_full_width_only() {
