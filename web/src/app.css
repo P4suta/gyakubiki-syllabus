@@ -220,17 +220,3 @@ body {
   to { opacity: 1; scale: 1; }
 }
 
-/* Card accent trace: at rest only the left edge (25% of the normalized perimeter)
-   is drawn — the card's left accent; on hover the drawn length grows to the full
-   perimeter, so the one line wraps「くるり一周」around. Stroke-only, no layout/CLS,
-   GPU-cheap enough for every visible card. */
-.card-trace {
-  stroke-dasharray: 25 75;
-  transition: stroke-dasharray 0.5s var(--ease-spring);
-}
-.group:hover .card-trace { stroke-dasharray: 100 0; }
-
-/* Reduced motion: keep the full hover outline but skip the drawing animation. */
-@media (prefers-reduced-motion: reduce) {
-  .card-trace { transition: none; }
-}

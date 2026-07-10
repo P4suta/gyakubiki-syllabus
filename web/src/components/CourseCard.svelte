@@ -69,48 +69,14 @@ const topEval = $derived.by(() => {
 const creditsN = $derived(Number(course.unit) || 0)
 const creditBlocks = $derived(Array.from({ length: Math.min(Math.floor(creditsN), 8) }))
 const creditHalf = $derived(creditsN - Math.floor(creditsN) >= 0.5)
-
-// Rounded-rect trace path in the card's real pixels (measured), so the hover
-// outline follows the card's rounded-lg corners instead of squaring them off.
-// Starts on the left edge and runs counter-clockwise, so the accent grows「左から
-// 一周」. rounded-lg = 8px; inset by half the stroke.
-let cw = $state(0)
-let ch = $state(0)
-const traceD = $derived.by(() => {
-	const i = 1.25
-	const x0 = i
-	const y0 = i
-	const x1 = cw - i
-	const y1 = ch - i
-	if (x1 <= x0 || y1 <= y0) return ''
-	const r = Math.min(7, (x1 - x0) / 2, (y1 - y0) / 2)
-	return `M${x0},${y0 + r}V${y1 - r}A${r},${r} 0 0 0 ${x0 + r},${y1}H${x1 - r}A${r},${r} 0 0 0 ${x1},${y1 - r}V${y0 + r}A${r},${r} 0 0 0 ${x1 - r},${y0}H${x0 + r}A${r},${r} 0 0 0 ${x0},${y0 + r}Z`
-})
 </script>
 
 <button
 	data-course-card
-	bind:clientWidth={cw}
-	bind:clientHeight={ch}
-	class="group relative w-full text-left rounded-lg p-3 sm:p-2 mb-1 sm:mb-1 cursor-pointer transition-transform active:brightness-95 sm:hover:scale-[1.02] sm:hover:shadow-card-hover min-h-tap sm:min-h-0"
+	class="relative w-full text-left rounded-lg p-3 sm:p-2 mb-1 sm:mb-1 cursor-pointer transition-transform active:brightness-95 sm:hover:scale-[1.02] sm:hover:shadow-card-hover min-h-tap sm:min-h-0"
 	style="background: {color.bg};"
 	{onclick}
 >
-	<!-- The accent line IS this trace: at rest it draws only the left edge (the
-	     card's identity), and on hover it grows all the way around (see .card-trace
-	     in app.css). One line, no doubling, following the rounded-lg corners. -->
-	<svg class="pointer-events-none absolute inset-0 h-full w-full" aria-hidden="true">
-		{#if traceD}
-			<path
-				class="card-trace"
-				d={traceD}
-				fill="none"
-				stroke={color.border}
-				stroke-width="2.5"
-				pathLength="100"
-			/>
-		{/if}
-	</svg>
 	{#if registered}
 		<!-- Registered marker: a pin in the tile's accent (inline colour). -->
 		<IconPushPin class="absolute top-1 right-1 w-3 h-3" style="color: {color.accentText};" aria-label="登録済み" />
