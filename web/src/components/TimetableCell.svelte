@@ -5,11 +5,13 @@ import CourseCard from './CourseCard.svelte'
 interface Props {
 	courses: Course[]
 	onselect: (course: Course) => void
+	/** Slot is filled by a registered course — show it confirmed (blue ring). */
+	locked?: boolean
 	/** Ring this cell red when two registered courses collide here. */
 	conflict?: boolean
 }
 
-let { courses, onselect, conflict = false }: Props = $props()
+let { courses, onselect, locked = false, conflict = false }: Props = $props()
 
 // The desktop grid is 30+ cells with dozens of cards each; mounting every
 // CourseCard up front is the bulk of the initial main-thread work. Defer a
@@ -40,7 +42,7 @@ $effect(() => {
      size reserves height so both the skeleton and scrolling stay stable. -->
 <div
 	bind:this={el}
-	class="bg-surface-primary rounded-lg min-h-24 p-1.5 content-auto {conflict ? 'ring-2 ring-apple-red' : ''}"
+	class="bg-surface-primary rounded-lg min-h-24 p-1.5 content-auto {conflict ? 'ring-2 ring-apple-red' : locked ? 'ring-1 ring-apple-blue' : ''}"
 >
 	{#if visible}
 		{#each courses as course (course.cd)}

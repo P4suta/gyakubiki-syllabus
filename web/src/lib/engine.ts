@@ -259,4 +259,15 @@ export class SyllabusEngine {
 			indices: [...indices],
 		})) as PlanSummaryResult
 	}
+
+	/** Lay the registered courses (by code) onto the timetable for one semester,
+	 *  so the grid can show a locked-in slot in place of the search candidates. */
+	async planGrid(cds: readonly string[], semester: string): Promise<Map<GridKey, Course[]>> {
+		const res = (await this.send({
+			type: 'planGrid',
+			cds: [...cds],
+			semester,
+		})) as { cells: WasmGridCell[] }
+		return assembleGrid(res.cells, this.courses, this.days)
+	}
 }

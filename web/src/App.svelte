@@ -54,13 +54,34 @@ $effect(() => {
 	}
 })
 
-// Conflicting timetable cells, as grid keys, for the highlight overlay.
+// The registered courses laid onto the current semester's grid — a locked-in
+// slot shows this in place of the search candidates (the grid IS the plan).
+let planGrid = $state<Map<GridKey, Course[]>>(new Map())
+$effect(() => {
+	const e = engine
+	const sem = semester
+	const cds = [...plan.cds]
+	if (!e || cds.length === 0) {
+		planGrid = new Map()
+		return
+	}
+	let cancelled = false
+	e.planGrid(cds, sem)
+		.then((g) => {
+			if (!cancelled) planGrid = g
+		})
+		.catch(() => {})
+	return () => {
+		cancelled = true
+	}
+})
+
+// A registered cell holding two or more courses is a real clash (you can't
+// attend both) — mark it. Derived from what's actually shown this semester.
 let conflictKeys = $derived.by(() => {
 	const keys = new Set<GridKey>()
-	if (!engine || !planSummary) return keys
-	for (const c of planSummary.conflicts) {
-		const day = engine.days[c.day]
-		if (day !== undefined) keys.add(`${day}-${c.period}`)
+	for (const [key, courses] of planGrid) {
+		if (courses.length > 1) keys.add(key)
 	}
 	return keys
 })
@@ -144,7 +165,7 @@ onDestroy(() => teardownPlanSync?.())
 			generatedAt={engine.generatedAt}
 		/>
 		<SearchBar bind:searchText />
-		<Timetable {grid} {conflictKeys} days={engine.days} onselect={(c) => { selectedCourse = c }} />
+		<Timetable {grid} {planGrid} {conflictKeys} days={engine.days} onselect={(c) => { selectedCourse = c }} />
 	</div>
 
 	<!-- Floating「マイ時間割」button: opens the plan panel; badges the count and
@@ -163,7 +184,6 @@ onDestroy(() => teardownPlanSync?.())
 		<PlanPanel
 			summary={planSummary}
 			courses={engine.courses}
-			onselect={(c) => { showPlan = false; selectedCourse = c }}
 			onclose={() => { showPlan = false }}
 		/>
 	{/if}

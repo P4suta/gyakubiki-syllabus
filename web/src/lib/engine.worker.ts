@@ -25,6 +25,7 @@ type Request =
 	  }
 	| { id: number; type: 'resolvePlan'; cds: string[] }
 	| { id: number; type: 'planSummary'; indices: number[] }
+	| { id: number; type: 'planGrid'; cds: string[]; semester: string }
 
 /** Course view-models + dictionaries + dataset metadata, sent once after init. */
 interface InitResult {
@@ -87,6 +88,11 @@ function handle(msg: Exclude<Request, { type: 'init' }>): unknown {
 			return Array.from(engine.resolvePlan(msg.cds))
 		case 'planSummary':
 			return engine.planSummary(Uint32Array.from(msg.indices))
+		case 'planGrid': {
+			// The registered courses laid onto the timetable for one semester.
+			const indices = engine.resolvePlan(msg.cds)
+			return engine.grid(indices, msg.semester)
+		}
 	}
 }
 

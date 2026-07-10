@@ -8,10 +8,9 @@ interface Props {
 	summary: PlanSummaryResult | null
 	courses: readonly Course[]
 	onclose: () => void
-	onselect: (course: Course) => void
 }
 
-let { summary, courses, onclose, onselect }: Props = $props()
+let { summary, courses, onclose }: Props = $props()
 
 const byCd = $derived(new Map(courses.map((c) => [c.cd, c])))
 const registered = $derived(plan.cds.map((cd) => byCd.get(cd)).filter((c): c is Course => !!c))
@@ -69,29 +68,11 @@ async function share() {
 			</div>
 		{/if}
 
-		<!-- Registered courses -->
-		<ul class="space-y-1 mb-4">
-			{#each registered as course (course.cd)}
-				<li class="flex items-center gap-2 rounded-lg bg-overlay-subtle px-3 py-2">
-					<button
-						class="flex-1 text-left min-w-0 cursor-pointer"
-						onclick={() => onselect(course)}
-					>
-						<span class="block text-caption font-medium text-apple-text truncate">{course.nm}</span>
-						{#if course.prof}
-							<span class="block text-fine text-apple-text-tertiary truncate">{course.prof}</span>
-						{/if}
-					</button>
-					<button
-						class="shrink-0 text-apple-text-tertiary hover:text-apple-text min-h-tap px-2 cursor-pointer"
-						aria-label="{course.nm}を登録から外す"
-						onclick={() => plan.remove(course.cd)}
-					>
-						✕
-					</button>
-				</li>
-			{/each}
-		</ul>
+		<!-- The grid itself is the course list now — manage a slot by tapping its
+		     card. Here we keep just the at-a-glance summary. -->
+		<p class="text-micro text-apple-text-tertiary mb-4 tracking-tight">
+			各コマのカードをタップすると登録・解除できます。
+		</p>
 
 		<!-- 必修/選択 breakdown -->
 		{#if summary && summary.credits.byNen.length > 0}

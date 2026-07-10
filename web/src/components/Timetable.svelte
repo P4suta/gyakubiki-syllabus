@@ -9,13 +9,24 @@ import TimetableCell from './TimetableCell.svelte'
 
 interface Props {
 	grid: Map<GridKey, Course[]>
+	/** Registered courses per cell. A cell here is "locked" — it shows these in
+	 *  place of the search candidates (the grid doubles as the plan). */
+	planGrid?: Map<GridKey, Course[]>
 	days: readonly string[]
 	onselect: (course: Course) => void
-	/** Grid keys whose cell holds a plan conflict (two registered courses). */
+	/** Grid keys whose locked cell holds two+ registered courses (a clash). */
 	conflictKeys?: Set<GridKey>
 }
 
-let { grid, days, onselect, conflictKeys }: Props = $props()
+let { grid, planGrid, days, onselect, conflictKeys }: Props = $props()
+
+/** What a cell shows: the registered course(s) when the slot is locked, else the
+ *  search candidates. `locked` drives the "confirmed" styling. */
+function cell(key: GridKey): { courses: Course[]; locked: boolean } {
+	const registered = planGrid?.get(key) ?? []
+	if (registered.length > 0) return { courses: registered, locked: true }
+	return { courses: grid.get(key) ?? [], locked: false }
+}
 
 let activeDay = $state(0)
 
@@ -114,8 +125,9 @@ let headerH = $state(0)
 		use:swipeNavigate={{ onDrag, onSettle, canPrev, canNext }}
 	>
 		{#each PERIODS as period}
-			{@const courses = grid.get(`${days[activeDay]}-${period}`) ?? []}
-			<div class="bg-surface-primary rounded-xl p-3 {conflictKeys?.has(`${days[activeDay]}-${period}`) ? 'ring-2 ring-apple-red' : ''}">
+			{@const key = `${days[activeDay]}-${period}` as GridKey}
+			{@const { courses, locked } = cell(key)}
+			<div class="bg-surface-primary rounded-xl p-3 {conflictKeys?.has(key) ? 'ring-2 ring-apple-red' : locked ? 'ring-1 ring-apple-blue' : ''}">
 				<div class="sticky top-0 z-sticky -mx-3 -mt-3 px-3 pt-3 pb-1.5 mb-1.5 flex items-baseline gap-2 bg-surface-primary rounded-t-xl">
 					<span class="text-micro font-medium text-apple-text-tertiary">{period}限</span>
 					{#if PERIOD_TIMES[period]}
@@ -174,9 +186,12 @@ let headerH = $state(0)
 				{/if}
 			</div>
 			{#each days as day}
+				{@const key = `${day}-${period}` as GridKey}
+				{@const c = cell(key)}
 				<TimetableCell
-					courses={grid.get(`${day}-${period}`) ?? []}
-					conflict={conflictKeys?.has(`${day}-${period}`) ?? false}
+					courses={c.courses}
+					locked={c.locked}
+					conflict={conflictKeys?.has(key) ?? false}
 					{onselect}
 				/>
 			{/each}
