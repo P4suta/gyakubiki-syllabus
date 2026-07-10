@@ -134,3 +134,37 @@ fn load_search_index_rejects_a_bad_blob() {
     let mut e = engine();
     assert!(e.load_search_index(b"garbage").is_err());
 }
+
+#[wasm_bindgen_test]
+fn plan_summary_shape_is_camel_case() {
+    let obj = as_value(engine().plan_summary(vec![]).expect("plan"));
+    let map = obj.as_object().expect("plan summary is an object");
+    assert!(map.contains_key("conflicts"));
+    let credits = map["credits"].as_object().expect("credits object");
+    for key in [
+        "totalCredits",
+        "totalCourses",
+        "uncredited",
+        "byKubun",
+        "byBunrui",
+        "byNen",
+    ] {
+        assert!(credits.contains_key(key), "credits missing {key}");
+    }
+}
+
+#[wasm_bindgen_test]
+fn resolve_plan_drops_unknown_and_resolves_known() {
+    let e = engine();
+    assert!(
+        e.resolve_plan(vec!["definitely-not-a-code".into()])
+            .is_empty()
+    );
+    // A real cd from the dataset resolves to exactly one index.
+    let views = as_value(e.all_course_views().expect("views"));
+    let cd = views.as_array().unwrap()[0]["cd"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert_eq!(e.resolve_plan(vec![cd]).len(), 1);
+}

@@ -66,6 +66,41 @@ struct QueryResult {
     highlights: Vec<Highlight>,
 }
 
+/// A timetable collision: the cell coordinate and the colliding course indices.
+#[derive(Serialize)]
+struct ConflictView {
+    day: u8,
+    period: u8,
+    courses: Vec<u32>,
+}
+
+/// One category's rolled-up credits and course count.
+#[derive(Serialize)]
+struct TallyView {
+    key: String,
+    credits: f32,
+    count: u32,
+}
+
+/// Credit totals plus the per-axis tallies (授業形態 / 科目分類 / 必修選択).
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CreditsView {
+    total_credits: f32,
+    total_courses: u32,
+    uncredited: u32,
+    by_kubun: Vec<TallyView>,
+    by_bunrui: Vec<TallyView>,
+    by_nen: Vec<TallyView>,
+}
+
+/// A plan's summary: every conflict and the credit tallies.
+#[derive(Serialize)]
+struct PlanSummaryView {
+    conflicts: Vec<ConflictView>,
+    credits: CreditsView,
+}
+
 /// The browser-facing handle to a loaded dataset.
 #[wasm_bindgen]
 pub struct SyllabusEngine {
@@ -152,6 +187,60 @@ impl SyllabusEngine {
             count_unique: grid.count_unique() as u32,
             highlights,
         })
+    }
+
+    /// Resolve a shared plan's stable course codes to course indices (unknown
+    /// codes dropped, ascending, de-duplicated).
+    #[wasm_bindgen(js_name = resolvePlan)]
+    pub fn resolve_plan(&self, cds: Vec<String>) -> Vec<u32> {
+        self.inner
+            .resolve_cds(&cds)
+            .into_iter()
+            .map(|i| i.get() as u32)
+            .collect()
+    }
+
+    /// Summarize the given registered course indices: `{ conflicts, credits }`.
+    ///
+    /// # Errors
+    /// Fails only if the result cannot be serialized to a JS value.
+    #[wasm_bindgen(js_name = planSummary)]
+    pub fn plan_summary(&self, course_indices: Vec<u32>) -> Result<JsValue, JsError> {
+        let indices: Vec<CourseIndex> = course_indices
+            .into_iter()
+            .map(|i| CourseIndex::new(i as usize))
+            .collect();
+        let summary = self.inner.plan_summary(&indices);
+
+        let tally = |ts: &[syllabus_core::CategoryTally]| {
+            ts.iter()
+                .map(|t| TallyView {
+                    key: t.key.clone(),
+                    credits: t.credits,
+                    count: t.count,
+                })
+                .collect()
+        };
+        let view = PlanSummaryView {
+            conflicts: summary
+                .conflicts
+                .iter()
+                .map(|c| ConflictView {
+                    day: c.day.get(),
+                    period: c.period.get(),
+                    courses: c.courses.iter().map(|i| i.get() as u32).collect(),
+                })
+                .collect(),
+            credits: CreditsView {
+                total_credits: summary.credits.total_credits,
+                total_courses: summary.credits.total_courses,
+                uncredited: summary.credits.uncredited,
+                by_kubun: tally(&summary.credits.by_kubun),
+                by_bunrui: tally(&summary.credits.by_bunrui),
+                by_nen: tally(&summary.credits.by_nen),
+            },
+        };
+        to_js(&view)
     }
 
     /// Indices of courses matching the filters (`"all"` = no filter), ascending.
