@@ -1,6 +1,7 @@
 <script lang="ts">
 import { getColor } from '../lib/colors'
 import { highlights, segment } from '../lib/highlight.svelte'
+import { plan } from '../lib/plan.svelte'
 import { deliveryMode, evalKind } from '../lib/syllabus-icons'
 import { useTheme } from '../lib/theme.svelte'
 import type { Course } from '../types/course'
@@ -33,6 +34,9 @@ const mode = $derived(deliveryMode(course.dm))
 // when the active query doesn't hit this course.
 const nameSegs = $derived(segment(course.nm, highlights.get(course.cd)))
 
+// Registered in the user's plan → a small corner pin, in the tile's own accent.
+const registered = $derived(plan.has(course.cd))
+
 // Dominant assessment axis: label, share of the whole grade, and its palette
 // colour (the same hue as the modal's donut, so the card's bar ties to it).
 const topEval = $derived.by(() => {
@@ -60,10 +64,14 @@ const creditHalf = $derived(creditsN - Math.floor(creditsN) >= 0.5)
 </script>
 
 <button
-	class="w-full text-left rounded-lg p-3 sm:p-1.5 mb-1 sm:mb-0.5 cursor-pointer transition-transform active:brightness-95 sm:hover:scale-[1.02] sm:hover:shadow-md border-l-3 min-h-tap sm:min-h-0"
+	class="relative w-full text-left rounded-lg p-3 sm:p-1.5 mb-1 sm:mb-0.5 cursor-pointer transition-transform active:brightness-95 sm:hover:scale-[1.02] sm:hover:shadow-md border-l-3 min-h-tap sm:min-h-0"
 	style="background: {color.bg}; border-left-color: {color.border};"
 	{onclick}
 >
+	{#if registered}
+		<!-- Registered marker: a filled pin in the tile's accent (inline colour). -->
+		<span class="absolute top-1 right-1 leading-none text-fine" style="color: {color.accentText};" aria-label="登録済み">📌</span>
+	{/if}
 	<div class="font-semibold text-caption sm:text-micro leading-snug line-clamp-2" style="color: {color.text};">
 		<!-- Match runs get a soft wash of the tile's own accent hue (inline style —
 		     dynamic palette colour), so the highlight belongs to the macaron tile

@@ -23,6 +23,8 @@ type Request =
 			campus: string
 			query: string
 	  }
+	| { id: number; type: 'resolvePlan'; cds: string[] }
+	| { id: number; type: 'planSummary'; indices: number[] }
 
 /** Course view-models + dictionaries + dataset metadata, sent once after init. */
 interface InitResult {
@@ -74,17 +76,24 @@ async function loadSearchIndex(): Promise<void> {
 	}
 }
 
-/** Filter, rank, and lay out in one hop — returns `{ cells, countUnique,
- *  highlights }` with cells already ordered best-first. */
-function handleQuery(msg: Extract<Request, { type: 'filterAndGrid' }>): unknown {
+/** Dispatch a non-init request against the ready engine. */
+function handle(msg: Exclude<Request, { type: 'init' }>): unknown {
 	if (!engine) throw new Error('エンジンが初期化されていません')
-	return engine.query(msg.semester, msg.department, msg.campus, msg.query)
+	switch (msg.type) {
+		case 'filterAndGrid':
+			// Filter, rank, and lay out in one hop — cells come back best-first.
+			return engine.query(msg.semester, msg.department, msg.campus, msg.query)
+		case 'resolvePlan':
+			return Array.from(engine.resolvePlan(msg.cds))
+		case 'planSummary':
+			return engine.planSummary(Uint32Array.from(msg.indices))
+	}
 }
 
 self.onmessage = async (e: MessageEvent<Request>) => {
 	const msg = e.data
 	try {
-		const result = msg.type === 'init' ? await handleInit(msg.buffer) : handleQuery(msg)
+		const result = msg.type === 'init' ? await handleInit(msg.buffer) : handle(msg)
 		self.postMessage({ id: msg.id, ok: true, result })
 	} catch (err) {
 		self.postMessage({

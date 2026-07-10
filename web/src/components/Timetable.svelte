@@ -11,9 +11,11 @@ interface Props {
 	grid: Map<GridKey, Course[]>
 	days: readonly string[]
 	onselect: (course: Course) => void
+	/** Grid keys whose cell holds a plan conflict (two registered courses). */
+	conflictKeys?: Set<GridKey>
 }
 
-let { grid, days, onselect }: Props = $props()
+let { grid, days, onselect, conflictKeys }: Props = $props()
 
 let activeDay = $state(0)
 
@@ -113,7 +115,7 @@ let headerH = $state(0)
 	>
 		{#each PERIODS as period}
 			{@const courses = grid.get(`${days[activeDay]}-${period}`) ?? []}
-			<div class="bg-surface-primary rounded-xl p-3">
+			<div class="bg-surface-primary rounded-xl p-3 {conflictKeys?.has(`${days[activeDay]}-${period}`) ? 'ring-2 ring-apple-red' : ''}">
 				<div class="sticky top-0 z-sticky -mx-3 -mt-3 px-3 pt-3 pb-1.5 mb-1.5 flex items-baseline gap-2 bg-surface-primary rounded-t-xl">
 					<span class="text-micro font-medium text-apple-text-tertiary">{period}限</span>
 					{#if PERIOD_TIMES[period]}
@@ -174,6 +176,7 @@ let headerH = $state(0)
 			{#each days as day}
 				<TimetableCell
 					courses={grid.get(`${day}-${period}`) ?? []}
+					conflict={conflictKeys?.has(`${day}-${period}`) ?? false}
 					{onselect}
 				/>
 			{/each}

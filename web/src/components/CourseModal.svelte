@@ -3,6 +3,7 @@ import { quadOut } from 'svelte/easing'
 import { slide } from 'svelte/transition'
 import { getColor } from '../lib/colors'
 import { loadDetail } from '../lib/details'
+import { plan } from '../lib/plan.svelte'
 import { FIELD_SPEC } from '../lib/syllabus-fields.generated'
 import { deliveryMode } from '../lib/syllabus-icons'
 import { useTheme } from '../lib/theme.svelte'
@@ -18,6 +19,9 @@ interface Props {
 }
 
 let { course, dicts, year, onclose }: Props = $props()
+
+// Whether this course is in the user's plan (drives the header toggle).
+const registered = $derived(plan.has(course.cd))
 
 // The course's palette tint — the same hue the card carries, so opening a card
 // continues its colour into the sheet header (and the plan-timeline nodes). Used
@@ -185,15 +189,26 @@ function hasValue(v: unknown): boolean {
 						<div class="mt-1.5 text-caption tracking-tight" style="color: {tint.mutedText};">{facets}</div>
 					{/if}
 				</div>
-				<button
-					class="shrink-0 w-10 h-10 sm:w-8 sm:h-8 rounded-full bg-overlay-light flex items-center justify-center active:bg-overlay-strong sm:hover:bg-overlay-strong transition-colors duration-200 cursor-pointer"
-					onclick={close}
-					aria-label="閉じる"
-				>
-					<svg class="w-3.5 h-3.5 text-apple-text-secondary" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
-						<path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
-					</svg>
-				</button>
+				<div class="flex items-center gap-1.5 shrink-0">
+					<!-- Register / unregister this course into the plan. -->
+					<button
+						class="h-10 sm:h-8 rounded-full px-3.5 text-caption font-medium transition-colors duration-200 cursor-pointer
+							{registered ? 'bg-apple-blue text-on-accent' : 'bg-overlay-light text-apple-text active:bg-overlay-strong sm:hover:bg-overlay-strong'}"
+						onclick={() => plan.toggle(course.cd)}
+						aria-pressed={registered}
+					>
+						{registered ? '✓ 登録済み' : '＋ 登録'}
+					</button>
+					<button
+						class="w-10 h-10 sm:w-8 sm:h-8 rounded-full bg-overlay-light flex items-center justify-center active:bg-overlay-strong sm:hover:bg-overlay-strong transition-colors duration-200 cursor-pointer"
+						onclick={close}
+						aria-label="閉じる"
+					>
+						<svg class="w-3.5 h-3.5 text-apple-text-secondary" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+							<path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+						</svg>
+					</button>
+				</div>
 			</div>
 		</div>
 	{/snippet}

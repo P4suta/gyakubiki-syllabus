@@ -29,6 +29,7 @@ const SVELTE_FILES = [
 	'components/Disclaimer.svelte',
 	'components/EvalChart.svelte',
 	'components/FilterBar.svelte',
+	'components/PlanPanel.svelte',
 	'components/SearchBar.svelte',
 	'components/Timetable.svelte',
 	'components/TimetableCell.svelte',

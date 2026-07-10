@@ -81,6 +81,33 @@ export function assembleGrid(
 	return grid
 }
 
+/** A timetable collision, as returned by the WASM `planSummary` call. */
+export interface Conflict {
+	day: number
+	period: number
+	courses: number[]
+}
+
+/** One category's rolled-up credits and course count. */
+export interface Tally {
+	key: string
+	credits: number
+	count: number
+}
+
+/** A plan's summary: every conflict and the credit tallies across three axes. */
+export interface PlanSummaryResult {
+	conflicts: Conflict[]
+	credits: {
+		totalCredits: number
+		totalCourses: number
+		uncredited: number
+		byKubun: Tally[]
+		byBunrui: Tally[]
+		byNen: Tally[]
+	}
+}
+
 /** What the worker returns from `init` — see engine.worker.ts. */
 interface InitResult {
 	courses: Course[]
@@ -218,5 +245,18 @@ export class SyllabusEngine {
 			count: res.countUnique,
 			highlights: resolveHighlights(res.highlights, this.courses),
 		}
+	}
+
+	/** Resolve a shared plan's course codes to indices (unknown codes dropped). */
+	async resolvePlan(cds: readonly string[]): Promise<number[]> {
+		return (await this.send({ type: 'resolvePlan', cds: [...cds] })) as number[]
+	}
+
+	/** Summarize registered course indices: conflicts + credit tallies. */
+	async planSummary(indices: readonly number[]): Promise<PlanSummaryResult> {
+		return (await this.send({
+			type: 'planSummary',
+			indices: [...indices],
+		})) as PlanSummaryResult
 	}
 }
