@@ -85,7 +85,7 @@ function resetFilters() {
 		</button>
 
 		<div class="ml-auto flex items-center gap-2">
-			<span class="text-micro text-apple-text-tertiary tabular-nums">{displayCount}件</span>
+			<span class="bg-overlay-subtle text-apple-text-secondary rounded-full px-2 py-0.5 text-micro tabular-nums whitespace-nowrap">{displayCount}件</span>
 			<button
 				class="relative w-9 h-9 rounded-full bg-overlay-subtle flex items-center justify-center active:bg-overlay-medium"
 				onclick={() => { mobileFilterOpen = true }}
@@ -253,8 +253,9 @@ function resetFilters() {
 			{@render chevron('absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-apple-text-tertiary pointer-events-none')}
 		</div>
 
-		<span class="text-caption text-apple-text-tertiary ml-auto tabular-nums tracking-tight">
-			{displayCount}科目表示中 / 全{totalCount}件
-		</span>
+		<!-- Count as a chip, matching the「最終更新」badge beside it. The shown figure
+		     is the salient number, so it carries the weight; the「/ 全…件」total stays
+		     muted. Text kept contiguous for the E2E counter anchor. -->
+		<span class="ml-auto inline-block bg-overlay-subtle rounded-full px-2.5 py-0.5 text-caption text-apple-text-secondary tabular-nums tracking-tight whitespace-nowrap"><span class="font-semibold text-apple-text">{displayCount}</span>科目表示中 / 全{totalCount}件</span>
 	</div>
 </div>
