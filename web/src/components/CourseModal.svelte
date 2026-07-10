@@ -9,6 +9,7 @@ import IconClose from '~icons/ic/round-close'
 import IconContentCopy from '~icons/ic/round-content-copy'
 import IconExam from '~icons/ic/round-history-edu'
 import IconExpandMore from '~icons/ic/round-expand-more'
+import IconLanguage from '~icons/ic/round-language'
 import IconLink from '~icons/ic/round-link'
 import IconOpenInNew from '~icons/ic/round-open-in-new'
 import IconPerson from '~icons/ic/round-person'
@@ -18,7 +19,7 @@ import IconSearch from '~icons/ic/round-search'
 import { getColor } from '../lib/colors'
 import {
 	classifyGoals,
-	decodeNumbering,
+	courseLanguage,
 	formatProse,
 	isRelatedLabel,
 	linkifyText,
@@ -88,7 +89,14 @@ const baseFields: [string, string | undefined | null][] = $derived([
 	['対象年次', course.nen],
 	['科目分類', course.bunrui],
 	['科目分野', course.bunya],
+	// The numbering code is a cipher — it lives here, low-key (its one useful
+	// decode, 授業言語, is surfaced in the header instead).
+	...(detail?.numbering ?? []).map((c) => ['ナンバリング', c] as [string, string]),
 ])
+
+// 授業言語 (from the numbering code) — surfaced only when it isn't the default
+// Japanese, since that's the decision-relevant case.
+const language = $derived(courseLanguage(detail?.numbering))
 
 $effect(() => {
 	const cd = course.cd
@@ -126,6 +134,9 @@ const allSections = $derived.by<Section[]>(() => {
 		const d = detail as unknown as Record<string, unknown>
 		for (const f of FIELD_SPEC) {
 			if (f.render === 'meta' || f.render === 'delivery-badge') continue
+			// The numbering code is folded into 科目情報 (base) as a quiet row, not
+			// its own section — it's a cipher, not first-class content.
+			if (f.key === 'numbering') continue
 			const value = d[f.key]
 			if (hasValue(value)) {
 				rows.push({ key: f.key, label: f.label, group: f.group, render: f.render, value })
@@ -245,6 +256,13 @@ async function copyField(label: string, value: string) {
 						{/if}
 						{#if detail?.delivery?.isMedia}
 							<span class="inline-flex items-center rounded-full bg-overlay-medium px-2 py-0.5 text-micro" style="color: {tint.text};">メディア授業</span>
+						{/if}
+						{#if language}
+							<!-- Promoted from the numbering code: the teaching language, shown
+							     only when it isn't the default Japanese. -->
+							<span class="inline-flex items-center gap-1 rounded-full bg-overlay-medium px-2 py-0.5 text-micro" style="color: {tint.text};">
+								<IconLanguage class="w-3 h-3" aria-hidden="true" />{language}
+							</span>
 						{/if}
 						{#if creditsN > 0}
 							<span class="inline-flex items-center gap-1.5 text-micro" aria-label="{detail?.unit}単位">
@@ -527,18 +545,6 @@ async function copyField(label: string, value: string) {
 				>
 					<IconSearch class="w-3 h-3 text-apple-text-tertiary" aria-hidden="true" />{kw}
 				</button>
-			{/each}
-		</div>
-	{:else if s.render === 'numbering'}
-		<!-- Raw code first (the authority); a verified faculty label appended only
-		     when confident, so nothing is inferred away from the official value. -->
-		<div class="flex flex-wrap gap-1.5">
-			{#each s.value as string[] as code}
-				{@const dec = decodeNumbering(code)}
-				<span class="inline-flex items-center gap-1.5 rounded-full bg-overlay-light px-2.5 py-0.5 text-micro text-apple-text-secondary">
-					<span class="tabular-nums tracking-tight">{code}</span>
-					{#if dec.length}<span class="text-apple-text-tertiary">· {dec.join(' · ')}</span>{/if}
-				</span>
 			{/each}
 		</div>
 	{:else if s.render === 'related'}

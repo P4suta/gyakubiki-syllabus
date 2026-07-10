@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
 	classifyGoals,
+	courseLanguage,
 	decodeNumbering,
 	formatProse,
 	linkifyText,
@@ -54,22 +55,36 @@ describe('parseTeachers', () => {
 
 describe('decodeNumbering', () => {
 	it('decodes 学部・レベル・授業形態・言語 from the code digits', () => {
-		// 01-0200-11 → 学部0=共通教育, レベル0=初年次・教養, 授業形態1=講義, 言語1=日本語.
-		expect(decodeNumbering('01-0200-11')).toEqual(['共通教育', '初年次・教養', '講義', '日本語'])
-		// 31-2261-31 → 理工学部, 専門科目, 実験, 日本語.
-		expect(decodeNumbering('31-2261-31')).toEqual(['理工学部', 'プラットフォーム科目', '実験', '日本語'])
+		expect(decodeNumbering('01-0200-11')).toEqual({
+			faculty: '共通教育',
+			level: '初年次・教養',
+			format: '講義',
+			lang: '日本語',
+		})
+		expect(decodeNumbering('31-2261-31')?.faculty).toBe('理工学部')
 	})
-	it('tolerates a letter in the 大/中/小分類 region and decodes the rest', () => {
-		// 11-13A2-11 → 学部1, レベル1, (中分類 A), 授業形態1, 言語1.
-		expect(decodeNumbering('11-13A2-11')).toEqual(['人文社会科学部', '基礎', '講義', '日本語'])
+	it('tolerates a letter in the 大/中/小分類 region and leaves unknown digits absent', () => {
+		expect(decodeNumbering('11-13A2-11')).toEqual({
+			faculty: '人文社会科学部',
+			level: '基礎',
+			format: '講義',
+			lang: '日本語',
+		})
+		// 授業形態5 (a newer code) is undecodable → absent, not fabricated.
+		expect(decodeNumbering('02-0420-51')?.format).toBeUndefined()
 	})
-	it('skips an unknown 授業形態 (e.g. the newer code 5)', () => {
-		// 02-0420-51 → 授業形態5 is undecodable, so it is omitted (not fabricated).
-		expect(decodeNumbering('02-0420-51')).toEqual(['共通教育', '初年次・教養', '日本語'])
+	it('returns null for a non-standard shape', () => {
+		expect(decodeNumbering('GEN-100')).toBeNull()
+		expect(decodeNumbering('')).toBeNull()
 	})
-	it('returns [] for a non-standard shape', () => {
-		expect(decodeNumbering('GEN-100')).toEqual([])
-		expect(decodeNumbering('')).toEqual([])
+})
+
+describe('courseLanguage', () => {
+	it('surfaces a non-Japanese teaching language, else null', () => {
+		expect(courseLanguage(['01-0200-22'])).toBe('英語') // 言語2
+		expect(courseLanguage(['01-0200-11'])).toBeNull() // 日本語 = default, not surfaced
+		expect(courseLanguage([])).toBeNull()
+		expect(courseLanguage(undefined)).toBeNull()
 	})
 })
 

@@ -97,14 +97,37 @@ const NB_LANG: Record<string, string> = {
 	'5': 'その他',
 }
 
-/** Decoded facets for a numbering code — 学部・レベル・授業形態・言語, skipping any
- *  digit we can't resolve. `[]` when the code doesn't match the standard shape. */
-export function decodeNumbering(code: string): string[] {
+export interface NumberingInfo {
+	faculty?: string
+	level?: string
+	format?: string
+	/** 授業言語 — the one facet not shown anywhere else, worth surfacing. */
+	lang?: string
+}
+
+/** Decode a numbering code's resolvable facets, or `null` for a non-standard
+ *  shape. Undecodable digits are simply absent. */
+export function decodeNumbering(code: string): NumberingInfo | null {
 	// AB-CDEF-GH → A=学部 B=学科 C=レベル DEF=大中小 G=授業形態 H=言語.
 	const m = /^(\d)\d-(\d)[0-9A-Z]{3}-(\d)(\d)$/.exec(code)
-	if (!m) return []
+	if (!m) return null
 	const [, faculty, level, format, lang] = m
-	return [NB_FACULTY[faculty], NB_LEVEL[level], NB_FORMAT[format], NB_LANG[lang]].filter(Boolean)
+	return {
+		faculty: NB_FACULTY[faculty],
+		level: NB_LEVEL[level],
+		format: NB_FORMAT[format],
+		lang: NB_LANG[lang],
+	}
+}
+
+/** 授業言語 decoded from the first parseable numbering code, if non-Japanese —
+ *  the one facet worth surfacing (日本語 is the unstated default, so it's null). */
+export function courseLanguage(numbering: readonly string[] | undefined): string | null {
+	for (const code of numbering ?? []) {
+		const lang = decodeNumbering(code)?.lang
+		if (lang && lang !== '日本語') return lang
+	}
+	return null
 }
 
 export interface ProseBlock {
