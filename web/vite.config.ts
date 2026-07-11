@@ -4,6 +4,7 @@ import { svelteTesting } from '@testing-library/svelte/vite'
 import { minify } from 'html-minifier-terser'
 import Icons from 'unplugin-icons/vite'
 import type { PluginOption } from 'vite'
+import { VitePWA } from 'vite-plugin-pwa'
 import { defineConfig } from 'vitest/config'
 
 // Vite minifies JS/CSS but leaves index.html untouched; minify it too on build.
@@ -53,7 +54,39 @@ export default defineConfig({
 	// afterEach unmount so component tests don't leak between cases.
 	// Icons are inlined from the Iconify `ic` set at build time (offline, tree-
 	// shaken, zero runtime fetch): `import Foo from '~icons/ic/round-foo'`.
-	plugins: [svelte(), tailwindcss(), svelteTesting(), Icons({ compiler: 'svelte' }), minifyHtml(), inlineCss()],
+	plugins: [
+		svelte(),
+		tailwindcss(),
+		svelteTesting(),
+		Icons({ compiler: 'svelte' }),
+		minifyHtml(),
+		inlineCss(),
+		// GitHub Pages serves everything with max-age=600 and the headers can't
+		// be changed, so repeat visits re-fetch the hashed bundles. The SW gives
+		// them real immutable caching (precache) and offline navigation, while
+		// the daily-updated data stays NetworkFirst so it is never pinned stale.
+		VitePWA({
+			registerType: 'autoUpdate',
+			manifest: false, // hand-written public/manifest.webmanifest
+			workbox: {
+				// The shell precaches (index.html revisions on every deploy; the SW
+				// autoUpdates within Pages' 600s window), the data stays NetworkFirst.
+				globPatterns: ['index.html', 'assets/*.{js,css,wasm}'],
+				runtimeCaching: [
+					{
+						urlPattern: /\/(data\.json|search\.idx)$/,
+						handler: 'NetworkFirst',
+						options: { cacheName: 'data' },
+					},
+					{
+						urlPattern: /\/details\/.*\.json$/,
+						handler: 'NetworkFirst',
+						options: { cacheName: 'details' },
+					},
+				],
+			},
+		}),
+	],
 	// Unit tests live in src/; the Playwright E2E specs in e2e/ run separately.
 	test: {
 		// Two projects: pure logic in `node` (fast, DOM-free) and component /
