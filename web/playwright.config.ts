@@ -8,6 +8,9 @@ import { defineConfig, devices } from '@playwright/test'
 export default defineConfig({
 	testDir: './e2e',
 	fullyParallel: true,
+	// Use every core in CI (Playwright otherwise defaults to ~half). '100%' never
+	// oversubscribes, so the timing-sensitive geometry specs stay stable.
+	workers: process.env.CI ? '100%' : undefined,
 	forbidOnly: !!process.env.CI,
 	retries: process.env.CI ? 1 : 0,
 	reporter: 'list',
