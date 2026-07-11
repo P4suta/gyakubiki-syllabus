@@ -220,3 +220,20 @@ body {
   to { opacity: 1; scale: 1; }
 }
 
+/* One keyboard-focus affordance everywhere. Components that set `outline-none`
+   swap in their own focus ring; everything else gets the accent ring. */
+:focus-visible {
+  outline: 2px solid var(--color-apple-blue);
+  outline-offset: 2px;
+}
+
+/* Reduced motion: keep durations >0 so transitionend/animationend still fire. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+  html { scroll-behavior: auto; }
+}
+

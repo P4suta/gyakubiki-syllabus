@@ -213,6 +213,10 @@ onDestroy(() => teardownPlanSync?.())
 		data-shown-count={displayCount}
 		data-total-count={engine.courses.length}
 	>
+		<a
+			href="#main"
+			class="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-nav focus:rounded-full focus:bg-apple-blue focus:text-on-accent focus:px-4 focus:py-2 focus:text-caption focus:font-medium"
+		>本文へスキップ</a>
 		<header>
 			<FilterBar
 				semesters={engine.dicts.semesters}
@@ -230,7 +234,7 @@ onDestroy(() => teardownPlanSync?.())
 		<!-- The visible count chip is gone; announce filter results to AT instead. -->
 		<p class="sr-only" role="status">{announcedCount}件の科目を表示中</p>
 		<!-- The landmark carries the flex chain so children keep their layout. -->
-		<main class="flex flex-col flex-1 overflow-hidden">
+		<main id="main" tabindex="-1" class="flex flex-col flex-1 overflow-hidden outline-none">
 			{#if displayCount === 0 && plan.count === 0}
 				<!-- Empty state: nothing matches and no plan to fall back on. -->
 				<div class="grow flex items-center justify-center p-6 animate-fade-in">
