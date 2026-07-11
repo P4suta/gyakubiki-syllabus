@@ -25,31 +25,37 @@ pre-commit:
 
 pre-push:
   parallel: false # cargo / wasm / web are heavy; run them sequentially
+  # Run through `mise exec` so the exact .mise.toml tools resolve regardless of
+  # how the shell that launched git was activated (a freshly-installed tool like
+  # cargo-nextest isn't on a stale shell's PATH otherwise).
   commands:
     # Mirrors the CI Rust job: fmt, clippy, tests + the 80% line-coverage gate
     # (cargo-llvm-cov driving nextest, exactly as CI), and the two derivation
     # guards — FIELD_SPEC (generated TS + docs) and the OKLCH palette (colors.ts).
     rust:
       run: >-
-        cargo fmt --check
-        && cargo clippy --locked --all-targets -- -D warnings
-        && cargo llvm-cov nextest --locked --workspace --exclude syllabus-wasm --fail-under-lines 80
-        && cargo run --locked -q -p syllabus-cli -- gen-field-docs --check
-        && cargo run --locked -q -p syllabus-cli -- gen-palette --check
+        mise exec -- cargo fmt --check
+        && mise exec -- cargo clippy --locked --all-targets -- -D warnings
+        && mise exec -- cargo llvm-cov nextest --locked --workspace --exclude syllabus-wasm --fail-under-lines 80
+        && mise exec -- cargo run --locked -q -p syllabus-cli -- gen-field-docs --check
+        && mise exec -- cargo run --locked -q -p syllabus-cli -- gen-palette --check
       fail_text: "Rust checks failed (fmt/clippy/test/coverage/gen-field-docs/gen-palette); see `just check`"
     # Mirrors the CI "wasm boundary tests": the crate's #[wasm_bindgen] surface
     # under node (the JsValue shapes the frontend depends on).
     wasm-boundary:
-      run: wasm-pack test --node crates/wasm
+      run: mise exec -- wasm-pack test --node crates/wasm
       fail_text: "WASM boundary tests failed (wasm-pack test --node)"
     # Mirrors the CI "Web (check / test)" job: build the wasm glue, then
     # svelte-check/tsc and vitest with the coverage gate (test:cov).
     web:
       run: >-
-        wasm-pack build crates/wasm --target web --out-dir ../../web/src/wasm --out-name syllabus
-        && cd web && bun install --frozen-lockfile && bun run check && bun run test:cov
+        mise exec -- wasm-pack build crates/wasm --target web --out-dir ../../web/src/wasm --out-name syllabus
+        && cd web
+        && mise exec -- bun install --frozen-lockfile
+        && mise exec -- bun run check
+        && mise exec -- bun run test:cov
       fail_text: "Web checks failed (svelte-check/tsc/vitest + coverage gate)"
     typos-full:
-      run: typos
+      run: mise exec -- typos
     markdown-full:
-      run: markdownlint-cli2 "**/*.md" "#node_modules" "#web/**"
+      run: mise exec -- markdownlint-cli2 "**/*.md" "#node_modules" "#web/**"

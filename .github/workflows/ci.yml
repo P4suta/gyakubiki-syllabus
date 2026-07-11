@@ -87,7 +87,7 @@ jobs:
       - uses: actions-rust-lang/setup-rust-toolchain@v1
       - uses: jdx/mise-action@v2
       - name: build wasm glue
-        run: wasm-pack build crates/wasm --target web --out-dir web/src/wasm --out-name syllabus
+        run: wasm-pack build crates/wasm --target web --out-dir ../../web/src/wasm --out-name syllabus
       - name: wasm boundary tests (node)
         run: wasm-pack test --node crates/wasm
       - uses: actions/upload-artifact@v4
