@@ -1,15 +1,34 @@
-# Dev tool versions. `mise install` sets them all up.
+# Dev tool versions — the single source of truth for the toolchain. `mise install`
+# sets them up locally, and `jdx/mise-action` installs the same file in CI, so
+# local and CI run byte-identical tool versions (no drift). The Rust toolchain
+# itself is pinned separately by rust-toolchain.toml.
+#
+# Versions are pinned exactly for reproducibility — bump them deliberately.
 # https://mise.jdx.dev/
 
-[tools]
-bun = "latest"
-just = "latest"
-lefthook = "latest"
-typos = "latest"
-actionlint = "latest"
-# WASM builder; the Rust toolchain itself is pinned by rust-toolchain.toml.
-wasm-pack = "0.13.1"
+[settings]
+# Fetch cargo-backend tools (cargo-nextest) as prebuilt binaries via binstall
+# instead of compiling from source — fast and reproducible in CI and locally.
+cargo.binstall = true
 
+[tools]
+bun = "1.3.14"
+node = "26.4.0"
+just = "1.54.0"
+lefthook = "2.1.9"
+typos = "1.48.0"
+actionlint = "1.7.12"
 # npm backend caches better under mise than the bun backend.
-"npm:markdownlint-cli2" = "latest"
-node = "latest"
+"npm:markdownlint-cli2" = "0.23.0"
+# Prebuilt-binary fetcher used by the cargo backend below.
+"aqua:cargo-bins/cargo-binstall" = "1.15.9"
+
+# WASM bundler. The bare `wasm-pack` registry name was dropped from mise; the
+# aqua backend is the maintained source.
+"aqua:rustwasm/wasm-pack" = "0.13.1"
+
+# Rust coverage + test runner (prebuilt). cargo-llvm-cov via aqua; cargo-nextest
+# via the cargo backend + binstall (its GitHub release tag layout trips mise's
+# attestation check, so we don't use the github backend).
+"aqua:taiki-e/cargo-llvm-cov" = "0.8.7"
+"cargo:cargo-nextest" = "0.9.140"

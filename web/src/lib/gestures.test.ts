@@ -12,7 +12,10 @@ describe('property: clamp', () => {
 				const r = clamp(value, min, max)
 				expect(r).toBeGreaterThanOrEqual(min)
 				expect(r).toBeLessThanOrEqual(max)
-				if (value >= min && value <= max) expect(r).toBe(value)
+				// Identity inside the range. `+ 0` normalizes signed zero: clamp can
+				// return +0 where the input was -0 (Math.max(-0, +0) === +0), and the
+				// two are numerically equal, but `toBe` (Object.is) would distinguish them.
+				if (value >= min && value <= max) expect(r + 0).toBe(value + 0)
 			}),
 		)
 	})

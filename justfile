@@ -43,8 +43,9 @@ fetch-details *ARGS:
 
 test: test-rust test-wasm test-web
 
+# Rust tests via nextest (the workspace has no doctests, so nextest is complete).
 test-rust:
-    cargo test
+    cargo nextest run
 
 # WASM boundary tests (JsValue shapes) in Node — needs wasm-pack.
 test-wasm:
@@ -53,9 +54,16 @@ test-wasm:
 test-web: wasm-build
     cd web && bun install --frozen-lockfile && bun run check && bun run test
 
-# Native line coverage (excludes the wasm-bindgen surface, not run natively).
+# Full E2E (Playwright) against the sample dataset — heavy; CI runs it too. The
+# visual specs self-skip off CI. Rewrites web/public with the sample dataset;
+# run `just convert` afterwards to restore your real data for `just dev`.
+e2e: wasm-build gen-sample
+    cargo run --release -q -p syllabus-cli -- convert dev-data/sample-raw.json --compact --details-dir dev-data/sample-details --details-out web/public/details -o web/public/data.json
+    cd web && bun install --frozen-lockfile && bunx playwright install chromium && bun run test:e2e
+
+# Native line coverage via nextest (excludes the wasm-bindgen surface).
 cov:
-    cargo llvm-cov --workspace --exclude syllabus-wasm --summary-only
+    cargo llvm-cov nextest --workspace --exclude syllabus-wasm --summary-only
 
 # Continuous fuzzing (nightly + cargo-fuzz). Pass a target, e.g. `just fuzz fuzz_parse_jikanwari`.
 fuzz TARGET *ARGS:
