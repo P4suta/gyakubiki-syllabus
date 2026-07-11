@@ -60,7 +60,15 @@ jobs:
         run: cargo llvm-cov nextest --locked --workspace --exclude syllabus-wasm --no-report
       - name: coverage report + enforce threshold (lines >= 80%)
         run: |
-          cargo llvm-cov report --summary-only >> "$GITHUB_STEP_SUMMARY"
+          # Fence the plain-text table so the step summary renders it as a
+          # monospace block — otherwise its `---` rule turns the header row into a
+          # giant setext heading.
+          {
+            echo '### Coverage'
+            echo '```'
+            cargo llvm-cov report --summary-only
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
           cargo llvm-cov report --lcov --output-path lcov.info
           cargo llvm-cov report --fail-under-lines 80
       - uses: actions/upload-artifact@v4
