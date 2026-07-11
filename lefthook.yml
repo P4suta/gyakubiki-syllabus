@@ -15,7 +15,8 @@ pre-commit:
       run: cargo fmt --check
       fail_text: "rustfmt violations; fix with `just fmt`"
     typos:
-      run: typos {staged_files}
+      # --force-exclude keeps _typos.toml excludes effective for explicit paths.
+      run: typos --force-exclude {staged_files}
     actionlint:
       glob: ".github/workflows/*.{yml,yaml}"
       run: actionlint {staged_files}

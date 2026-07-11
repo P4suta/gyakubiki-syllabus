@@ -1,0 +1,3 @@
+# typos treats some binary blobs as text; keep it off generated/binary assets.
+[files]
+extend-exclude = ["*.png", "*.idx", "web/public/data.json", "web/public/details/**"]
