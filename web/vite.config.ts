@@ -67,6 +67,7 @@ export default defineConfig({
 		// the daily-updated data stays NetworkFirst so it is never pinned stale.
 		VitePWA({
 			registerType: 'autoUpdate',
+			injectRegister: 'inline', // a registerSW.js request would render-block
 			manifest: false, // hand-written public/manifest.webmanifest
 			workbox: {
 				// The shell precaches (index.html revisions on every deploy; the SW
