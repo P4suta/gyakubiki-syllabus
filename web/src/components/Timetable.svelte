@@ -1,4 +1,5 @@
 <script lang="ts">
+import IconWarning from '~icons/ic/round-warning'
 import { useDesktop } from '../lib/breakpoint.svelte'
 import { type GridKey, PERIODS } from '../lib/engine'
 import { haptic, type SwipeDir, swipeNavigate } from '../lib/gestures'
@@ -9,11 +10,24 @@ import TimetableCell from './TimetableCell.svelte'
 
 interface Props {
 	grid: Map<GridKey, Course[]>
+	/** Registered courses per cell. A cell here is "locked" — it shows these in
+	 *  place of the search candidates (the grid doubles as the plan). */
+	planGrid?: Map<GridKey, Course[]>
 	days: readonly string[]
 	onselect: (course: Course) => void
+	/** Grid keys whose locked cell holds two+ registered courses (a clash). */
+	conflictKeys?: Set<GridKey>
 }
 
-let { grid, days, onselect }: Props = $props()
+let { grid, planGrid, days, onselect, conflictKeys }: Props = $props()
+
+/** What a cell shows: the registered course(s) when the slot is locked, else the
+ *  search candidates. `locked` drives the "confirmed" styling. */
+function cell(key: GridKey): { courses: Course[]; locked: boolean } {
+	const registered = planGrid?.get(key) ?? []
+	if (registered.length > 0) return { courses: registered, locked: true }
+	return { courses: grid.get(key) ?? [], locked: false }
+}
 
 let activeDay = $state(0)
 
@@ -112,24 +126,40 @@ let headerH = $state(0)
 		use:swipeNavigate={{ onDrag, onSettle, canPrev, canNext }}
 	>
 		{#each PERIODS as period}
-			{@const courses = grid.get(`${days[activeDay]}-${period}`) ?? []}
-			<div class="bg-surface-primary rounded-xl p-3">
-				<div class="sticky top-0 z-sticky -mx-3 -mt-3 px-3 pt-3 pb-1.5 mb-1.5 flex items-baseline gap-2 bg-surface-primary rounded-t-xl">
-					<span class="text-micro font-medium text-apple-text-tertiary">{period}限</span>
+			{@const key = `${days[activeDay]}-${period}` as GridKey}
+			{@const { courses, locked } = cell(key)}
+			{#if courses.length === 0}
+				<!-- Free slot: no surface, muted, compact. An empty period should recede
+				     so the eye lands on what's actually scheduled, not on the gaps. -->
+				<div class="flex items-baseline gap-2 px-3 py-1.5 text-apple-text-tertiary">
+					<span class="text-micro font-medium">{period}限</span>
 					{#if PERIOD_TIMES[period]}
-						<span class="text-fine text-apple-text-tertiary tabular-nums">
+						<span class="text-fine tabular-nums">
 							{PERIOD_TIMES[period].start}–{PERIOD_TIMES[period].end}{#if PERIOD_TIMES[period].note} ・{PERIOD_TIMES[period].note}{/if}
 						</span>
 					{/if}
+					<span class="ml-auto text-fine">空き</span>
 				</div>
-				{#if courses.length === 0}
-					<div class="text-micro text-apple-text-tertiary py-2">空きコマ</div>
-				{:else}
+			{:else}
+				<div class="bg-surface-primary rounded-xl p-3 {conflictKeys?.has(key) ? 'ring-2 ring-apple-red' : locked ? 'ring-1 ring-apple-blue' : ''}">
+					<div class="sticky top-0 z-sticky -mx-3 -mt-3 px-3 pt-3 pb-1.5 mb-1.5 flex items-baseline gap-2 bg-surface-primary rounded-t-xl">
+						<span class="text-micro font-medium text-apple-text-tertiary">{period}限</span>
+						{#if PERIOD_TIMES[period]}
+							<span class="text-fine text-apple-text-tertiary tabular-nums">
+								{PERIOD_TIMES[period].start}–{PERIOD_TIMES[period].end}{#if PERIOD_TIMES[period].note} ・{PERIOD_TIMES[period].note}{/if}
+							</span>
+						{/if}
+						{#if conflictKeys?.has(key)}
+							<span class="ml-auto self-center inline-flex items-center gap-0.5 rounded-full bg-apple-red text-on-accent px-1.5 py-0.5 text-fine font-medium">
+								<IconWarning class="w-2.5 h-2.5" aria-hidden="true" />重複
+							</span>
+						{/if}
+					</div>
 					{#each courses as course (course.cd)}
 						<CourseCard {course} onclick={() => onselect(course)} />
 					{/each}
-				{/if}
-			</div>
+				</div>
+			{/if}
 		{/each}
 	</div>
 </div>
@@ -172,8 +202,12 @@ let headerH = $state(0)
 				{/if}
 			</div>
 			{#each days as day}
+				{@const key = `${day}-${period}` as GridKey}
+				{@const c = cell(key)}
 				<TimetableCell
-					courses={grid.get(`${day}-${period}`) ?? []}
+					courses={c.courses}
+					locked={c.locked}
+					conflict={conflictKeys?.has(key) ?? false}
 					{onselect}
 				/>
 			{/each}

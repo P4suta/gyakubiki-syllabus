@@ -9,11 +9,12 @@
 
 use std::time::Duration;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use serde_json::Value;
 
-use super::token::extract_entry_context;
 use super::PageFetcher;
+use super::token::extract_entry_context;
+use crate::net::{FetchError, parse_retry_after, snippet};
 
 const SEARCH_PAGE_URL: &str = "https://kulas.kochi-u.ac.jp/cpsmart/public/dashboard/main/ja/Simple/1900/3000120/wsl/SyllabusKensaku";
 const FIND_PAGE_URL: &str = "https://kulas.kochi-u.ac.jp/cpsmart/public/wsl/WebRoot/SystemD.Lead.Gkm.Com.KogiKensaku.App.KogiKensakuWebApi/findPage";
@@ -101,13 +102,18 @@ impl Client {
 
 impl PageFetcher for Client {
     /// Fetch one findPage page as raw JSON bytes (the exact response body).
-    fn fetch_page(&self, page_no: i32) -> Result<Vec<u8>> {
+    ///
+    /// A non-2xx becomes a classified [`FetchError::Http`] (so 429/5xx back off
+    /// and retry) carrying the status, `Retry-After`, and a redacted body; a
+    /// transport failure becomes [`FetchError::Transient`].
+    fn fetch_page(&self, page_no: i32) -> Result<Vec<u8>, FetchError> {
         let body = build_body(
             BODY_TEMPLATE,
             page_no,
             &self.kaiko_nendo,
             &self.entry_context,
-        )?;
+        )
+        .map_err(FetchError::Fatal)?;
         let response = self
             .http
             .post(FIND_PAGE_URL)
@@ -119,21 +125,31 @@ impl PageFetcher for Client {
             .header("Referer", SEARCH_PAGE_URL)
             .body(body)
             .send()
-            .with_context(|| format!("findPage HTTP call failed (page {page_no})"))?;
+            .map_err(|e| {
+                FetchError::Transient(
+                    anyhow::Error::new(e)
+                        .context(format!("findPage HTTP call failed (page {page_no})")),
+                )
+            })?;
 
         let status = response.status();
+        let retry_after = parse_retry_after(response.headers());
         let bytes = response
             .bytes()
-            .with_context(|| format!("failed to read findPage response (page {page_no})"))?
+            .map_err(|e| {
+                FetchError::Transient(
+                    anyhow::Error::new(e)
+                        .context(format!("failed to read findPage response (page {page_no})")),
+                )
+            })?
             .to_vec();
 
         if !status.is_success() {
-            let preview: String = String::from_utf8_lossy(&bytes).chars().take(500).collect();
-            bail!(
-                "findPage returned HTTP {} (page {page_no}): {preview}\n  \
-                 note: the token/entryContext may be stale, or the body format may not match the API",
-                status.as_u16()
-            );
+            return Err(FetchError::Http {
+                status: status.as_u16(),
+                retry_after,
+                body: snippet(&String::from_utf8_lossy(&bytes)),
+            });
         }
         Ok(bytes)
     }
@@ -199,8 +215,8 @@ pub(crate) fn browser_entry_context(entry_context: &Value) -> Value {
 
 #[cfg(test)]
 mod tests {
-    use super::{browser_entry_context, build_body, BODY_TEMPLATE};
-    use serde_json::{json, Value};
+    use super::{BODY_TEMPLATE, browser_entry_context, build_body};
+    use serde_json::{Value, json};
 
     fn sample_entry_context() -> Value {
         json!({

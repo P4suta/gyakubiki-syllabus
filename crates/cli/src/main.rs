@@ -6,13 +6,13 @@ use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use chrono::SecondsFormat;
 use clap::{Args, Parser, Subcommand};
 
 use syllabus_cli::convert::render_data_json;
 use syllabus_cli::detail::SanshoDetail;
-use syllabus_cli::{banner, commit, fetch, fetch_details, fields, gen_sample, io, term};
+use syllabus_cli::{banner, commit, fetch, fetch_details, fields, gen_sample, io, palette, term};
 
 #[derive(Parser)]
 #[command(
@@ -37,6 +37,8 @@ enum Command {
     Commit(commit::CommitArgs),
     /// Generate the display-spec doc / TS from FIELD_SPEC (--check verifies only).
     GenFieldDocs(GenFieldDocsArgs),
+    /// Verify the committed palette matches the OKLCH derivation (--check for CI).
+    GenPalette(GenPaletteArgs),
     /// Synthesize a dummy dataset (raw + details) for local UI development.
     GenSample(gen_sample::GenSampleArgs),
 }
@@ -47,6 +49,16 @@ struct GenFieldDocsArgs {
     #[arg(long, default_value = ".")]
     root: PathBuf,
     /// Verify existing files are up to date instead of generating (for CI).
+    #[arg(long)]
+    check: bool,
+}
+
+#[derive(Args)]
+struct GenPaletteArgs {
+    /// Repository root (base for the colour files).
+    #[arg(long, default_value = ".")]
+    root: PathBuf,
+    /// Verify the committed colours match the derivation (for CI).
     #[arg(long)]
     check: bool,
 }
@@ -94,6 +106,7 @@ fn dispatch() -> Result<()> {
         Command::FetchDetails(args) => fetch_details::run(args),
         Command::Commit(args) => commit::run(args),
         Command::GenFieldDocs(args) => fields::generate(&args.root, args.check),
+        Command::GenPalette(args) => gen_palette(&args),
         Command::GenSample(args) => gen_sample::run(args),
     }
 }
@@ -126,8 +139,44 @@ fn convert(args: ConvertArgs) -> Result<()> {
     }
     if let Some(path) = args.output.as_deref() {
         term::ok(&format!("wrote {} ({} courses)", path.display(), raw.len()));
+        // The binary search index ships beside data.json (loaded lazily in the
+        // worker). Only written in file mode — stdout carries data.json alone.
+        let index_path = path.with_file_name("search.idx");
+        fs::write(&index_path, &rendered.index)
+            .with_context(|| format!("failed to write search index: {}", index_path.display()))?;
+        term::ok(&format!(
+            "wrote {} ({} bytes)",
+            index_path.display(),
+            rendered.index.len()
+        ));
     }
     emit(&rendered.bytes, args.output.as_deref())
+}
+
+/// Verify (or print) the derived Macaron palette. `--check` asserts the
+/// committed colour files still match; otherwise dump the derived hexes so a
+/// human can regenerate `colors.ts` / `syllabus-icons.ts` from the source.
+fn gen_palette(args: &GenPaletteArgs) -> Result<()> {
+    if args.check {
+        palette::check(&args.root)?;
+        term::ok("palette matches the derivation");
+        return Ok(());
+    }
+    let p = palette::derive();
+    for (theme, tints) in [("light", &p.light), ("dark", &p.dark)] {
+        println!("// {theme}");
+        for t in tints {
+            println!(
+                "{{ bg: '{}', border: '{}', text: '{}', mutedText: '{}', accentText: '{}' }},",
+                t.bg, t.border, t.text, t.muted_text, t.accent_text
+            );
+        }
+    }
+    println!("// eval (light / dark)");
+    for (k, l, d) in &p.eval {
+        println!("{k}: {{ light: '{l}', dark: '{d}' }},");
+    }
+    Ok(())
 }
 
 /// Load every `raw-details/*.json` into a `cd → SanshoDetail` map for enrichment.
@@ -162,8 +211,12 @@ fn write_details_out(
         )
     })?;
     for detail in details.values() {
+        // Derive display-ready fields (plan highlights, …) at write time so the
+        // frozen raw-details stay untouched and only the web copy is enriched.
+        let mut detail = detail.clone();
+        syllabus_cli::detail::enrich(&mut detail);
         let path = out.join(format!("{}.json", detail.cd));
-        let bytes = serde_json::to_vec(detail).context("failed to serialize detail JSON")?;
+        let bytes = serde_json::to_vec(&detail).context("failed to serialize detail JSON")?;
         fs::write(&path, bytes)
             .with_context(|| format!("failed to write detail JSON: {}", path.display()))?;
     }

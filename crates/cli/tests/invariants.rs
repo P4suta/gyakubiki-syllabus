@@ -1,4 +1,4 @@
-//! Model-based invariants over the full `convert_v2` → serialize → `Engine`
+//! Model-based invariants over the full `convert_v3` → serialize → `Engine`
 //! chain. Each invariant is checked two ways where possible — e.g. the semester
 //! filter bitset is re-derived from the courses' own slots by an independent,
 //! naive walk and compared to the precomputed index — so a divergence between
@@ -14,14 +14,14 @@ use std::path::{Path, PathBuf};
 use proptest::prelude::*;
 use syllabus_core::bitset::BitSet;
 use syllabus_core::model::{ProcessedData, RawCourse};
-use syllabus_core::{convert_v2, Engine, Filters};
+use syllabus_core::{Engine, Filters, convert_v3};
 
 const PINNED_GENERATED_AT: &str = "2026-01-01T00:00:00Z";
 const TSUUNEN_LABEL: &str = "通年";
 const SONOTA_LABEL: &str = "その他";
 
 fn build(raw: &[RawCourse]) -> ProcessedData {
-    convert_v2(raw, PINNED_GENERATED_AT.to_owned()).data
+    convert_v3(raw, PINNED_GENERATED_AT.to_owned()).data
 }
 
 fn decode(encoded: &[String], i: usize) -> BitSet {
@@ -55,9 +55,6 @@ fn check_invariants(data: &ProcessedData) {
             assert!((1..=8).contains(&s.p), "period oob");
             assert!((s.s as usize) < data.dicts.semesters.len(), "semester oob");
         }
-        // (h) Search haystack is canonical.
-        assert!(!c.st.contains('\u{3000}'));
-        assert!(!c.st.bytes().any(|b| b.is_ascii_uppercase()));
     }
 
     // Dictionaries are duplicate-free, and the「その他」catch-all sorts last in the

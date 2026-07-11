@@ -1,8 +1,36 @@
 // Display mapping for the stable enum strings the Rust pipeline assigns
-// (`EvalRow.type`, `Delivery.mode`). Emoji/color are a pure presentation concern
-// — the *ranking* of fields lives in the generated `syllabus-fields.generated.ts`.
-// Colours share the course palette's OKLCH hues (one visual family) and carry a
-// light/dark pair so the eval-chart arcs stay legible on either modal surface.
+// (`EvalRow.type`, `Delivery.mode`) plus a per-field icon. Icons are Material
+// `ic` (round) from Iconify — one set across the app, no emoji. Colours share
+// the course palette's OKLCH hues and carry a light/dark pair so the eval-chart
+// arcs stay legible on either modal surface. The *ranking* of fields lives in
+// the generated `syllabus-fields.generated.ts`.
+
+import type { Component } from 'svelte'
+import IconAttendance from '~icons/ic/round-front-hand'
+import IconExam from '~icons/ic/round-history-edu'
+import IconOther from '~icons/ic/round-label'
+import IconPresentation from '~icons/ic/round-co-present'
+import IconQuiz from '~icons/ic/round-quiz'
+import IconReport from '~icons/ic/round-description'
+import IconHybrid from '~icons/ic/round-shuffle'
+import IconOndemand from '~icons/ic/round-ondemand-video'
+import IconOnline from '~icons/ic/round-videocam'
+import IconOnsite from '~icons/ic/round-groups'
+// Field / group icons.
+import IconAims from '~icons/ic/round-flag'
+import IconBase from '~icons/ic/round-info'
+import IconEval from '~icons/ic/round-donut-large'
+import IconGoals from '~icons/ic/round-check-circle'
+import IconGroupOther from '~icons/ic/round-more-horiz'
+import IconKeywords from '~icons/ic/round-tag'
+import IconNumbering from '~icons/ic/round-tag'
+import IconOfficeHour from '~icons/ic/round-meeting-room'
+import IconPlan from '~icons/ic/round-event'
+import IconPrep from '~icons/ic/round-schedule'
+import IconPrereq from '~icons/ic/round-rule'
+import IconSummary from '~icons/ic/round-subject'
+import IconTeachers from '~icons/ic/round-person'
+import IconTextbooks from '~icons/ic/round-menu-book'
 
 export interface KindColor {
 	light: string
@@ -10,18 +38,18 @@ export interface KindColor {
 }
 
 export interface KindStyle {
-	emoji: string
+	icon: Component
 	label: string
 	color: KindColor
 }
 
 export const EVAL_KIND: Record<string, KindStyle> = {
-	exam: { emoji: '✍️', label: '試験', color: { light: '#fa285c', dark: '#fb7e8c' } },
-	report: { emoji: '📝', label: 'レポート', color: { light: '#1a8fef', dark: '#65b0fb' } },
-	attendance: { emoji: '🙋', label: '出席・参加', color: { light: '#1da751', dark: '#26cb64' } },
-	presentation: { emoji: '💬', label: '発表', color: { light: '#be7c18', dark: '#e79720' } },
-	quiz: { emoji: '🧩', label: '小テスト', color: { light: '#a362f9', dark: '#ba93fb' } },
-	other: { emoji: '📌', label: 'その他', color: { light: '#788fa7', dark: '#9badc1' } },
+	exam: { icon: IconExam, label: '試験', color: { light: '#fa285c', dark: '#fb7e8c' } },
+	report: { icon: IconReport, label: 'レポート', color: { light: '#1a8fef', dark: '#65b0fb' } },
+	attendance: { icon: IconAttendance, label: '出席・参加', color: { light: '#1da751', dark: '#26cb64' } },
+	presentation: { icon: IconPresentation, label: '発表', color: { light: '#be7c18', dark: '#e79720' } },
+	quiz: { icon: IconQuiz, label: '小テスト', color: { light: '#a362f9', dark: '#ba93fb' } },
+	other: { icon: IconOther, label: 'その他', color: { light: '#788fa7', dark: '#9badc1' } },
 }
 
 export function evalKind(type: string): KindStyle {
@@ -29,18 +57,39 @@ export function evalKind(type: string): KindStyle {
 }
 
 export interface ModeStyle {
-	emoji: string
+	icon: Component
 	label: string
 }
 
 export const DELIVERY_MODE: Record<string, ModeStyle> = {
-	onsite: { emoji: '🏫', label: '対面' },
-	online: { emoji: '💻', label: 'オンライン' },
-	ondemand: { emoji: '📼', label: 'オンデマンド' },
-	hybrid: { emoji: '🔀', label: 'ハイブリッド' },
+	onsite: { icon: IconOnsite, label: '対面' },
+	online: { icon: IconOnline, label: 'オンライン' },
+	ondemand: { icon: IconOndemand, label: 'オンデマンド' },
+	hybrid: { icon: IconHybrid, label: 'ハイブリッド' },
 }
 
 export function deliveryMode(mode: string | undefined): ModeStyle | null {
 	if (!mode) return null
 	return DELIVERY_MODE[mode] ?? null
+}
+
+/// A leading icon per detail field / section group, keyed by FIELD_SPEC key (or
+/// group label). Purely decorative wayfinding — the label carries the meaning.
+export const FIELD_ICONS: Record<string, Component> = {
+	eval: IconEval,
+	summary: IconSummary,
+	aims: IconAims,
+	goals: IconGoals,
+	plan: IconPlan,
+	textbooks: IconTextbooks,
+	prereq: IconPrereq,
+	prep: IconPrep,
+	officeHour: IconOfficeHour,
+	teachers: IconTeachers,
+	keywords: IconKeywords,
+	numbering: IconNumbering,
+	// Group headers + the base (科目情報) block.
+	授業内容: IconTextbooks,
+	その他: IconGroupOther,
+	base: IconBase,
 }

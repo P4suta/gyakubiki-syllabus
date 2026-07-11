@@ -23,6 +23,9 @@ type Request =
 			campus: string
 			query: string
 	  }
+	| { id: number; type: 'resolvePlan'; cds: string[] }
+	| { id: number; type: 'planSummary'; indices: number[] }
+	| { id: number; type: 'planGrid'; cds: string[]; semester: string }
 
 /** Course view-models + dictionaries + dataset metadata, sent once after init. */
 interface InitResult {
@@ -46,6 +49,12 @@ async function handleInit(buffer: ArrayBuffer): Promise<InitResult> {
 	// the main thread verbatim.
 	engine = WasmEngine.fromJson(text)
 
+	// Pull in the companion search index lazily, off the init path: it enables
+	// ranked search with match highlights but must never gate first paint.
+	// Queries that arrive before it loads fall back to an unranked substring scan
+	// (handled in the core), so search keeps working meanwhile.
+	void loadSearchIndex()
+
 	return {
 		courses: engine.allCourseViews(),
 		dicts: engine.dicts(),
@@ -55,17 +64,42 @@ async function handleInit(buffer: ArrayBuffer): Promise<InitResult> {
 	}
 }
 
-/** Filter then lay out in one hop — the index array never crosses the boundary. */
-function handleQuery(msg: Extract<Request, { type: 'filterAndGrid' }>): unknown {
+/** Fetch and hand `search.idx` to the core. A missing/late index is non-fatal —
+ *  the query falls back to the substring scan until it arrives. */
+async function loadSearchIndex(): Promise<void> {
+	try {
+		const res = await fetch(`${import.meta.env.BASE_URL}search.idx`)
+		if (!res.ok) return
+		const bytes = new Uint8Array(await res.arrayBuffer())
+		engine?.loadSearchIndex(bytes)
+	} catch {
+		// Leave search on the fallback path; ranking/highlights simply stay off.
+	}
+}
+
+/** Dispatch a non-init request against the ready engine. */
+function handle(msg: Exclude<Request, { type: 'init' }>): unknown {
 	if (!engine) throw new Error('エンジンが初期化されていません')
-	const indices = engine.filter(msg.semester, msg.department, msg.campus, msg.query)
-	return engine.grid(indices, msg.semester)
+	switch (msg.type) {
+		case 'filterAndGrid':
+			// Filter, rank, and lay out in one hop — cells come back best-first.
+			return engine.query(msg.semester, msg.department, msg.campus, msg.query)
+		case 'resolvePlan':
+			return Array.from(engine.resolvePlan(msg.cds))
+		case 'planSummary':
+			return engine.planSummary(Uint32Array.from(msg.indices))
+		case 'planGrid': {
+			// The registered courses laid onto the timetable for one semester.
+			const indices = engine.resolvePlan(msg.cds)
+			return engine.grid(indices, msg.semester)
+		}
+	}
 }
 
 self.onmessage = async (e: MessageEvent<Request>) => {
 	const msg = e.data
 	try {
-		const result = msg.type === 'init' ? await handleInit(msg.buffer) : handleQuery(msg)
+		const result = msg.type === 'init' ? await handleInit(msg.buffer) : handle(msg)
 		self.postMessage({ id: msg.id, ok: true, result })
 	} catch (err) {
 		self.postMessage({

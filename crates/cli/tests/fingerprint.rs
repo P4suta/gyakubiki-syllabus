@@ -1,5 +1,5 @@
 //! Semantic fingerprint over a committed fixture: runs the whole chain
-//! (`convert_v2` → serialize → `Engine::from_json` → `filter`/`grid`) over
+//! (`convert_v3` → serialize → `Engine::from_json` → `filter`/`grid`) over
 //! `fixtures/sample_raw.json` and compares to a committed snapshot. The
 //! fingerprint is cd/value-based (never raw indices), so it is immune to
 //! reordering and drifts only on a real semantic change. Where the byte golden
@@ -11,7 +11,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use syllabus_core::model::RawCourse;
-use syllabus_core::{convert_v2, Engine, Filters};
+use syllabus_core::{Engine, Filters, convert_v3};
 
 /// A fixed timestamp so `generated_at` in the fingerprint is stable.
 const PINNED_GENERATED_AT: &str = "2026-01-01T00:00:00Z";
@@ -20,13 +20,13 @@ fn fixtures_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures")
 }
 
-/// Build an engine the way the CLI does: parse raw → `convert_v2` → serialize →
+/// Build an engine the way the CLI does: parse raw → `convert_v3` → serialize →
 /// `Engine::from_json`, exercising the full producer→consumer round-trip.
 fn engine_from_fixture() -> Engine {
     let raw_json =
         fs::read_to_string(fixtures_dir().join("sample_raw.json")).expect("read sample_raw.json");
     let raw: Vec<RawCourse> = serde_json::from_str(&raw_json).expect("parse sample_raw.json");
-    let data = convert_v2(&raw, PINNED_GENERATED_AT.to_owned()).data;
+    let data = convert_v3(&raw, PINNED_GENERATED_AT.to_owned()).data;
     let json = serde_json::to_string(&data).expect("serialize v3 payload");
     Engine::from_json(&json).expect("engine builds from converted fixture")
 }

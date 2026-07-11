@@ -31,7 +31,6 @@ export interface Course {
 	unit?: string // credits (from syllabus detail)
 	dm?: string // delivery mode: onsite | online | ondemand | hybrid
 	ev?: string[] // assessment summary for the card, e.g. ["attendance:40","exam:60"]
-	st: string // searchText
 }
 
 // --- Full syllabus detail (lazy-loaded from details/{cd}.json) ---
@@ -57,6 +56,26 @@ export interface Eval {
 export interface PlanItem {
 	n: number
 	text: string
+	/** Highlight hint from `enrich`: exam | milestone | start (else absent). */
+	kind?: string
+}
+
+// --- Derived at convert time (see crates/cli/src/detail/enrich.rs) ---
+
+export interface TextbookSection {
+	label?: string
+	lines: string[]
+}
+
+export interface TextbookInfo {
+	isNone: boolean
+	sections: TextbookSection[]
+}
+
+export interface PrepInfo {
+	hours?: number
+	yoshu?: string
+	fukushu?: string
 }
 
 export interface OfficeHour {
@@ -89,6 +108,8 @@ export interface CourseDetail {
 	numbering?: string[]
 	sdgs?: string[]
 	extra?: Labelled[]
+	textbookInfo?: TextbookInfo
+	prepInfo?: PrepInfo
 }
 
 export interface Dictionaries {

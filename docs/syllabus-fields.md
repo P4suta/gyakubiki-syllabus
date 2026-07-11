@@ -11,13 +11,13 @@
 | 1 |  | `unit` | 単位数 | `meta` |
 | 1 |  | `summary` | 授業の概要 | `longtext` |
 | 1 | 授業内容 | `aims` | 授業の目的 | `longtext` |
-| 2 | 授業内容 | `goals` | 到達目標 | `list` |
+| 2 | 授業内容 | `goals` | 到達目標 | `checklist` |
 | 2 | 授業内容 | `plan` | 授業計画 | `plan-timeline` |
-| 2 | 授業内容 | `textbooks` | 教科書・参考書 | `longtext` |
+| 2 | 授業内容 | `textbooks` | 教科書・参考書 | `textbooks` |
 | 2 | 授業内容 | `prereq` | 履修に求めるもの | `longtext` |
-| 2 | 授業内容 | `prep` | 授業時間外の学習 | `longtext` |
+| 2 | 授業内容 | `prep` | 授業時間外の学習 | `prep` |
 | 2 | 授業内容 | `officeHour` | オフィスアワー | `office-table` |
-| 3 | その他 | `teachers` | 担当教員 | `list` |
-| 3 | その他 | `keywords` | キーワード | `chips` |
-| 3 | その他 | `numbering` | ナンバリング | `chips` |
-| 3 | その他 | `sdgs` | SDGs | `chips` |
+| 3 | その他 | `teachers` | 担当教員 | `people` |
+| 3 | その他 | `keywords` | キーワード | `keywords` |
+| 3 | その他 | `numbering` | ナンバリング | `numbering` |
+| 3 | その他 | `sdgs` | SDGs | `sdgs` |

@@ -40,6 +40,67 @@ struct GridResult {
     count_unique: u32,
 }
 
+/// One match span: field discriminant, and UTF-16 offset/length into that
+/// field's original display text. Terse keys keep the per-query payload small.
+#[derive(Serialize)]
+struct HlSpan {
+    f: u8,
+    o: u32,
+    l: u32,
+}
+
+/// Match spans for one course (referenced by index `i`).
+#[derive(Serialize)]
+struct Highlight {
+    i: u32,
+    spans: Vec<HlSpan>,
+}
+
+/// A full-text query result: the score-ordered grid, its distinct-course count,
+/// and per-course highlight spans (empty when the query is empty).
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct QueryResult {
+    cells: Vec<GridCell>,
+    count_unique: u32,
+    highlights: Vec<Highlight>,
+}
+
+/// A timetable collision: the cell coordinate and the colliding course indices.
+#[derive(Serialize)]
+struct ConflictView {
+    day: u8,
+    period: u8,
+    courses: Vec<u32>,
+}
+
+/// One category's rolled-up credits and course count.
+#[derive(Serialize)]
+struct TallyView {
+    key: String,
+    credits: f32,
+    count: u32,
+}
+
+/// Credit totals plus the per-axis tallies (授業形態 / 科目分類 / 対象年次).
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CreditsView {
+    total_credits: f32,
+    total_courses: u32,
+    uncredited: u32,
+    by_kubun: Vec<TallyView>,
+    by_bunrui: Vec<TallyView>,
+    by_nen: Vec<TallyView>,
+}
+
+/// A plan's summary: every conflict and the credit tallies.
+#[derive(Serialize)]
+struct PlanSummaryView {
+    conflicts: Vec<ConflictView>,
+    credits: CreditsView,
+}
+
 /// The browser-facing handle to a loaded dataset.
 #[wasm_bindgen]
 pub struct SyllabusEngine {
@@ -56,6 +117,130 @@ impl SyllabusEngine {
     pub fn from_json(json: &str) -> Result<SyllabusEngine, JsError> {
         let inner = Engine::from_json(json).map_err(|e| JsError::new(&e.to_string()))?;
         Ok(Self { inner })
+    }
+
+    /// Load the companion `search.idx` (fetched separately from `data.json`),
+    /// enabling ranked [`SyllabusEngine::query`]. Until this is called, `query`
+    /// falls back to an unranked substring scan.
+    ///
+    /// # Errors
+    /// Rejects a blob that is not a valid `search.idx`.
+    #[wasm_bindgen(js_name = loadSearchIndex)]
+    pub fn load_search_index(&mut self, bytes: &[u8]) -> Result<(), JsError> {
+        self.inner
+            .load_search_index(bytes)
+            .map_err(|e| JsError::new(&e.to_string()))
+    }
+
+    /// Filter, rank, and lay out in one hop: returns `{ cells, countUnique,
+    /// highlights }`, cells already ordered best-first within each timetable
+    /// slot. `highlights` carries per-course match spans (empty for an empty
+    /// query). Scores never cross the boundary — the ordering already encodes
+    /// them.
+    ///
+    /// # Errors
+    /// Fails only if the result cannot be serialized to a JS value.
+    #[wasm_bindgen]
+    pub fn query(
+        &self,
+        semester: &str,
+        department: &str,
+        campus: &str,
+        query: &str,
+    ) -> Result<JsValue, JsError> {
+        let hits = self.inner.search(&Filters {
+            semester: selector(semester),
+            department: selector(department),
+            campus: selector(campus),
+            query,
+        });
+        let grid = self.inner.search_grid(&hits, selector(semester));
+
+        let cells = grid
+            .cells()
+            .map(|(day, period, courses)| GridCell {
+                day: day.get(),
+                period: period.get(),
+                courses: courses.iter().map(|&i| i.get() as u32).collect(),
+            })
+            .collect();
+
+        let highlights = hits
+            .iter()
+            .filter(|h| !h.spans.is_empty())
+            .map(|h| Highlight {
+                i: h.course.get() as u32,
+                spans: h
+                    .spans
+                    .iter()
+                    .map(|s| HlSpan {
+                        f: s.field as u8,
+                        o: s.start,
+                        l: s.len,
+                    })
+                    .collect(),
+            })
+            .collect();
+
+        to_js(&QueryResult {
+            cells,
+            count_unique: grid.count_unique() as u32,
+            highlights,
+        })
+    }
+
+    /// Resolve a shared plan's stable course codes to course indices (unknown
+    /// codes dropped, ascending, de-duplicated).
+    #[wasm_bindgen(js_name = resolvePlan)]
+    pub fn resolve_plan(&self, cds: Vec<String>) -> Vec<u32> {
+        self.inner
+            .resolve_cds(&cds)
+            .into_iter()
+            .map(|i| i.get() as u32)
+            .collect()
+    }
+
+    /// Summarize the given registered course indices: `{ conflicts, credits }`.
+    ///
+    /// # Errors
+    /// Fails only if the result cannot be serialized to a JS value.
+    #[wasm_bindgen(js_name = planSummary)]
+    pub fn plan_summary(&self, course_indices: Vec<u32>) -> Result<JsValue, JsError> {
+        let indices: Vec<CourseIndex> = course_indices
+            .into_iter()
+            .map(|i| CourseIndex::new(i as usize))
+            .collect();
+        let summary = self.inner.plan_summary(&indices);
+
+        let tally = |ts: &[syllabus_core::CategoryTally]| {
+            ts.iter()
+                .map(|t| TallyView {
+                    key: t.key.clone(),
+                    credits: t.credits,
+                    count: t.count,
+                })
+                .collect()
+        };
+        let view = PlanSummaryView {
+            conflicts: summary
+                .conflicts
+                .iter()
+                .map(|c| ConflictView {
+                    day: c.day.get(),
+                    period: c.period.get(),
+                    courses: c.courses.iter().map(|i| i.get() as u32).collect(),
+                })
+                .collect(),
+            credits: CreditsView {
+                total_credits: summary.credits.total_credits,
+                total_courses: summary.credits.total_courses,
+                uncredited: summary.credits.uncredited,
+                by_kubun: tally(&summary.credits.by_kubun),
+                by_bunrui: tally(&summary.credits.by_bunrui),
+                by_nen: tally(&summary.credits.by_nen),
+            },
+        };
+        to_js(&view)
     }
 
     /// Indices of courses matching the filters (`"all"` = no filter), ascending.

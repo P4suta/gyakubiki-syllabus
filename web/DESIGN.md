@@ -85,8 +85,18 @@ rest are conventions.
   stacking context with **no z-index**, plus a free focus trap and inert page.
   Esc arrives as the dialog's `cancel` event, which the sheet routes through its
   single history/back close-path (the consent gate swallows it).
-- **Motion** — property-specific transitions (`transition-colors` /
-  `-transform`), `duration-200`, and `ease-spring` for movement.
+- **Motion** — one system, three registers:
+  - **State** (hover / focus / press): property-specific `transition-colors` /
+    `-transform` at `duration-200`.
+  - **Movement** (drag-follow sheets & the day pager): inline
+    `transition: <prop> <dur> var(--ease-spring)` — the spring easing is the
+    single movement curve; the physical follow-durations are the one sanctioned
+    inline exception (like dynamic colours).
+  - **Enter / loading**: the `@theme` keyframe tokens `animate-fade-in`,
+    `animate-dialog-in`, `animate-spinner`, `animate-pulse`.
+
+  Arbitrary `ease-[cubic-bezier(…)]` is lint-blocked — movement uses
+  `ease-spring`, nothing else.
 
 ## Guidelines
 

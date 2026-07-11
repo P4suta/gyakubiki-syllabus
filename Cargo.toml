@@ -1,12 +1,12 @@
 # Rust workspace for the syllabus core, shared by the WASM viewer and the native CLI.
 [workspace]
-resolver = "2"
+resolver = "3"
 members = ["crates/core", "crates/wasm", "crates/cli"]
 # The cargo-fuzz crate is its own workspace (nightly-only); keep it out of ours.
 exclude = ["crates/cli/fuzz"]
 
 [workspace.package]
-edition = "2021"
+edition = "2024"
 license = "AGPL-3.0-or-later"
 repository = "https://github.com/P4suta/gyakubiki-syllabus"
 

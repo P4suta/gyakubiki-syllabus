@@ -26,10 +26,10 @@ pub fn eval_type(item: &str) -> &'static str {
     ];
     // 「小テスト」(quiz) also contains「テスト」(exam), so scan quiz first.
     for kind in ["quiz", "exam", "report", "attendance", "presentation"] {
-        if let Some((_, kws)) = TABLE.iter().find(|(k, _)| *k == kind) {
-            if kws.iter().any(|kw| item.contains(kw)) {
-                return kind_static(kind);
-            }
+        if let Some((_, kws)) = TABLE.iter().find(|(k, _)| *k == kind)
+            && kws.iter().any(|kw| item.contains(kw))
+        {
+            return kind_static(kind);
         }
     }
     "other"

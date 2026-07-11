@@ -11,7 +11,7 @@
 
 use std::path::Path;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 
 /// One displayable syllabus field.
 pub struct FieldSpec {
@@ -75,7 +75,7 @@ pub const FIELD_SPEC: &[FieldSpec] = &[
         label: "到達目標",
         tier: 2,
         group: "授業内容",
-        render: "list",
+        render: "checklist",
     },
     FieldSpec {
         key: "plan",
@@ -89,7 +89,7 @@ pub const FIELD_SPEC: &[FieldSpec] = &[
         label: "教科書・参考書",
         tier: 2,
         group: "授業内容",
-        render: "longtext",
+        render: "textbooks",
     },
     FieldSpec {
         key: "prereq",
@@ -103,7 +103,7 @@ pub const FIELD_SPEC: &[FieldSpec] = &[
         label: "授業時間外の学習",
         tier: 2,
         group: "授業内容",
-        render: "longtext",
+        render: "prep",
     },
     FieldSpec {
         key: "officeHour",
@@ -118,28 +118,28 @@ pub const FIELD_SPEC: &[FieldSpec] = &[
         label: "担当教員",
         tier: 3,
         group: "その他",
-        render: "list",
+        render: "people",
     },
     FieldSpec {
         key: "keywords",
         label: "キーワード",
         tier: 3,
         group: "その他",
-        render: "chips",
+        render: "keywords",
     },
     FieldSpec {
         key: "numbering",
         label: "ナンバリング",
         tier: 3,
         group: "その他",
-        render: "chips",
+        render: "numbering",
     },
     FieldSpec {
         key: "sdgs",
         label: "SDGs",
         tier: 3,
         group: "その他",
-        render: "chips",
+        render: "sdgs",
     },
 ];
 
@@ -258,6 +258,9 @@ mod tests {
             numbering: vec!["n".into()],
             sdgs: vec!["4".into()],
             extra: vec![Default::default()],
+            // Derived fields (textbookInfo/prepInfo) are added by `enrich`, not
+            // shown as their own sections — left default so they don't serialize.
+            ..Default::default()
         };
         let value = serde_json::to_value(&detail).unwrap();
         let obj = value.as_object().unwrap();

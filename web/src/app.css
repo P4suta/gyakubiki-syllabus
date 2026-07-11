@@ -23,6 +23,9 @@
   --color-apple-blue: #0071e3;
   --color-apple-blue-hover: #0064cf;
   --color-on-accent: #ffffff;
+  /* Danger/conflict accent (timetable collisions): a ring on a clashing cell and
+     the fill of the plan button when the plan conflicts. Carries on-accent text. */
+  --color-apple-red: #d70015;
 
   /* Muted text scale — solid slate (not opacity-on-ink) so contrast holds on
      every surface, including the course tiles, and so the same tokens flip
@@ -106,6 +109,7 @@
     --color-apple-blue: #3d9bff;
     --color-apple-blue-hover: #5aa9ff;
     --color-on-accent: #0b1220;
+    --color-apple-red: #ff5f6d;
     --color-apple-text-secondary: #a7aeba;
     --color-apple-text-tertiary: #8e96a2;
 
@@ -215,3 +219,4 @@ body {
   from { opacity: 0; scale: 0.96; }
   to { opacity: 1; scale: 1; }
 }
+

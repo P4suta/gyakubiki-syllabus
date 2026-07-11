@@ -7,9 +7,9 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 
 use anyhow::{Context, Result};
-use syllabus_core::convert_v2;
+use syllabus_core::convert_v3;
 use syllabus_core::model::{Course, ProcessedData, RawCourse};
-use syllabus_core::normalize;
+use syllabus_core::{DocFields, SearchIndex};
 
 use crate::detail::SanshoDetail;
 
@@ -18,6 +18,9 @@ pub struct Rendered {
     /// `data.json` bytes: compact-or-pretty JSON, HTML-escaped, with **no**
     /// trailing newline. The binary adds a newline only when writing to stdout.
     pub bytes: Vec<u8>,
+    /// `search.idx` bytes: the compact binary full-text index, shipped alongside
+    /// `data.json` and loaded lazily in the worker.
+    pub index: Vec<u8>,
     pub warnings: Vec<String>,
 }
 
@@ -31,7 +34,7 @@ pub fn render_data_json(
     compact: bool,
     details: &HashMap<String, SanshoDetail>,
 ) -> Result<Rendered> {
-    let mut result = convert_v2(raw, generated_at);
+    let mut result = convert_v3(raw, generated_at);
     if !details.is_empty() {
         for course in &mut result.data.courses {
             if let Some(detail) = details.get(&course.cd) {
@@ -39,16 +42,64 @@ pub fn render_data_json(
             }
         }
     }
+    let index = build_search_index(&result.data, details);
     let json = encode(&result.data, compact)?;
     Ok(Rendered {
         bytes: json.into_bytes(),
+        index,
         warnings: result.warnings,
     })
 }
 
-/// Fold a course's syllabus detail into its grid record: card fields
-/// (`unit`/`dm`/`ev`) plus キーワード appended to the search haystack `st`. The
-/// full detail (概要・到達目標 …) stays in `details/{cd}.json`.
+/// Build the full-text search index over the converted courses. The display
+/// fields (name/subtitle/instructor/code) carry match spans; `keywords` bundles
+/// the department, taxonomy (分野・分類), and syllabus キーワード — searchable for
+/// recall, never highlighted — mirroring the surface the old `st` haystack held.
+fn build_search_index(data: &ProcessedData, details: &HashMap<String, SanshoDetail>) -> Vec<u8> {
+    // Own the joined keyword text so `DocFields` can borrow it.
+    let keyword_texts: Vec<String> = data
+        .courses
+        .iter()
+        .map(|c| {
+            let dept = data
+                .dicts
+                .departments
+                .get(c.dept as usize)
+                .map_or("", String::as_str);
+            let detail_kw = details
+                .get(&c.cd)
+                .map(|d| d.keywords.join(" ").replace(['\n', '\r'], " "));
+            [
+                dept,
+                c.bunya.as_deref().unwrap_or_default(),
+                c.bunrui.as_deref().unwrap_or_default(),
+                detail_kw.as_deref().unwrap_or_default(),
+            ]
+            .into_iter()
+            .filter(|s| !s.is_empty())
+            .collect::<Vec<_>>()
+            .join(" ")
+        })
+        .collect();
+
+    let docs = data
+        .courses
+        .iter()
+        .zip(&keyword_texts)
+        .map(|(c, kw)| DocFields {
+            name: &c.nm,
+            subtitle: c.sub.as_deref(),
+            instructor: &c.prof,
+            code: &c.cd,
+            keywords: kw,
+        });
+    SearchIndex::build(docs).encode()
+}
+
+/// Fold a course's syllabus detail into its grid record: the card fields
+/// (`unit`/`dm`/`ev`). The syllabus キーワード go into the search index (see
+/// [`build_search_index`]), and the full detail (概要・到達目標 …) stays in
+/// `details/{cd}.json`.
 fn enrich_course(course: &mut Course, detail: &SanshoDetail) {
     course.unit = detail.unit.clone();
     course.dm = detail
@@ -68,19 +119,6 @@ fn enrich_course(course: &mut Course, detail: &SanshoDetail) {
             })
             .collect()
     });
-
-    let extra = detail_search_text(detail);
-    if !extra.is_empty() {
-        course.st = format!("{} {}", course.st, normalize(&extra));
-    }
-}
-
-/// Detail text folded into the search haystack. Only キーワード — the short,
-/// high-signal tags — are carried; the long 概要・目的・到達目標 prose is left out
-/// so `data.json` stays small (it dominated the payload and gated LCP). That
-/// prose is still readable in `details/{cd}.json`, just not full-text searchable.
-fn detail_search_text(detail: &SanshoDetail) -> String {
-    detail.keywords.join(" ").replace(['\n', '\r'], " ")
 }
 
 /// Serialize to JSON, then HTML-escape inside string values.
@@ -166,23 +204,50 @@ mod tests {
         assert!(json.contains(r#""unit":"2.0""#));
         assert!(json.contains(r#""dm":"hybrid""#));
         assert!(json.contains(r#""ev":["report:40","exam:60"]"#));
-        // Keyword folded into the search haystack `st`.
-        assert!(json.contains("アルゴリズム"));
+        // The keyword is searchable via the index, not carried in data.json — see
+        // `builds_a_searchable_index_covering_name_and_keywords`.
     }
 
     #[test]
-    fn detail_prose_stays_out_of_the_search_haystack() {
-        // Only キーワード ride into `st`; the long 概要/目的/到達目標 prose does not,
-        // so it can't bloat data.json (it stays in details/{cd}.json). Guarding the
-        // *negative* here — the earlier positive test alone wouldn't catch a
-        // regression that re-adds the prose.
+    fn builds_a_searchable_index_covering_name_and_keywords() {
+        use syllabus_core::{CourseIndex, SearchIndex};
+
+        let raw = vec![RawCourse {
+            kogi_cd: "001".into(),
+            kogi_nm: "情報科学".into(),
+            tanto_kyoin: "山田 太郎".into(),
+            ..Default::default()
+        }];
+        let detail = SanshoDetail {
+            cd: "001".into(),
+            keywords: vec!["アルゴリズム".into()],
+            ..Default::default()
+        };
+        let details: HashMap<String, SanshoDetail> =
+            [("001".to_owned(), detail)].into_iter().collect();
+
+        let rendered = render_data_json(&raw, "t".into(), true, &details).unwrap();
+        let index = SearchIndex::decode(&rendered.index).expect("index decodes");
+        let candidates = [CourseIndex::new(0)];
+        // Name, instructor, and the detail keyword are all reachable.
+        assert_eq!(index.search("科学", candidates).len(), 1);
+        assert_eq!(index.search("山田", candidates).len(), 1);
+        assert_eq!(index.search("アルゴリズム", candidates).len(), 1);
+        assert!(index.search("存在しない語", candidates).is_empty());
+    }
+
+    #[test]
+    fn detail_prose_is_searchable_only_via_keywords_not_the_index_or_json() {
+        use syllabus_core::{CourseIndex, SearchIndex};
+        // Only キーワード become searchable; the long 概要/目的/到達目標 prose does not
+        // enter the index (it would bloat search.idx) nor data.json (it stays in
+        // details/{cd}.json). Guarding the *negative* — a regression that re-adds
+        // the prose to either artifact must fail here.
         let raw = vec![RawCourse {
             kogi_cd: "001".into(),
             kogi_nm: "情報科学".into(),
             ..Default::default()
         }];
-        // Japanese-only tokens: `normalize` lowercases ASCII, so distinct kana/kanji
-        // avoid a false match from casing.
         let detail = SanshoDetail {
             cd: "001".into(),
             summary: Some("除外概要プロース本文".into()),
@@ -194,25 +259,23 @@ mod tests {
         let details: HashMap<String, SanshoDetail> =
             [("001".to_owned(), detail)].into_iter().collect();
 
-        let json = String::from_utf8(
-            render_data_json(&raw, "t".into(), true, &details)
-                .unwrap()
-                .bytes,
-        )
-        .unwrap();
-        assert!(
-            json.contains("検索可能キーワード語"),
-            "keyword should be searchable"
-        );
-        assert!(
-            !json.contains("除外概要"),
-            "summary prose must not enter st"
-        );
-        assert!(!json.contains("除外目的"), "aims prose must not enter st");
-        assert!(
-            !json.contains("除外到達目標"),
-            "goals prose must not enter st"
-        );
+        let rendered = render_data_json(&raw, "t".into(), true, &details).unwrap();
+        let json = String::from_utf8(rendered.bytes).unwrap();
+        let index = SearchIndex::decode(&rendered.index).expect("index decodes");
+        let one = [CourseIndex::new(0)];
+
+        // The keyword is searchable; the prose is not (in the index or data.json).
+        assert_eq!(index.search("検索可能キーワード語", one).len(), 1);
+        for prose in ["除外概要", "除外目的", "除外到達目標"] {
+            assert!(
+                index.search(prose, one).is_empty(),
+                "prose {prose} must not be indexed"
+            );
+            assert!(
+                !json.contains(prose),
+                "prose {prose} must not enter data.json"
+            );
+        }
     }
 
     #[test]

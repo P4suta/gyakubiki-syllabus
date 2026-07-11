@@ -284,6 +284,7 @@ fn detail_for(i: usize, rng: &mut StdRng) -> SanshoDetail {
         .map(|n| PlanItem {
             n: n as i64,
             text: format!("第{n}回の授業内容（テーマ{n}）"),
+            ..Default::default()
         })
         .collect();
     let goal_count = 3 + (i % 3);
@@ -336,6 +337,7 @@ fn detail_for(i: usize, rng: &mut StdRng) -> SanshoDetail {
         numbering: vec![format!("GEN-{:03}", (i % 400) + 100)],
         sdgs: vec!["4 質の高い教育をみんなに".to_owned()],
         extra,
+        ..Default::default()
     }
 }
 
@@ -359,7 +361,7 @@ mod tests {
     use super::generate;
     use std::collections::BTreeSet;
     use syllabus_core::model::RawCourse;
-    use syllabus_core::{convert_v2, Engine, Filters};
+    use syllabus_core::{Engine, Filters, convert_v3};
 
     fn raw_courses(g: &super::Generated) -> Vec<RawCourse> {
         serde_json::from_value(serde_json::Value::Array(g.raw.clone()))
@@ -435,7 +437,7 @@ mod tests {
     fn converts_to_valid_v3_with_saturday_and_tsuunen() {
         let g = generate(40, 42);
         let raw = raw_courses(&g);
-        let data = convert_v2(&raw, "2026-01-01T00:00:00Z".to_owned()).data;
+        let data = convert_v3(&raw, "2026-01-01T00:00:00Z".to_owned()).data;
 
         // Grid variety: 通年 propagation and a Saturday column both present.
         assert!(data.dicts.semesters.iter().any(|s| s == "通年"));

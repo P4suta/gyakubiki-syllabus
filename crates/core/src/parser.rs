@@ -92,7 +92,7 @@ fn full_width_digit(c: char) -> Option<i32> {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_jikanwari, ParsedSlot};
+    use super::{ParsedSlot, parse_jikanwari};
 
     fn slot(semester: &str, day: &str, period: i32) -> ParsedSlot {
         ParsedSlot {

@@ -1,4 +1,7 @@
 <script lang="ts">
+import IconClose from '~icons/ic/round-close'
+import IconSearch from '~icons/ic/round-search'
+
 interface Props {
 	searchText: string
 }
@@ -9,15 +12,7 @@ let { searchText = $bindable() }: Props = $props()
 <!-- Desktop full-width search bar; mobile shares this state via the filter sheet. -->
 <div class="hidden sm:block border-b border-overlay-subtle bg-surface-primary/40 backdrop-blur-md px-6 py-3">
 	<div class="relative">
-		<svg
-			class="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-apple-text-tertiary pointer-events-none"
-			fill="none"
-			viewBox="0 0 24 24"
-			stroke="currentColor"
-			stroke-width="2"
-		>
-			<path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-		</svg>
+		<IconSearch class="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-apple-text-tertiary pointer-events-none" />
 		<input
 			type="text"
 			bind:value={searchText}
@@ -31,15 +26,7 @@ let { searchText = $bindable() }: Props = $props()
 				onclick={() => { searchText = '' }}
 				aria-label="検索をクリア"
 			>
-				<svg
-					class="w-3 h-3 text-apple-text-secondary"
-					fill="none"
-					viewBox="0 0 24 24"
-					stroke="currentColor"
-					stroke-width="3"
-				>
-					<path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
-				</svg>
+				<IconClose class="w-3.5 h-3.5 text-apple-text-secondary" />
 			</button>
 		{/if}
 	</div>

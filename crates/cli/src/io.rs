@@ -10,7 +10,7 @@ use std::fs;
 use std::io::Read;
 use std::path::PathBuf;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use serde::Deserialize;
 use serde_json::Value;
 use syllabus_core::model::RawCourse;
@@ -77,15 +77,17 @@ fn extract_course_values(text: &str) -> Result<Vec<Value>> {
         select_kogi_dto_list: Option<Vec<Value>>,
     }
 
-    if let Ok(env) = serde_json::from_str::<Envelope>(text) {
-        if let Some(list) = env.select_kogi_dto_list {
-            return Ok(list);
-        }
+    if let Ok(env) = serde_json::from_str::<Envelope>(text)
+        && let Some(list) = env.select_kogi_dto_list
+    {
+        return Ok(list);
     }
     if let Ok(arr) = serde_json::from_str::<Vec<Value>>(text) {
         return Ok(arr);
     }
-    bail!("Cannot recognize course data as JSON (expected a selectKogiDtoList wrapper or a bare array)")
+    bail!(
+        "Cannot recognize course data as JSON (expected a selectKogiDtoList wrapper or a bare array)"
+    )
 }
 
 #[cfg(test)]

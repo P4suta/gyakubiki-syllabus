@@ -4,6 +4,12 @@
 //! The producer side (`convert` CLI) builds `data.json` from raw KULAS JSON; the
 //! consumer side ([`Engine`]) reads it back and answers the UI's filter/grid
 //! queries. [`model`] is the v3 wire format the two sides share.
+//!
+//! **Error convention:** this crate exposes typed, `thiserror`-derived domain
+//! errors ([`EngineError`], [`search::IndexError`], [`bitset::DecodeError`]) so
+//! callers can match on failure kinds. The boundary crates layer their own
+//! coarser reporting on top — the CLI uses `anyhow` with context, the WASM
+//! wrapper converts to `JsError`.
 
 #![forbid(unsafe_code)]
 
@@ -15,10 +21,14 @@ pub mod grid;
 pub mod index;
 pub mod model;
 pub mod parser;
+pub mod plan;
+pub mod search;
 pub mod text;
 
-pub use convert::{convert_v2, ConvertResult};
+pub use convert::{ConvertResult, convert_v3};
 pub use engine::{Engine, EngineError, Filters};
 pub use grid::Grid;
 pub use index::{CampusIndex, CourseIndex, Day, DepartmentIndex, Period, SemesterIndex};
-pub use text::{normalize, search_text};
+pub use plan::{CategoryTally, Conflict, CreditSummary, PlanSummary};
+pub use search::{DocFields, Field, IndexError, SearchHit, SearchIndex, Span};
+pub use text::{fold_char, normalize, search_text};

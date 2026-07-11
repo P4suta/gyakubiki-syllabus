@@ -6,8 +6,8 @@
 
 use std::sync::LazyLock;
 
-use anyhow::{bail, Context, Result};
-use base64::{engine::general_purpose::STANDARD, Engine as _};
+use anyhow::{Context, Result, bail};
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::Value;
 
 /// Matches the inline `cpSmartVueStartup('dash-app-main', '<ver>', <bool>,
@@ -66,27 +66,31 @@ mod tests {
 
     #[test]
     fn errors_on_bad_base64() {
-        assert!(extract_entry_context(
-            "cpSmartVueStartup('dash-app-main', 'v', true, 'not!base64')"
-        )
-        .is_err());
+        assert!(
+            extract_entry_context("cpSmartVueStartup('dash-app-main', 'v', true, 'not!base64')")
+                .is_err()
+        );
     }
 
     #[test]
     fn errors_on_empty_token() {
         // base64 of {"token":""}
-        assert!(extract_entry_context(
-            "cpSmartVueStartup('dash-app-main', 'v', true, 'eyJ0b2tlbiI6IiJ9')"
-        )
-        .is_err());
+        assert!(
+            extract_entry_context(
+                "cpSmartVueStartup('dash-app-main', 'v', true, 'eyJ0b2tlbiI6IiJ9')"
+            )
+            .is_err()
+        );
     }
 
     #[test]
     fn ignores_non_dash_app_main_component() {
         // base64 of {"token":"other"} under dash-header — must not match.
-        assert!(extract_entry_context(
-            "cpSmartVueStartup('dash-header', 'v', true, 'eyJ0b2tlbiI6Im90aGVyIn0=')"
-        )
-        .is_err());
+        assert!(
+            extract_entry_context(
+                "cpSmartVueStartup('dash-header', 'v', true, 'eyJ0b2tlbiI6Im90aGVyIn0=')"
+            )
+            .is_err()
+        );
     }
 }

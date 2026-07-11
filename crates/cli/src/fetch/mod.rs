@@ -8,23 +8,28 @@
 mod client;
 pub(crate) mod token;
 
-pub(crate) use client::{browser_entry_context, build_http_client, USER_AGENT};
+pub(crate) use client::{USER_AGENT, browser_entry_context, build_http_client};
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use chrono::Datelike;
 use clap::Args;
 use serde::Deserialize;
 
+use crate::net::{FetchError, Politeness, backoff};
 use client::Client;
 
 const TOKEN_ENV: &str = "KULAS_API_TOKEN";
 
 /// Abstracts the HTTP layer so [`fetch_all`] can run against a fake in tests.
+/// Returns a classified [`FetchError`] so the orchestration can back off on
+/// 429/5xx instead of bailing on the first hiccup (symmetric with the detail
+/// crawler).
 pub trait PageFetcher {
-    fn fetch_page(&self, page_no: i32) -> Result<Vec<u8>>;
+    fn fetch_page(&self, page_no: i32) -> Result<Vec<u8>, FetchError>;
 }
 
 #[derive(Args)]
@@ -41,6 +46,16 @@ pub struct FetchArgs {
     /// Minimum guard for page 1's total count (fails below this).
     #[arg(long = "min-total", default_value_t = 1500)]
     min_total: i32,
+    /// Polite base sleep between pages (ms). The grid is light (~8 pages), so this
+    /// stays small — it just avoids a tight back-to-back burst.
+    #[arg(long = "sleep-ms", default_value_t = 500)]
+    sleep_ms: u64,
+    /// Upper bound of random jitter added to the sleep (ms).
+    #[arg(long = "jitter-ms", default_value_t = 500)]
+    jitter_ms: u64,
+    /// Bounded retries per page on a transient/5xx/429 error (with backoff).
+    #[arg(long = "retries", default_value_t = 3)]
+    retries: u32,
     /// Fetch and report counts only, without writing files.
     #[arg(long = "dry-run")]
     dry_run: bool,
@@ -69,6 +84,8 @@ pub fn run(args: FetchArgs) -> Result<()> {
             out_dir: args.out_dir,
             min_total: args.min_total,
             dry_run: args.dry_run,
+            politeness: Politeness::from_ms(args.sleep_ms, args.jitter_ms),
+            retries: args.retries,
         },
         &client,
     )?;
@@ -80,6 +97,10 @@ struct Options {
     out_dir: PathBuf,
     min_total: i32,
     dry_run: bool,
+    /// Sleep between pages (jittered), so the burst never looks like an attack.
+    politeness: Politeness,
+    /// Bounded per-page retries on a retriable error.
+    retries: u32,
 }
 
 /// Per-page metadata; only used for validation — the bytes written are the raw
@@ -199,7 +220,7 @@ fn fetch_all(opts: &Options, fetcher: &impl PageFetcher) -> Result<FetchResult> 
 /// Fetch page 1 and guard its totals, then fetch and validate pages 2..=max.
 /// Touches no filesystem, so it is unit-testable with a fake fetcher.
 fn fetch_and_validate(opts: &Options, fetcher: &impl PageFetcher) -> Result<FetchedPages> {
-    let first_bytes = fetcher.fetch_page(1)?;
+    let first_bytes = fetch_page_resilient(fetcher, 1, opts)?;
     let first = parse_meta(&first_bytes).context("cannot parse page 1 response as JSON")?;
     if first.max_page_no < 1 {
         bail!("page 1 has an invalid maxPageNo (= {})", first.max_page_no);
@@ -218,8 +239,9 @@ fn fetch_and_validate(opts: &Options, fetcher: &impl PageFetcher) -> Result<Fetc
         bytes: first_bytes,
     }];
     for page_no in 2..=first.max_page_no {
+        opts.politeness.wait(); // stay polite between pages
         eprintln!("fetching page {page_no} of {}", first.max_page_no);
-        let bytes = fetcher.fetch_page(page_no)?;
+        let bytes = fetch_page_resilient(fetcher, page_no, opts)?;
         let meta = parse_meta(&bytes)
             .with_context(|| format!("cannot parse page {page_no} response as JSON"))?;
         validate_page(&meta, page_no, first.max_page_no)?;
@@ -235,6 +257,43 @@ fn fetch_and_validate(opts: &Options, fetcher: &impl PageFetcher) -> Result<Fetc
         max_page_no: first.max_page_no,
         pages,
     })
+}
+
+/// Fetch one page, retrying retriable errors (transient / 429 / 5xx) up to
+/// `opts.retries` times with an exponential backoff that also honors the
+/// server's `Retry-After`. A non-retriable error, or the last retry, surfaces as
+/// a diagnostic-carrying `anyhow` error (the whole fetch is all-or-nothing).
+fn fetch_page_resilient(
+    fetcher: &impl PageFetcher,
+    page_no: i32,
+    opts: &Options,
+) -> Result<Vec<u8>> {
+    let mut last: Option<FetchError> = None;
+    for tryno in 0..=opts.retries {
+        match fetcher.fetch_page(page_no) {
+            Ok(bytes) => return Ok(bytes),
+            Err(e) if e.is_retriable() && tryno < opts.retries => {
+                let wait = backoff(opts.politeness.base, tryno)
+                    .max(e.retry_after().unwrap_or(Duration::ZERO));
+                eprintln!(
+                    "page {page_no}: {e} — retry {}/{} in {:.1}s",
+                    tryno + 1,
+                    opts.retries,
+                    wait.as_secs_f32()
+                );
+                if !wait.is_zero() {
+                    std::thread::sleep(wait);
+                }
+                last = Some(e);
+            }
+            Err(e) => return Err(anyhow!("page {page_no}: {}", e.diagnostic())),
+        }
+    }
+    Err(anyhow!(
+        "page {page_no} still failing after {} retries: {}",
+        opts.retries,
+        last.map_or_else(|| "unknown".to_owned(), |e| e.diagnostic())
+    ))
 }
 
 /// Validate one non-first page's metadata against what was requested: the page
@@ -420,11 +479,10 @@ mod tests {
     }
 
     impl PageFetcher for FakeFetcher {
-        fn fetch_page(&self, page_no: i32) -> Result<Vec<u8>> {
-            self.pages
-                .get(&page_no)
-                .cloned()
-                .with_context(|| format!("fake: no canned response for page {page_no}"))
+        fn fetch_page(&self, page_no: i32) -> Result<Vec<u8>, FetchError> {
+            self.pages.get(&page_no).cloned().ok_or_else(|| {
+                FetchError::Fatal(anyhow!("fake: no canned response for page {page_no}"))
+            })
         }
     }
 
@@ -454,6 +512,8 @@ mod tests {
             out_dir: dir.to_path_buf(),
             min_total: 100,
             dry_run,
+            politeness: Politeness::from_ms(0, 0), // never sleep in tests
+            retries: 0,
         }
     }
 

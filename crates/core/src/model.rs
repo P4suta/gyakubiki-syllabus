@@ -97,7 +97,6 @@ pub struct Course {
     /// Assessment-type summary for the card, e.g. `["attendance:40","exam:60"]`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ev: Option<Vec<String>>,
-    pub st: String,
 }
 
 // --- Raw KULAS wire format (producer input) ---
@@ -111,57 +110,81 @@ pub struct Course {
 /// A single course as delivered by KULAS, before normalization.
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct RawCourse {
-    #[serde(rename = "kogiCd", default, deserialize_with = "string_or_null")]
+    #[serde(rename = "kogiCd", default, deserialize_with = "lenient_string")]
     pub kogi_cd: String,
-    #[serde(rename = "kogiNm", default, deserialize_with = "string_or_null")]
+    #[serde(rename = "kogiNm", default, deserialize_with = "lenient_string")]
     pub kogi_nm: String,
-    #[serde(default, deserialize_with = "string_lenient")]
+    #[serde(default, deserialize_with = "lenient_opt_string")]
     pub fukudai: Option<String>,
-    #[serde(rename = "tantoKyoin", default, deserialize_with = "string_or_null")]
+    #[serde(rename = "tantoKyoin", default, deserialize_with = "lenient_string")]
     pub tanto_kyoin: String,
-    #[serde(default, deserialize_with = "string_or_null")]
+    #[serde(default, deserialize_with = "lenient_string")]
     pub jikanwari: String,
     #[serde(
         rename = "kogiKaikojikiNm",
         default,
-        deserialize_with = "string_or_null"
+        deserialize_with = "lenient_string"
     )]
     pub kogi_kaikojiki_nm: String,
-    #[serde(rename = "kogiKubunNm", default, deserialize_with = "string_or_null")]
+    #[serde(rename = "kogiKubunNm", default, deserialize_with = "lenient_string")]
     pub kogi_kubun_nm: String,
     #[serde(
         rename = "sekininBushoNm",
         default,
-        deserialize_with = "string_or_null"
+        deserialize_with = "lenient_string"
     )]
     pub sekinin_busho_nm: String,
-    #[serde(rename = "kochiNm", default, deserialize_with = "string_or_null")]
+    #[serde(rename = "kochiNm", default, deserialize_with = "lenient_string")]
     pub kochi_nm: String,
     #[serde(
         rename = "gakusokuKamokuNm",
         default,
-        deserialize_with = "string_or_null"
+        deserialize_with = "lenient_string"
     )]
     pub gakusoku_kamoku_nm: String,
-    #[serde(rename = "taishoGakka", default, deserialize_with = "string_lenient")]
+    #[serde(
+        rename = "taishoGakka",
+        default,
+        deserialize_with = "lenient_opt_string"
+    )]
     pub taisho_gakka: Option<String>,
-    #[serde(rename = "taishoNenji", default, deserialize_with = "string_lenient")]
+    #[serde(
+        rename = "taishoNenji",
+        default,
+        deserialize_with = "lenient_opt_string"
+    )]
     pub taisho_nenji: Option<String>,
-    #[serde(rename = "kamokuBunrui", default, deserialize_with = "string_lenient")]
+    #[serde(
+        rename = "kamokuBunrui",
+        default,
+        deserialize_with = "lenient_opt_string"
+    )]
     pub kamoku_bunrui: Option<String>,
-    #[serde(rename = "kamokuBunya", default, deserialize_with = "string_lenient")]
+    #[serde(
+        rename = "kamokuBunya",
+        default,
+        deserialize_with = "lenient_opt_string"
+    )]
     pub kamoku_bunya: Option<String>,
     #[serde(
         rename = "syllabusKomokuPatternId",
         default,
-        deserialize_with = "string_lenient"
+        deserialize_with = "lenient_opt_string"
     )]
     pub syllabus_komoku_pattern_id: Option<String>,
-    #[serde(rename = "kaikoNendo", default, deserialize_with = "string_lenient")]
+    #[serde(
+        rename = "kaikoNendo",
+        default,
+        deserialize_with = "lenient_opt_string"
+    )]
     pub kaiko_nendo: Option<String>,
     /// Last-updated timestamp (`"20260310175914381"`), used by `fetch-details` to
     /// skip courses whose syllabus is unchanged since the previous crawl.
-    #[serde(rename = "lastUpdate", default, deserialize_with = "string_lenient")]
+    #[serde(
+        rename = "lastUpdate",
+        default,
+        deserialize_with = "lenient_opt_string"
+    )]
     pub last_update: Option<String>,
 }
 
@@ -184,21 +207,13 @@ where
 }
 
 /// Deserialize a required string field, coercing `null`/numbers/bools to a
-/// string and falling back to `""` when absent.
-fn string_or_null<'de, D>(deserializer: D) -> Result<String, D::Error>
+/// string and falling back to `""` when absent. Optional fields use
+/// [`lenient_opt_string`] directly.
+fn lenient_string<'de, D>(deserializer: D) -> Result<String, D::Error>
 where
     D: Deserializer<'de>,
 {
     Ok(lenient_opt_string(deserializer)?.unwrap_or_default())
-}
-
-/// Deserialize an optional string field, coercing scalars (numbers/bools) to a
-/// string so a numeric value never fails the record.
-fn string_lenient<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    lenient_opt_string(deserializer)
 }
 
 #[cfg(test)]

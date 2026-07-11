@@ -6,11 +6,15 @@
 //! [`Engine::from_json`], so the WASM layer only ever marshals **indices**
 //! across the boundary.
 
+use std::collections::{BTreeSet, HashMap};
+
 use crate::bitset::BitSet;
-use crate::grid::{build_grid, Grid, GridSlot};
+use crate::grid::{Grid, GridSlot, build_grid};
 use crate::index::{CourseIndex, SemesterIndex};
 use crate::model::{Dictionaries, IndicesMap, ProcessedData};
-use crate::normalize;
+use crate::plan::{PlanSummary, conflicts_in_grid, summarize_credits};
+use crate::search::{IndexError, SearchHit, SearchIndex};
+use crate::text::{normalize, search_text};
 
 /// The semester label whose courses appear under every *other* semester filter.
 const TSUUNEN_LABEL: &str = "通年";
@@ -69,6 +73,18 @@ pub struct Engine {
     tsuunen_index: Option<SemesterIndex>,
     /// Whether any course meets on Saturday (drives the extra grid column).
     has_saturday: bool,
+    /// A normalized per-course search haystack (name/subtitle/instructor/code/
+    /// department/taxonomy), built here at load — the wire format no longer
+    /// carries it. Used by [`Engine::filter`] and as [`Engine::search`]'s
+    /// pre-index fallback, so search works even if `search.idx` never arrives.
+    haystack: Vec<String>,
+    /// The full-text index, loaded from the companion `search.idx` after the
+    /// engine is built (it ships separately from `data.json`). `None` until then;
+    /// text queries fall back to `haystack` meanwhile.
+    search_index: Option<SearchIndex>,
+    /// `cd` → course index, for resolving a shared plan (a list of stable course
+    /// codes) back to indices. Built once here so `resolve_cds` is O(n).
+    cd_to_index: HashMap<String, CourseIndex>,
 }
 
 impl Engine {
@@ -125,6 +141,31 @@ impl Engine {
             .map(|c| c.slots.iter().filter_map(GridSlot::from_wire).collect())
             .collect();
         let has_saturday = timetables.iter().flatten().any(|s| s.is_saturday());
+        let cd_to_index = courses
+            .iter()
+            .enumerate()
+            .map(|(i, c)| (c.cd.clone(), CourseIndex::new(i)))
+            .collect();
+        let haystack = courses
+            .iter()
+            .map(|c| {
+                let dept = dicts
+                    .departments
+                    .get(c.dept as usize)
+                    .map_or("", String::as_str);
+                search_text(
+                    &c.nm,
+                    c.sub.as_deref(),
+                    &c.prof,
+                    &c.cd,
+                    dept,
+                    &[
+                        c.bunya.as_deref().unwrap_or_default(),
+                        c.bunrui.as_deref().unwrap_or_default(),
+                    ],
+                )
+            })
+            .collect();
 
         Ok(Self {
             courses,
@@ -138,19 +179,72 @@ impl Engine {
             all_bits,
             tsuunen_index,
             has_saturday,
+            haystack,
+            search_index: None,
+            cd_to_index,
         })
     }
 
-    /// Return the indices of courses matching the [`Filters`], in ascending order.
+    /// Resolve a plan's stable course codes to indices, dropping any `cd` not in
+    /// this dataset (a shared link may predate a data refresh), ascending and
+    /// de-duplicated.
     #[must_use]
-    pub fn filter(&self, filters: &Filters) -> Vec<CourseIndex> {
-        if self.courses.is_empty() {
-            return Vec::new();
-        }
+    pub fn resolve_cds(&self, cds: &[String]) -> Vec<CourseIndex> {
+        let mut out: Vec<CourseIndex> = cds
+            .iter()
+            .filter_map(|cd| self.cd_to_index.get(cd).copied())
+            .collect();
+        out.sort_unstable_by_key(|i| i.get());
+        out.dedup();
+        out
+    }
 
-        // AND the running set with each filter dimension in turn. Each dictionary
-        // is paired with its own bitsets so a campus value can't query the
-        // semester vector.
+    /// Summarize a plan (registered course indices): every timetable collision
+    /// and the credit tallies.
+    ///
+    /// Conflicts are found per semester (so 1学期 月1 and 2学期 月1 never collide),
+    /// reusing [`Engine::grid`] so 通年 propagation is handled the same way as the
+    /// display grid; a 通年×通年 pair that appears under every term is counted once.
+    #[must_use]
+    pub fn plan_summary(&self, indices: &[CourseIndex]) -> PlanSummary {
+        let mut seen: BTreeSet<(u8, u8, Vec<usize>)> = BTreeSet::new();
+        let mut conflicts = Vec::new();
+        for (si, name) in self.dicts.semesters.iter().enumerate() {
+            if self.tsuunen_index.is_some_and(|t| t.get() == si) {
+                continue; // 通年 is surfaced under the real terms, not on its own
+            }
+            let grid = self.grid(indices, Some(name));
+            for c in conflicts_in_grid(&grid) {
+                let key = (
+                    c.day.get(),
+                    c.period.get(),
+                    c.courses.iter().map(|i| i.get()).collect(),
+                );
+                if seen.insert(key) {
+                    conflicts.push(c);
+                }
+            }
+        }
+        let courses = indices.iter().filter_map(|i| self.courses.get(i.get()));
+        let credits = summarize_credits(courses, &self.dicts.kubun);
+        PlanSummary { conflicts, credits }
+    }
+
+    /// Load the companion `search.idx` (fetched separately from `data.json`),
+    /// enabling ranked search with match spans. Until this is called, text
+    /// queries fall back to an unranked `st` substring scan.
+    ///
+    /// # Errors
+    /// Returns an [`IndexError`] if the blob is not a valid `search.idx`.
+    pub fn load_search_index(&mut self, bytes: &[u8]) -> Result<(), IndexError> {
+        self.search_index = Some(SearchIndex::decode(bytes)?);
+        Ok(())
+    }
+
+    /// AND the running set with each filter dimension (semester/department/
+    /// campus), ignoring the text query. Each dictionary is paired with its own
+    /// bitsets so a campus value can't query the semester vector.
+    fn candidate_bits(&self, filters: &Filters) -> BitSet {
         let dimensions: [(&[String], &[BitSet], Option<&str>); 3] = [
             (
                 &self.dicts.semesters,
@@ -168,16 +262,75 @@ impl Engine {
         for (dict, bitsets, selector) in dimensions {
             bits = narrow(bits, dict, bitsets, selector);
         }
+        bits
+    }
 
+    /// Return the indices of courses matching the [`Filters`], in ascending order.
+    ///
+    /// This is the dimension-and-substring path the WASM boundary still exposes;
+    /// [`Engine::search`] is the ranked, span-carrying successor.
+    #[must_use]
+    pub fn filter(&self, filters: &Filters) -> Vec<CourseIndex> {
+        if self.courses.is_empty() {
+            return Vec::new();
+        }
+        let bits = self.candidate_bits(filters);
         let candidates = bits.iter_ones().map(CourseIndex::new);
         if filters.query.is_empty() {
             candidates.collect()
         } else {
             let needle = normalize(filters.query);
             candidates
-                .filter(|&i| self.courses[i.get()].st.contains(&needle))
+                .filter(|&i| self.haystack[i.get()].contains(&needle))
                 .collect()
         }
+    }
+
+    /// Search the dataset: dimension-filter, then rank the text query with match
+    /// spans, best first (ties broken by ascending course index).
+    ///
+    /// An empty query returns every candidate unranked (score 0, no spans), in
+    /// ascending index order — the browse view. With a query, ranking uses the
+    /// loaded `search.idx`; before it loads, it falls back to an unranked `st`
+    /// substring scan so search still works during the brief index fetch.
+    #[must_use]
+    pub fn search(&self, filters: &Filters) -> Vec<SearchHit> {
+        if self.courses.is_empty() {
+            return Vec::new();
+        }
+        let bits = self.candidate_bits(filters);
+        let candidates = bits.iter_ones().map(CourseIndex::new);
+
+        if filters.query.is_empty() {
+            return candidates.map(SearchHit::unranked).collect();
+        }
+        match &self.search_index {
+            Some(index) => index.search(filters.query, candidates),
+            None => {
+                let needle = normalize(filters.query);
+                candidates
+                    .filter(|&i| self.haystack[i.get()].contains(&needle))
+                    .map(SearchHit::unranked)
+                    .collect()
+            }
+        }
+    }
+
+    /// Lay ranked [`SearchHit`]s onto the timetable. Feeding [`build_grid`] the
+    /// hits in score order makes each cell come out best-first (it appends in
+    /// iteration order and de-duplicates), so no separate per-cell sort is needed.
+    #[must_use]
+    pub fn search_grid(&self, hits: &[SearchHit], semester: Option<&str>) -> Grid {
+        let semester_index = semester
+            .and_then(|value| self.dicts.semesters.iter().position(|s| s == value))
+            .map(SemesterIndex::from);
+        build_grid(
+            hits.iter()
+                .map(|h| (h.course, self.timetables[h.course.get()].as_slice())),
+            semester_index,
+            self.tsuunen_index,
+            self.has_saturday,
+        )
     }
 
     /// Lay the given (already-filtered) course indices onto the timetable.
@@ -263,7 +416,7 @@ mod tests {
     use super::{Engine, Filters};
     use crate::index::CourseIndex;
     use crate::model::{Course, Dictionaries, IndicesMap, ProcessedData, Slot};
-    use base64::{engine::general_purpose::STANDARD, Engine as _};
+    use base64::{Engine as _, engine::general_purpose::STANDARD};
 
     fn dicts() -> Dictionaries {
         Dictionaries {
@@ -275,11 +428,13 @@ mod tests {
         }
     }
 
-    /// Minimal course builder for tests.
-    fn course(cd: &str, slots: &[(u32, i32, i32)], dept: u32, campus: u32, st: &str) -> Course {
+    /// Minimal course builder for tests. `text` is the searchable content
+    /// (name / instructor / code …); the engine builds its haystack from these
+    /// fields, so putting it in `nm` keeps the filter/search tests self-contained.
+    fn course(cd: &str, slots: &[(u32, i32, i32)], dept: u32, campus: u32, text: &str) -> Course {
         Course {
             cd: cd.into(),
-            nm: "テスト講義".into(),
+            nm: text.into(),
             sub: None,
             prof: "教員 太郎".into(),
             raw: String::new(),
@@ -297,7 +452,6 @@ mod tests {
             unit: None,
             dm: None,
             ev: None,
-            st: st.into(),
         }
     }
 
@@ -481,12 +635,13 @@ mod tests {
     #[test]
     fn empty_for_nonexistent_department() {
         let e = engine_of(sample());
-        assert!(e
-            .filter(&Filters {
+        assert!(
+            e.filter(&Filters {
                 department: Some("医学部"),
                 ..Default::default()
             })
-            .is_empty());
+            .is_empty()
+        );
     }
 
     #[test]
@@ -522,12 +677,13 @@ mod tests {
     #[test]
     fn empty_for_nonexistent_campus() {
         let e = engine_of(sample());
-        assert!(e
-            .filter(&Filters {
+        assert!(
+            e.filter(&Filters {
                 campus: Some("岡豊キャンパス"),
                 ..Default::default()
             })
-            .is_empty());
+            .is_empty()
+        );
     }
 
     #[test]
@@ -675,35 +831,38 @@ mod tests {
         )]);
         assert_eq!(e.filter(&Filters::default()).len(), 1);
         // A specific semester has no matching slot → filtered out via the bitset.
-        assert!(e
-            .filter(&Filters {
+        assert!(
+            e.filter(&Filters {
                 semester: Some("1学期"),
                 ..Default::default()
             })
-            .is_empty());
+            .is_empty()
+        );
     }
 
     #[test]
     fn does_not_treat_query_as_regex() {
         let e = engine_of(sample());
-        assert!(e
-            .filter(&Filters {
+        assert!(
+            e.filter(&Filters {
                 query: "[.*+?]",
                 ..Default::default()
             })
-            .is_empty());
+            .is_empty()
+        );
     }
 
     #[test]
     fn department_with_semester_narrows_to_empty() {
         let e = engine_of(sample());
-        assert!(e
-            .filter(&Filters {
+        assert!(
+            e.filter(&Filters {
                 semester: Some("2学期"),
                 department: Some("理工学部"),
                 ..Default::default()
             })
-            .is_empty());
+            .is_empty()
+        );
     }
 
     #[test]
@@ -719,6 +878,169 @@ mod tests {
             ),
             ["002", "003"]
         );
+    }
+
+    // === search (ranked) ===
+
+    /// Build + load an index over the engine's courses (name/instructor/code),
+    /// so `search` takes the ranked path rather than the `st` fallback.
+    fn load_index(engine: &mut Engine) {
+        use crate::search::{DocFields, SearchIndex};
+        let bytes = SearchIndex::build(engine.courses.iter().map(|c| DocFields {
+            name: &c.nm,
+            subtitle: c.sub.as_deref(),
+            instructor: &c.prof,
+            code: &c.cd,
+            keywords: "",
+        }))
+        .encode();
+        engine.load_search_index(&bytes).expect("index loads");
+    }
+
+    /// Courses with distinct names/instructors for ranking assertions.
+    fn named() -> Vec<Course> {
+        vec![
+            course(
+                "001",
+                &[(0, 0, 1)],
+                1,
+                0,
+                "微分積分学 山田 太郎 001 理工学部",
+            ),
+            course("002", &[(0, 1, 2)], 1, 0, "線形代数 田中 花子 002 理工学部"),
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(i, mut c)| {
+            c.nm = ["微分積分学", "線形代数"][i].into();
+            c.prof = ["山田 太郎", "田中 花子"][i].into();
+            c
+        })
+        .collect()
+    }
+
+    #[test]
+    fn search_ranks_and_carries_spans() {
+        let mut e = engine_of(named());
+        load_index(&mut e);
+        let hits = e.search(&Filters {
+            query: "田",
+            ..Default::default()
+        });
+        // 田 appears in course 0's instructor (山田) and course 1's instructor
+        // (田中): both hit, and every hit carries at least one span.
+        assert_eq!(hits.len(), 2);
+        assert!(hits.iter().all(|h| !h.spans.is_empty()));
+    }
+
+    #[test]
+    fn search_falls_back_to_st_before_the_index_loads() {
+        let e = engine_of(sample());
+        // No index loaded: still finds the course, unranked (no spans).
+        let hits = e.search(&Filters {
+            query: "微分",
+            ..Default::default()
+        });
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].course, CourseIndex::new(0));
+        assert!(hits[0].spans.is_empty());
+    }
+
+    #[test]
+    fn empty_query_search_is_every_candidate_unranked() {
+        let mut e = engine_of(sample());
+        load_index(&mut e);
+        let hits = e.search(&Filters::default());
+        assert_eq!(hits.len(), 3);
+        assert!(hits.iter().all(|h| h.spans.is_empty() && h.score == 0.0));
+        // Ascending index order (browse view).
+        assert_eq!(
+            hits.iter().map(|h| h.course.get()).collect::<Vec<_>>(),
+            [0, 1, 2]
+        );
+    }
+
+    #[test]
+    fn search_grid_orders_cells_by_score() {
+        // Both courses meet 月1 and both match "田中" — course 0 in its instructor
+        // (weight 2.0), course 1 in its name (weight 3.0). The higher score must
+        // come first in the shared cell: [1, 0], not index order.
+        let mut c0 = course("001", &[(0, 0, 1)], 1, 0, "物理 田中 001 理工学部");
+        c0.nm = "物理学".into();
+        c0.prof = "田中 太郎".into();
+        let mut c1 = course("002", &[(0, 0, 1)], 1, 0, "田中理論 佐藤 002 理工学部");
+        c1.nm = "田中理論".into();
+        c1.prof = "佐藤 花子".into();
+        let mut e = engine_of(vec![c0, c1]);
+        load_index(&mut e);
+
+        let hits = e.search(&Filters {
+            query: "田中",
+            ..Default::default()
+        });
+        assert_eq!(hits.len(), 2);
+        assert_eq!(hits[0].course, CourseIndex::new(1), "name hit ranks first");
+
+        let grid = e.search_grid(&hits, Some("1学期"));
+        assert_eq!(
+            grid.cell(
+                crate::index::Day::new(0),
+                crate::index::Period::new(1).unwrap()
+            ),
+            &[CourseIndex::new(1), CourseIndex::new(0)],
+        );
+    }
+
+    #[test]
+    fn load_search_index_rejects_a_bad_blob() {
+        let mut e = engine_of(sample());
+        assert!(e.load_search_index(b"garbage").is_err());
+    }
+
+    // === plan ===
+
+    #[test]
+    fn resolve_cds_drops_unknown_dedups_and_sorts() {
+        let e = engine_of(sample()); // cds 001, 002, 003 at indices 0, 1, 2
+        let got = e.resolve_cds(&[
+            "003".into(),
+            "999".into(), // not in the dataset — dropped
+            "001".into(),
+            "001".into(), // duplicate — collapsed
+        ]);
+        assert_eq!(got, [CourseIndex::new(0), CourseIndex::new(2)]);
+    }
+
+    #[test]
+    fn plan_summary_flags_a_same_cell_collision() {
+        // Two 1学期 courses both at 月1 collide; a third elsewhere does not.
+        let mut a = course("001", &[(0, 0, 1)], 1, 0, "A 001");
+        a.unit = Some("2".into());
+        let mut b = course("002", &[(0, 0, 1)], 1, 0, "B 002");
+        b.unit = Some("1.5".into());
+        let c = course("003", &[(0, 2, 3)], 1, 0, "C 003");
+        let e = engine_of(vec![a, b, c]);
+
+        let plan = e.resolve_cds(&["001".into(), "002".into(), "003".into()]);
+        let summary = e.plan_summary(&plan);
+        assert_eq!(summary.conflicts.len(), 1);
+        assert_eq!(
+            summary.conflicts[0].courses,
+            [CourseIndex::new(0), CourseIndex::new(1)]
+        );
+        assert_eq!(summary.credits.total_courses, 3);
+        assert!((summary.credits.total_credits - 3.5).abs() < 1e-6);
+        assert_eq!(summary.credits.uncredited, 1); // course C has no unit
+    }
+
+    #[test]
+    fn plan_summary_does_not_collide_across_semesters() {
+        // Same 月1 cell but different terms — not a conflict.
+        let a = course("001", &[(0, 0, 1)], 1, 0, "A 001"); // 1学期
+        let b = course("002", &[(1, 0, 1)], 1, 0, "B 002"); // 2学期
+        let e = engine_of(vec![a, b]);
+        let plan = e.resolve_cds(&["001".into(), "002".into()]);
+        assert!(e.plan_summary(&plan).conflicts.is_empty());
     }
 
     #[test]

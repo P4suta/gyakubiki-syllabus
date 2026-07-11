@@ -49,11 +49,12 @@ fn extracts_goals_and_plan() {
 #[test]
 fn extracts_summary_aims_keywords_teachers() {
     let d = detail();
-    assert!(d
-        .summary
-        .as_deref()
-        .unwrap_or_default()
-        .contains("レポート"));
+    assert!(
+        d.summary
+            .as_deref()
+            .unwrap_or_default()
+            .contains("レポート")
+    );
     assert!(d.aims.as_deref().unwrap_or_default().contains("人文科学"));
     assert!(!d.keywords.is_empty());
     assert!(d.teachers.iter().any(|t| t.contains("宮里")));
