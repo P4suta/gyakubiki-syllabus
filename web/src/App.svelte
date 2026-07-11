@@ -153,6 +153,17 @@ $effect(() => {
 	}
 })
 
+// Settled copy of the count for the screen-reader live region, so typing a
+// query doesn't announce every intermediate result.
+let announcedCount = $state(0)
+$effect(() => {
+	const value = displayCount
+	const timer = setTimeout(() => {
+		announcedCount = value
+	}, 500)
+	return () => clearTimeout(timer)
+})
+
 let teardownPlanSync: (() => void) | undefined
 
 onMount(async () => {
@@ -196,7 +207,12 @@ onDestroy(() => teardownPlanSync?.())
 	</div>
 {:else if engine}
 	<Disclaimer />
-	<div class="h-dvh bg-surface-page font-sans flex flex-col overflow-hidden animate-fade-in">
+	<!-- data-*-count: invisible counter anchor for the E2E suite (helpers.counts). -->
+	<div
+		class="h-dvh bg-surface-page font-sans flex flex-col overflow-hidden animate-fade-in"
+		data-shown-count={displayCount}
+		data-total-count={engine.courses.length}
+	>
 		<FilterBar
 			semesters={engine.dicts.semesters}
 			departments={engine.dicts.departments}
@@ -206,10 +222,11 @@ onDestroy(() => teardownPlanSync?.())
 			bind:campus
 			bind:searchText
 			{displayCount}
-			totalCount={engine.courses.length}
 			generatedAt={engine.generatedAt}
 		/>
 		<SearchBar bind:searchText />
+		<!-- The visible count chip is gone; announce filter results to AT instead. -->
+		<p class="sr-only" role="status">{announcedCount}件の科目を表示中</p>
 		{#if displayCount === 0 && plan.count === 0}
 			<!-- Empty state: nothing matches and no plan to fall back on. -->
 			<div class="grow flex items-center justify-center p-6 animate-fade-in">

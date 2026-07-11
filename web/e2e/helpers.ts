@@ -40,17 +40,18 @@ export async function pickSemester(page: Page, label: string): Promise<void> {
 }
 
 /**
- * Read the desktop header counter「{shown}科目表示中 / 全{total}件」.
- * Retries until it is present so it survives the async grid update.
+ * Read the result counters from the app root's `data-shown-count` /
+ * `data-total-count` attributes (the header shows no visible counter).
  */
 export async function counts(page: Page): Promise<{ shown: number; total: number }> {
-	const label = page.getByText(/科目表示中 \/ 全\d+件/)
-	await expect(label).toBeVisible()
-	const text = (await label.textContent()) ?? ''
-	const m = text.match(/([\d,]+)科目表示中 \/ 全([\d,]+)件/)
-	if (!m) throw new Error(`unexpected counter text: ${text}`)
-	const n = (s: string) => Number(s.replace(/,/g, ''))
-	return { shown: n(m[1]), total: n(m[2]) }
+	const root = page.locator('[data-shown-count]')
+	await expect(root).toBeAttached()
+	const read = async (attr: string) => {
+		const v = await root.getAttribute(attr)
+		if (v === null || !/^\d+$/.test(v)) throw new Error(`unexpected ${attr}: ${v}`)
+		return Number(v)
+	}
+	return { shown: await read('data-shown-count'), total: await read('data-total-count') }
 }
 
 /** Open the modal for the first card matching `name` and wait for its heading. */

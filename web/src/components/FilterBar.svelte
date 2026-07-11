@@ -15,7 +15,6 @@ interface Props {
 	campus: string
 	searchText: string
 	displayCount: number
-	totalCount: number
 	generatedAt: string
 }
 
@@ -28,7 +27,6 @@ let {
 	campus = $bindable(),
 	searchText = $bindable(),
 	displayCount,
-	totalCount,
 	generatedAt,
 }: Props = $props()
 
@@ -67,36 +65,31 @@ function resetFilters() {
 	<IconExpandMore class={className} />
 {/snippet}
 
+<!-- Page heading: visually redundant chrome, but kept for the document outline,
+     screen-reader navigation, and SEO. One instance serves both layouts. -->
+<h1 class="sr-only">時間割</h1>
+
 <!-- Mobile: compact bar -->
 <div class="glass-nav sticky top-0 z-nav border-b border-overlay-subtle px-3 py-2 sm:hidden">
 	<div class="flex items-center gap-2">
-		<h1 class="text-body font-semibold text-apple-text whitespace-nowrap tracking-tight">時間割</h1>
-		{#if generatedAtLabel}
-			<span class="bg-overlay-subtle text-apple-text-secondary rounded-full px-2 py-0.5 text-micro whitespace-nowrap">
-				最終更新: <span class="tabular-nums">{generatedAtLabel}</span>
-			</span>
-		{/if}
-
 		<button
-			class="bg-overlay-muted rounded-full px-3 py-1 text-caption font-medium text-apple-text truncate max-w-36"
+			class="flex items-center gap-1 bg-overlay-muted rounded-full pl-3 pr-2 py-1 text-caption font-medium text-apple-text whitespace-nowrap"
 			onclick={() => { mobileFilterOpen = true }}
 		>
 			{semester === 'all' ? '全学期' : semester}
+			{@render chevron('w-4 h-4 text-apple-text-tertiary')}
 		</button>
 
-		<div class="ml-auto flex items-center gap-2">
-			<span class="bg-overlay-subtle text-apple-text-secondary rounded-full px-2 py-0.5 text-micro tabular-nums whitespace-nowrap">{displayCount}件</span>
-			<button
-				class="relative w-9 h-9 rounded-full bg-overlay-subtle flex items-center justify-center active:bg-overlay-medium"
-				onclick={() => { mobileFilterOpen = true }}
-				aria-label="フィルターを開く"
-			>
-				<IconFilterList class="w-4 h-4 text-apple-text-secondary" />
-				{#if hasActiveFilters}
-					<span class="absolute top-1 right-1 w-2 h-2 rounded-full bg-apple-blue"></span>
-				{/if}
-			</button>
-		</div>
+		<button
+			class="relative ml-auto w-9 h-9 rounded-full bg-overlay-subtle flex items-center justify-center active:bg-overlay-medium"
+			onclick={() => { mobileFilterOpen = true }}
+			aria-label="フィルターを開く"
+		>
+			<IconFilterList class="w-4 h-4 text-apple-text-secondary" />
+			{#if hasActiveFilters}
+				<span class="absolute top-1 right-1 w-2 h-2 rounded-full bg-apple-blue"></span>
+			{/if}
+		</button>
 	</div>
 </div>
 
@@ -193,6 +186,11 @@ function resetFilters() {
 				>
 					{displayCount}科目を表示
 				</button>
+				{#if generatedAtLabel}
+					<p class="mt-2.5 text-center text-micro text-apple-text-tertiary">
+						最終更新: <span class="tabular-nums">{generatedAtLabel}</span>
+					</p>
+				{/if}
 			</div>
 		{/snippet}
 	</BottomSheet>
@@ -201,13 +199,6 @@ function resetFilters() {
 <!-- Desktop: horizontal layout -->
 <div class="glass-nav sticky top-0 z-nav border-b border-overlay-subtle px-6 py-3 hidden sm:block">
 	<div class="flex items-center gap-4 flex-wrap">
-		<h1 class="text-headline font-semibold text-apple-text whitespace-nowrap tracking-tight">時間割</h1>
-		{#if generatedAtLabel}
-			<span class="bg-overlay-subtle text-apple-text-secondary rounded-full px-2.5 py-0.5 text-caption whitespace-nowrap">
-				最終更新: <span class="tabular-nums">{generatedAtLabel}</span>
-			</span>
-		{/if}
-
 		<div class="flex bg-overlay-muted rounded-full p-0.5">
 			<button
 				class="px-4 py-1.5 text-caption font-medium rounded-full transition-all duration-200
@@ -253,9 +244,10 @@ function resetFilters() {
 			{@render chevron('absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-apple-text-tertiary pointer-events-none')}
 		</div>
 
-		<!-- Count as a chip, matching the「最終更新」badge beside it. The shown figure
-		     is the salient number, so it carries the weight; the「/ 全…件」total stays
-		     muted. Text kept contiguous for the E2E counter anchor. -->
-		<span class="ml-auto inline-block bg-overlay-subtle rounded-full px-2.5 py-0.5 text-caption text-apple-text-secondary tabular-nums tracking-tight whitespace-nowrap"><span class="font-semibold text-apple-text">{displayCount}</span>科目表示中 / 全{totalCount}件</span>
+		{#if generatedAtLabel}
+			<span class="ml-auto bg-overlay-subtle text-apple-text-secondary rounded-full px-2.5 py-0.5 text-caption whitespace-nowrap">
+				最終更新: <span class="tabular-nums">{generatedAtLabel}</span>
+			</span>
+		{/if}
 	</div>
 </div>

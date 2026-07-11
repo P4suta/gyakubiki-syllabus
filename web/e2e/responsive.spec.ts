@@ -8,14 +8,14 @@ import { DESKTOP, MOBILE, enter } from './helpers'
 test('mounts only the active layout and swaps it across the breakpoint', async ({ page }) => {
 	await page.setViewportSize(DESKTOP)
 	await enter(page)
-	// Desktop: the「…科目表示中」counter shows; the mobile day view is not mounted.
-	await expect(page.getByText(/科目表示中/)).toBeVisible()
+	// Desktop: the bar's campus select shows; the mobile day view is not mounted.
+	await expect(page.getByLabel('キャンパスで絞り込み')).toBeVisible()
 	await expect(page.getByRole('tabpanel')).toHaveCount(0)
 
 	// Cross to mobile: the compact bar's filter button appears and the single-day
-	// view mounts, while the desktop-only counter drops out.
+	// view mounts, while the desktop-only select drops out.
 	await page.setViewportSize(MOBILE)
 	await expect(page.getByRole('button', { name: 'フィルターを開く' })).toBeVisible()
 	await expect(page.getByRole('tabpanel')).toHaveCount(1)
-	await expect(page.getByText(/科目表示中/)).toBeHidden()
+	await expect(page.getByLabel('キャンパスで絞り込み')).toBeHidden()
 })
