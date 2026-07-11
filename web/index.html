@@ -3,12 +3,44 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/ic--round-school.svg" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#fbfbfd" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0f1116" />
     <title>逆引きシラバス - 高知大学 時間割ビューアー</title>
     <meta
       name="description"
       content="高知大学のシラバスを時間割形式で逆引き検索。学期・学部・キャンパスで絞り込み、曜日・時限から開講科目を一覧できる非公式ビューアーです。"
     />
+    <link rel="canonical" href="https://p4suta.github.io/gyakubiki-syllabus/" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="逆引きシラバス" />
+    <meta property="og:title" content="逆引きシラバス - 高知大学 時間割ビューアー" />
+    <meta
+      property="og:description"
+      content="高知大学のシラバスを時間割形式で逆引き検索。曜日・時限から開講科目を一覧できる非公式ビューアーです。"
+    />
+    <meta property="og:url" content="https://p4suta.github.io/gyakubiki-syllabus/" />
+    <meta property="og:image" content="https://p4suta.github.io/gyakubiki-syllabus/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:locale" content="ja_JP" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "WebApplication",
+        "name": "逆引きシラバス",
+        "alternateName": "高知大学 時間割ビューアー",
+        "description": "高知大学のシラバスを時間割形式で逆引き検索できる非公式ビューアー。",
+        "url": "https://p4suta.github.io/gyakubiki-syllabus/",
+        "inLanguage": "ja",
+        "applicationCategory": "EducationalApplication",
+        "operatingSystem": "Web",
+        "isAccessibleForFree": true
+      }
+    </script>
     <!-- data.json gates LCP, and the app only requests it deep in the JS boot
          chain. Preloading it here starts the download during HTML parse, in
          parallel with the module/WASM. `as=fetch` preloads are issued in CORS
@@ -25,6 +57,12 @@
   </head>
   <body>
     <div id="app"></div>
+    <noscript>
+      <p>
+        逆引きシラバスは高知大学のシラバスを時間割形式で閲覧できる非公式ビューアーです。表示には
+        JavaScript を有効にしてください。
+      </p>
+    </noscript>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

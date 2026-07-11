@@ -161,6 +161,10 @@
    sit above everything with no z-index and get a free focus trap + inert page.
    Strip the UA chrome to a transparent shell; the inner backdrop element dims. */
 dialog.overlay {
+  /* Full-viewport box: the shell IS the dialog in the a11y tree, and its
+     children position themselves `fixed` (contributing no intrinsic size). */
+  width: 100vw;
+  height: 100dvh;
   max-width: 100vw;
   max-height: 100dvh;
   margin: 0;
@@ -171,6 +175,15 @@ dialog.overlay {
 }
 dialog.overlay::backdrop {
   background: transparent;
+}
+
+/* Keep a closed dialog laid out (hidden, out of the a11y tree) so its first
+   real layout — CJK text shaping included — happens in the browser's natural
+   render pass instead of synchronously inside `showModal()`. Opt-in: only
+   sound for dialogs that mount closed and open a beat later (Disclaimer). */
+dialog.overlay-prelayout:not([open]) {
+  display: block;
+  visibility: hidden;
 }
 
 /* Base styles */
@@ -218,5 +231,22 @@ body {
 @keyframes dialog-in {
   from { opacity: 0; scale: 0.96; }
   to { opacity: 1; scale: 1; }
+}
+
+/* One keyboard-focus affordance everywhere. Components that set `outline-none`
+   swap in their own focus ring; everything else gets the accent ring. */
+:focus-visible {
+  outline: 2px solid var(--color-apple-blue);
+  outline-offset: 2px;
+}
+
+/* Reduced motion: keep durations >0 so transitionend/animationend still fire. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+  html { scroll-behavior: auto; }
 }
 

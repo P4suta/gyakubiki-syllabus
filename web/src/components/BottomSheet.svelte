@@ -210,11 +210,10 @@ $effect(() => {
 })
 </script>
 
-<!-- The native <dialog> exists only to put us in the top layer (showModal); the
-     inner element carries the dialog semantics, so `role="presentation"` here
-     keeps a single dialog in the a11y tree and lets tests target the sheet. -->
-<!-- svelte-ignore a11y_no_interactive_element_to_noninteractive_role -->
-<dialog bind:this={dialogEl} class="overlay" role="presentation" oncancel={onCancel}>
+<!-- The native <dialog> carries the dialog semantics (showModal → modal, named
+     by aria-label); the sheet inside is plain layout. Tests grab the sheet's
+     geometry via `data-sheet`. -->
+<dialog bind:this={dialogEl} class="overlay" aria-label={ariaLabel} oncancel={onCancel}>
 	<div class="fixed inset-0 flex items-end justify-center sm:items-center sm:p-5">
 		<!-- svelte-ignore a11y_click_events_have_key_events -->
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -227,9 +226,7 @@ $effect(() => {
 
 		<div
 			bind:this={sheetEl}
-			role="dialog"
-			aria-modal="true"
-			aria-label={ariaLabel}
+			data-sheet
 			class="relative flex flex-col w-full max-h-overlay overflow-hidden bg-surface-primary rounded-t-2xl shadow-modal safe-bottom sm:max-w-lg sm:max-h-overlay-sm sm:rounded-2xl {isDesktop ? 'animate-dialog-in' : ''}"
 			style="translate: 0 {isDesktop ? 0 : dragY}px; transition: {settling ? 'translate 0.26s var(--ease-spring)' : 'none'};"
 		>

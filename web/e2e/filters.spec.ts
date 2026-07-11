@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 import { FIXTURES, counts, enter, pickSemester } from './helpers'
 
 // Filters run on the desktop layout (segmented semester control + native
-// selects), whose header exposes the「X科目表示中 / 全Y件」counter.
+// selects); counts come from the root's data-*-count attributes (helpers).
 
 const deptSelect = (page: import('@playwright/test').Page) =>
 	page.locator('select').filter({ has: page.locator('option', { hasText: '全部署' }) })

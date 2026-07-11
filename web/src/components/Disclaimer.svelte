@@ -7,15 +7,33 @@ let dialogEl = $state<HTMLDialogElement>()
 // Top-layer consent gate: `showModal()` lifts it above everything (no z-index)
 // and traps focus. It's a gate, so Esc must NOT dismiss it — swallow `cancel`.
 // (jsdom lacks showModal — fall back to `open` so any render test works.)
+//
+// Opened a double-rAF after mount: showModal() forces a synchronous layout,
+// which is ~free on a clean tree but was the boot's only forced reflow when
+// it ran inside the mounting flush. rAF #1 lands before that frame's layout;
+// #2 runs on the next frame, after the tree settled.
 $effect(() => {
 	const el = dialogEl
 	if (!el) return
-	try {
-		el.showModal()
-	} catch {
-		el.open = true
+	const open = () => {
+		try {
+			el.showModal()
+		} catch {
+			el.open = true
+		}
+	}
+	let raf1 = 0
+	let raf2 = 0
+	if (typeof requestAnimationFrame === 'function') {
+		raf1 = requestAnimationFrame(() => {
+			raf2 = requestAnimationFrame(open)
+		})
+	} else {
+		open() // jsdom without pretendToBeVisual
 	}
 	return () => {
+		cancelAnimationFrame?.(raf1)
+		cancelAnimationFrame?.(raf2)
 		try {
 			el.close()
 		} catch {
@@ -28,7 +46,7 @@ $effect(() => {
 {#if !accepted}
 <dialog
 	bind:this={dialogEl}
-	class="overlay"
+	class="overlay overlay-prelayout"
 	aria-label="ご利用にあたって"
 	oncancel={(e) => e.preventDefault()}
 >

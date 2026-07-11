@@ -153,6 +153,17 @@ $effect(() => {
 	}
 })
 
+// Settled copy of the count for the screen-reader live region, so typing a
+// query doesn't announce every intermediate result.
+let announcedCount = $state(0)
+$effect(() => {
+	const value = displayCount
+	const timer = setTimeout(() => {
+		announcedCount = value
+	}, 500)
+	return () => clearTimeout(timer)
+})
+
 let teardownPlanSync: (() => void) | undefined
 
 onMount(async () => {
@@ -170,6 +181,15 @@ onMount(async () => {
 
 onDestroy(() => teardownPlanSync?.())
 </script>
+
+<!-- Mounted over the loading skeleton, not the filled grid: showModal() forces
+     a synchronous layout of whatever is already in the DOM, and opening it in
+     the same flush that renders ~5k grid elements doubled that work (the boot
+     forced-reflow Lighthouse flagged). Over the skeleton it costs ~nothing, and
+     the disclaimer is readable while data loads. -->
+{#if !error}
+	<Disclaimer />
+{/if}
 
 {#if loading}
 	<!-- Skeleton shaped like the app shell (faux filter bar + timetable grid), so
@@ -195,46 +215,63 @@ onDestroy(() => teardownPlanSync?.())
 		</div>
 	</div>
 {:else if engine}
-	<Disclaimer />
-	<div class="h-dvh bg-surface-page font-sans flex flex-col overflow-hidden animate-fade-in">
-		<FilterBar
-			semesters={engine.dicts.semesters}
-			departments={engine.dicts.departments}
-			campuses={engine.dicts.campuses}
-			bind:semester
-			bind:department
-			bind:campus
-			bind:searchText
-			{displayCount}
-			totalCount={engine.courses.length}
-			generatedAt={engine.generatedAt}
-		/>
-		<SearchBar bind:searchText />
-		{#if displayCount === 0 && plan.count === 0}
-			<!-- Empty state: nothing matches and no plan to fall back on. -->
-			<div class="grow flex items-center justify-center p-6 animate-fade-in">
-				<div class="text-center max-w-xs">
-					<IconSearchOff class="w-12 h-12 mx-auto text-apple-text-tertiary mb-3" />
-					<p class="text-cta text-apple-text font-semibold mb-1 tracking-tight">該当する科目がありません</p>
-					<p class="text-caption text-apple-text-secondary mb-4 tracking-tight leading-relaxed">検索語や絞り込みを見直してみてください。</p>
-					<button
-						onclick={resetFilters}
-						class="rounded-full bg-apple-blue text-on-accent px-4 py-2 text-cta font-normal hover:bg-apple-blue-hover transition-colors cursor-pointer"
-					>
-						条件をリセット
-					</button>
+	<!-- data-*-count: invisible counter anchor for the E2E suite (helpers.counts). -->
+	<div
+		class="h-dvh bg-surface-page font-sans flex flex-col overflow-hidden animate-fade-in"
+		data-shown-count={displayCount}
+		data-total-count={engine.courses.length}
+	>
+		<a
+			href="#main"
+			class="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-nav focus:rounded-full focus:bg-apple-blue focus:text-on-accent focus:px-4 focus:py-2 focus:text-caption focus:font-medium"
+		>本文へスキップ</a>
+		<header>
+			<FilterBar
+				semesters={engine.dicts.semesters}
+				departments={engine.dicts.departments}
+				campuses={engine.dicts.campuses}
+				bind:semester
+				bind:department
+				bind:campus
+				bind:searchText
+				{displayCount}
+				generatedAt={engine.generatedAt}
+			/>
+			<SearchBar bind:searchText />
+		</header>
+		<!-- The landmark carries the flex chain so children keep their layout. -->
+		<main id="main" tabindex="-1" class="flex flex-col flex-1 overflow-hidden outline-none">
+			<!-- The visible count chip is gone; announce filter results to AT instead. -->
+			<p class="sr-only" role="status">{announcedCount}件の科目を表示中</p>
+			{#if displayCount === 0 && plan.count === 0}
+				<!-- Empty state: nothing matches and no plan to fall back on. -->
+				<div class="grow flex items-center justify-center p-6 animate-fade-in">
+					<div class="text-center max-w-xs">
+						<IconSearchOff class="w-12 h-12 mx-auto text-apple-text-tertiary mb-3" />
+						<p class="text-cta text-apple-text font-semibold mb-1 tracking-tight">該当する科目がありません</p>
+						<p class="text-caption text-apple-text-secondary mb-4 tracking-tight leading-relaxed">検索語や絞り込みを見直してみてください。</p>
+						<button
+							onclick={resetFilters}
+							class="rounded-full bg-apple-blue text-on-accent px-4 py-2 text-cta font-normal hover:bg-apple-blue-hover transition-colors cursor-pointer"
+						>
+							条件をリセット
+						</button>
+					</div>
 				</div>
-			</div>
-		{:else}
-			<Timetable {grid} {planGrid} {conflictKeys} days={engine.days} onselect={(c) => { selectedCourse = c }} />
-		{/if}
+			{:else}
+				<Timetable {grid} {planGrid} {conflictKeys} days={engine.days} onselect={(c) => { selectedCourse = c }} />
+			{/if}
+		</main>
 	</div>
 
 	<!-- Floating plan control: a compact pill showing the total credits (red on a
 	     timetable conflict) that toggles a small action menu — share / clear.
 	     There is one plan, not many; the grid itself is it. -->
 	{#if plan.count > 0}
-		<div class="fixed right-4 bottom-4 safe-bottom z-nav flex flex-col items-end gap-2">
+		<aside
+			aria-label="履修プラン"
+			class="fixed right-4 bottom-4 safe-bottom z-nav flex flex-col items-end gap-2"
+		>
 			{#if planMenuOpen}
 				<!-- Click-away catcher: a fixed full-screen layer under the menu/pill
 				     (both made `relative` so DOM order paints them above it). -->
@@ -269,7 +306,7 @@ onDestroy(() => teardownPlanSync?.())
 				<IconEventNote class="w-4 h-4 shrink-0" aria-hidden="true" />
 				<span class="tabular-nums">{totalCredits > 0 ? `${totalCredits}単位` : `${plan.count}科目`}</span>
 			</button>
-		</div>
+		</aside>
 	{/if}
 
 	{#if selectedCourse}

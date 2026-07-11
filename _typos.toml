@@ -1,0 +1,12 @@
+# typos treats some binary blobs as text; keep it off generated/binary assets.
+# raw/ and raw-details/ are crawled KULAS source data — typos in the official
+# syllabus text are the authors', not ours to fix (faithful reproduction).
+[files]
+extend-exclude = [
+	"*.png",
+	"*.idx",
+	"raw/**",
+	"raw-details/**",
+	"web/public/data.json",
+	"web/public/details/**",
+]

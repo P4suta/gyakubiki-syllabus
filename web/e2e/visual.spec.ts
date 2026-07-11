@@ -44,29 +44,30 @@ for (const theme of ['light', 'dark'] as const) {
 			await page.setViewportSize(DESKTOP)
 			await enter(page)
 			await openCourse(page, FIXTURES.regular)
-			await expect(page.getByRole('dialog')).toHaveScreenshot(`modal-desktop${s}.png`)
+			// The dialog is the full-viewport shell; shoot the sheet itself.
+			await expect(page.locator('[data-sheet]')).toHaveScreenshot(`modal-desktop${s}.png`)
 		})
 
 		test('course modal — mobile', async ({ page }) => {
 			await page.setViewportSize(MOBILE)
 			await enter(page)
 			await openCourse(page, FIXTURES.regular)
-			await expect(page.getByRole('dialog')).toHaveScreenshot(`modal-mobile${s}.png`)
+			await expect(page.locator('[data-sheet]')).toHaveScreenshot(`modal-mobile${s}.png`)
 		})
 
 		test('filter sheet — mobile', async ({ page }) => {
 			await page.setViewportSize(MOBILE)
 			await enter(page)
 			await page.getByRole('button', { name: 'フィルターを開く' }).first().click()
-			const sheet = page.getByRole('dialog', { name: 'フィルター' })
-			await expect(sheet).toBeVisible()
-			await expect(sheet).toHaveScreenshot(`filter-sheet-mobile${s}.png`, { mask: dateMask(page) })
+			await expect(page.getByRole('dialog', { name: 'フィルター' })).toBeVisible()
+			await expect(page.locator('[data-sheet]')).toHaveScreenshot(`filter-sheet-mobile${s}.png`, { mask: dateMask(page) })
 		})
 
 		test('mobile day view', async ({ page }) => {
 			await page.setViewportSize(MOBILE)
 			await enter(page)
-			await expect(page.getByRole('tabpanel')).toHaveScreenshot(`day-view-mobile${s}.png`)
+			// `main` covers the day tab bar too (tabpanel is now the scroll area only).
+			await expect(page.locator('main')).toHaveScreenshot(`day-view-mobile${s}.png`)
 		})
 	})
 }

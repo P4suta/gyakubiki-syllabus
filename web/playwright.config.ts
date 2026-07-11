@@ -26,7 +26,7 @@ export default defineConfig({
 		toHaveScreenshot: { maxDiffPixelRatio: 0.01, animations: 'disabled' },
 	},
 	use: {
-		baseURL: 'http://localhost:5173',
+		baseURL: 'http://localhost:4517',
 		trace: 'on-first-retry',
 		// Headless Chromium throttles rAF/timers in "background" renderers, which
 		// makes scroll- and animation-linked assertions flaky. Disable it so the
@@ -40,9 +40,12 @@ export default defineConfig({
 		},
 	},
 	projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+	// A dedicated port: on 5173, `reuseExistingServer` happily adopts whatever
+	// unrelated Vite dev server happens to be running and every test fails on a
+	// foreign page. strictPort makes a leftover occupant fail loudly instead.
 	webServer: {
-		command: 'bun run dev',
-		url: 'http://localhost:5173',
+		command: 'bun run dev --port 4517 --strictPort',
+		url: 'http://localhost:4517',
 		reuseExistingServer: !process.env.CI,
 		timeout: 120_000,
 	},

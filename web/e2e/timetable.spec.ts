@@ -25,7 +25,7 @@ test.describe('timetable — mobile day view', () => {
 
 	test('switches the visible day via the tab bar', async ({ page }) => {
 		await enter(page)
-		const tab = page.getByRole('button', { name: '火', exact: true })
+		const tab = page.getByRole('tab', { name: '火', exact: true })
 		await expect(tab).toBeVisible()
 		await tab.click()
 		// The active tab takes the accent treatment.

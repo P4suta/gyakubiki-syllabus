@@ -1,0 +1,16 @@
+{
+	"name": "逆引きシラバス - 高知大学 時間割ビューアー",
+	"short_name": "逆引きシラバス",
+	"description": "高知大学のシラバスを時間割形式で逆引き検索できる非公式ビューアー。",
+	"lang": "ja",
+	"start_url": ".",
+	"scope": ".",
+	"display": "standalone",
+	"background_color": "#fbfbfd",
+	"theme_color": "#0071e3",
+	"icons": [
+		{ "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+		{ "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+		{ "src": "icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+	]
+}
