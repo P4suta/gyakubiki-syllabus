@@ -132,7 +132,7 @@ pub struct EvalRow {
     /// Numeric weight when parseable from e.g. "40点" / "40%".
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub weight: Option<i64>,
-    /// `exam` | `report` | `attendance` | `presentation` | `quiz` | `other`.
+    /// `exam` | `report` | `minireport` | `attendance` | `quiz` | `other`.
     #[serde(rename = "type")]
     pub kind: String,
 }

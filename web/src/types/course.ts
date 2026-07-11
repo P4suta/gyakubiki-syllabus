@@ -45,7 +45,7 @@ export interface Delivery {
 export interface EvalRow {
 	item: string
 	weight?: number
-	type: string // exam | report | attendance | presentation | quiz | other
+	type: string // exam | report | minireport | attendance | quiz | other
 }
 
 export interface Eval {

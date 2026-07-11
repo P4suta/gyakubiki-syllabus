@@ -214,11 +214,14 @@ pub fn derive() -> Palette {
         });
     }
 
+    // The kinds mirror KULAS's fixed grade-table vocabulary (see classify.rs).
+    // minireport sits between report (blue) and attendance (green) as a teal --
+    // kin to report, distinct at a glance.
     let eval_hues: [(&str, f64); 6] = [
         ("exam", 15.0),
         ("report", 250.0),
+        ("minireport", 190.0),
         ("attendance", 150.0),
-        ("presentation", 70.0),
         ("quiz", 300.0),
         ("other", 250.0),
     ];
