@@ -12,8 +12,10 @@ import { FIXTURES, MOBILE, dismissDisclaimer, enter, openCourse, pickSemester } 
 test.describe.configure({ timeout: 180_000 })
 
 async function auditEmpty(page: Page): Promise<void> {
+	// best-practice guards the landmark/heading structure (region,
+	// landmark-one-main, page-has-heading-one, heading-order, …) on top of WCAG.
 	const { violations } = await new AxeBuilder({ page })
-		.withTags(['wcag2a', 'wcag2aa'])
+		.withTags(['wcag2a', 'wcag2aa', 'best-practice'])
 		.analyze()
 	const summary = violations.map((v) => ({
 		id: v.id,

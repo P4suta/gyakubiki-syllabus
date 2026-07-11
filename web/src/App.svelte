@@ -231,10 +231,10 @@ onDestroy(() => teardownPlanSync?.())
 			/>
 			<SearchBar bind:searchText />
 		</header>
-		<!-- The visible count chip is gone; announce filter results to AT instead. -->
-		<p class="sr-only" role="status">{announcedCount}件の科目を表示中</p>
 		<!-- The landmark carries the flex chain so children keep their layout. -->
 		<main id="main" tabindex="-1" class="flex flex-col flex-1 overflow-hidden outline-none">
+			<!-- The visible count chip is gone; announce filter results to AT instead. -->
+			<p class="sr-only" role="status">{announcedCount}件の科目を表示中</p>
 			{#if displayCount === 0 && plan.count === 0}
 				<!-- Empty state: nothing matches and no plan to fall back on. -->
 				<div class="grow flex items-center justify-center p-6 animate-fade-in">
@@ -260,7 +260,10 @@ onDestroy(() => teardownPlanSync?.())
 	     timetable conflict) that toggles a small action menu — share / clear.
 	     There is one plan, not many; the grid itself is it. -->
 	{#if plan.count > 0}
-		<div class="fixed right-4 bottom-4 safe-bottom z-nav flex flex-col items-end gap-2">
+		<aside
+			aria-label="履修プラン"
+			class="fixed right-4 bottom-4 safe-bottom z-nav flex flex-col items-end gap-2"
+		>
 			{#if planMenuOpen}
 				<!-- Click-away catcher: a fixed full-screen layer under the menu/pill
 				     (both made `relative` so DOM order paints them above it). -->
@@ -295,7 +298,7 @@ onDestroy(() => teardownPlanSync?.())
 				<IconEventNote class="w-4 h-4 shrink-0" aria-hidden="true" />
 				<span class="tabular-nums">{totalCredits > 0 ? `${totalCredits}単位` : `${plan.count}科目`}</span>
 			</button>
-		</div>
+		</aside>
 	{/if}
 
 	{#if selectedCourse}
