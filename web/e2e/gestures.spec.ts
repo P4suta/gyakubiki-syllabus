@@ -14,7 +14,8 @@ async function openFirstCourse(page: Page) {
 test('swiping the detail sheet down dismisses it', async ({ page }) => {
 	await enter(page)
 	await openFirstCourse(page)
-	const box = await page.getByRole('dialog').boundingBox()
+	// The dialog is the full-viewport shell; the sheet's own box is data-sheet.
+	const box = await page.locator('[data-sheet]').boundingBox()
 	if (!box) throw new Error('no sheet box')
 	// Grab the handle and pull well past the commit threshold.
 	await swipe(page, { x: box.x + box.width / 2, y: box.y + 12 }, { x: box.x + box.width / 2, y: box.y + box.height * 0.85 })
@@ -24,7 +25,7 @@ test('swiping the detail sheet down dismisses it', async ({ page }) => {
 test('a short slow drag snaps the sheet back (stays open)', async ({ page }) => {
 	await enter(page)
 	await openFirstCourse(page)
-	const box = await page.getByRole('dialog').boundingBox()
+	const box = await page.locator('[data-sheet]').boundingBox()
 	if (!box) throw new Error('no sheet box')
 	// ~30px, slow → under both the distance and velocity thresholds.
 	await swipe(
@@ -51,7 +52,7 @@ test('swiping the filter sheet down dismisses it', async ({ page }) => {
 	await page.getByRole('button', { name: 'フィルターを開く' }).first().tap()
 	await expect(page.getByRole('dialog', { name: 'フィルター' })).toBeVisible()
 	await page.waitForTimeout(400) // let the slide-in settle
-	const box = await page.getByRole('dialog', { name: 'フィルター' }).boundingBox()
+	const box = await page.locator('[data-sheet]').boundingBox()
 	if (!box) throw new Error('no sheet box')
 	await swipe(page, { x: box.x + box.width / 2, y: box.y + 12 }, { x: box.x + box.width / 2, y: box.y + box.height * 0.85 })
 	await expect(page.getByRole('dialog', { name: 'フィルター' })).toBeHidden()

@@ -7,9 +7,10 @@ import { FIXTURES, MOBILE, dismissDisclaimer, enter, openCourse, pickSemester } 
 // 4.5:1, so a regression in the palette fails here, not just in the unit tests.
 
 // axe's contrast pass over the desktop grid is heavy — every card carries a tint,
-// an eval donut, and credit blocks, so a full analyze runs ~2min. Give these
-// audits room to finish instead of timing out (locally and in CI).
-test.describe.configure({ timeout: 180_000 })
+// an eval donut, and credit blocks, and the best-practice rules add more work,
+// so a full analyze runs ~3min. Give these audits room to finish instead of
+// timing out (locally and in CI).
+test.describe.configure({ timeout: 300_000 })
 
 async function auditEmpty(page: Page): Promise<void> {
 	// best-practice guards the landmark/heading structure (region,

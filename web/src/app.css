@@ -161,6 +161,10 @@
    sit above everything with no z-index and get a free focus trap + inert page.
    Strip the UA chrome to a transparent shell; the inner backdrop element dims. */
 dialog.overlay {
+  /* Full-viewport box: the shell IS the dialog in the a11y tree, and its
+     children position themselves `fixed` (contributing no intrinsic size). */
+  width: 100vw;
+  height: 100dvh;
   max-width: 100vw;
   max-height: 100dvh;
   margin: 0;
