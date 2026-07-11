@@ -49,7 +49,7 @@ function mount() {
 const activeDay = (
 	utils: { getByRole: (r: string, o: { name: string }) => HTMLElement },
 	label: string,
-) => utils.getByRole('button', { name: label }).className.includes('text-apple-blue')
+) => utils.getByRole('tab', { name: label }).className.includes('text-apple-blue')
 
 beforeEach(() => {
 	vi.useFakeTimers()
@@ -102,7 +102,7 @@ describe('Timetable day pager', () => {
 
 	it('switches day when a tab is tapped', async () => {
 		const utils = mount()
-		utils.getByRole('button', { name: '水' }).click()
+		utils.getByRole('tab', { name: '水' }).click()
 		flushSync()
 		expect(activeDay(utils, '水')).toBe(true)
 	})

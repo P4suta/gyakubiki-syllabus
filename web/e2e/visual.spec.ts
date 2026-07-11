@@ -66,7 +66,8 @@ for (const theme of ['light', 'dark'] as const) {
 		test('mobile day view', async ({ page }) => {
 			await page.setViewportSize(MOBILE)
 			await enter(page)
-			await expect(page.getByRole('tabpanel')).toHaveScreenshot(`day-view-mobile${s}.png`)
+			// `main` covers the day tab bar too (tabpanel is now the scroll area only).
+			await expect(page.locator('main')).toHaveScreenshot(`day-view-mobile${s}.png`)
 		})
 	})
 }

@@ -31,6 +31,22 @@ function cell(key: GridKey): { courses: Course[]; locked: boolean } {
 
 let activeDay = $state(0)
 
+// Roving focus for the day tablist (WAI-ARIA tabs): arrows move + wrap,
+// Home/End jump, only the active tab sits in the tab order.
+let tabEls: HTMLButtonElement[] = []
+
+function onTablistKeydown(e: KeyboardEvent) {
+	let next: number
+	if (e.key === 'ArrowRight') next = (activeDay + 1) % days.length
+	else if (e.key === 'ArrowLeft') next = (activeDay - 1 + days.length) % days.length
+	else if (e.key === 'Home') next = 0
+	else if (e.key === 'End') next = days.length - 1
+	else return
+	e.preventDefault()
+	activeDay = next
+	tabEls[next]?.focus()
+}
+
 // Finger-follow day pager (mobile): `dragX` translates the current day with the
 // finger; on commit the day slides out and the neighbour slides in (single day
 // rendered — the swap happens while the incoming day is parked off-screen).
@@ -100,14 +116,17 @@ let headerH = $state(0)
 {#if !isDesktop}
 
 <!-- Mobile: single-day view -->
-<div
-	class="flex flex-col flex-1 overflow-hidden sm:hidden"
-	role="tabpanel"
-	tabindex="-1"
->
-	<div class="flex bg-surface-page border-b border-overlay-subtle shrink-0">
+<div class="flex flex-col flex-1 overflow-hidden sm:hidden">
+	<div class="flex bg-surface-page border-b border-overlay-subtle shrink-0" role="tablist" aria-label="曜日">
 		{#each days as day, i}
 			<button
+				bind:this={tabEls[i]}
+				role="tab"
+				id="day-tab-{i}"
+				aria-selected={activeDay === i}
+				aria-controls="day-panel"
+				tabindex={activeDay === i ? 0 : -1}
+				onkeydown={onTablistKeydown}
 				class="flex-1 py-2.5 text-center text-caption font-semibold min-h-tap transition-colors
 					{activeDay === i
 						? 'text-apple-blue border-b-2 border-apple-blue'
@@ -121,6 +140,10 @@ let headerH = $state(0)
 
 	<div
 		bind:this={dayEl}
+		id="day-panel"
+		role="tabpanel"
+		aria-labelledby="day-tab-{activeDay}"
+		tabindex="-1"
 		class="flex-1 overflow-y-auto p-2 space-y-1.5 bg-surface-page touch-pan-y"
 		style="translate: {dragX}px 0; transition: {sliding ? 'translate 0.22s var(--ease-spring)' : 'none'};"
 		use:swipeNavigate={{ onDrag, onSettle, canPrev, canNext }}

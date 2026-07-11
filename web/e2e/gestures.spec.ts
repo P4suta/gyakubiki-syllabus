@@ -61,12 +61,12 @@ test('swiping the day view left advances to the next day', async ({ page }) => {
 	await enter(page)
 	// Default day is 月 (index 0). Swipe left → 火 becomes active.
 	await swipe(page, { x: 320, y: 420 }, { x: 60, y: 420 })
-	await expect(page.getByRole('button', { name: '火', exact: true })).toHaveClass(/text-apple-blue/)
+	await expect(page.getByRole('tab', { name: '火', exact: true })).toHaveClass(/text-apple-blue/)
 })
 
 test('swiping the day view right is a no-op at the first day', async ({ page }) => {
 	await enter(page)
 	// 月 is already the first day; a right (prev) swipe rubber-bands and snaps back.
 	await swipe(page, { x: 60, y: 420 }, { x: 340, y: 420 })
-	await expect(page.getByRole('button', { name: '月', exact: true })).toHaveClass(/text-apple-blue/)
+	await expect(page.getByRole('tab', { name: '月', exact: true })).toHaveClass(/text-apple-blue/)
 })

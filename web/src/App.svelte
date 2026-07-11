@@ -213,38 +213,43 @@ onDestroy(() => teardownPlanSync?.())
 		data-shown-count={displayCount}
 		data-total-count={engine.courses.length}
 	>
-		<FilterBar
-			semesters={engine.dicts.semesters}
-			departments={engine.dicts.departments}
-			campuses={engine.dicts.campuses}
-			bind:semester
-			bind:department
-			bind:campus
-			bind:searchText
-			{displayCount}
-			generatedAt={engine.generatedAt}
-		/>
-		<SearchBar bind:searchText />
+		<header>
+			<FilterBar
+				semesters={engine.dicts.semesters}
+				departments={engine.dicts.departments}
+				campuses={engine.dicts.campuses}
+				bind:semester
+				bind:department
+				bind:campus
+				bind:searchText
+				{displayCount}
+				generatedAt={engine.generatedAt}
+			/>
+			<SearchBar bind:searchText />
+		</header>
 		<!-- The visible count chip is gone; announce filter results to AT instead. -->
 		<p class="sr-only" role="status">{announcedCount}件の科目を表示中</p>
-		{#if displayCount === 0 && plan.count === 0}
-			<!-- Empty state: nothing matches and no plan to fall back on. -->
-			<div class="grow flex items-center justify-center p-6 animate-fade-in">
-				<div class="text-center max-w-xs">
-					<IconSearchOff class="w-12 h-12 mx-auto text-apple-text-tertiary mb-3" />
-					<p class="text-cta text-apple-text font-semibold mb-1 tracking-tight">該当する科目がありません</p>
-					<p class="text-caption text-apple-text-secondary mb-4 tracking-tight leading-relaxed">検索語や絞り込みを見直してみてください。</p>
-					<button
-						onclick={resetFilters}
-						class="rounded-full bg-apple-blue text-on-accent px-4 py-2 text-cta font-normal hover:bg-apple-blue-hover transition-colors cursor-pointer"
-					>
-						条件をリセット
-					</button>
+		<!-- The landmark carries the flex chain so children keep their layout. -->
+		<main class="flex flex-col flex-1 overflow-hidden">
+			{#if displayCount === 0 && plan.count === 0}
+				<!-- Empty state: nothing matches and no plan to fall back on. -->
+				<div class="grow flex items-center justify-center p-6 animate-fade-in">
+					<div class="text-center max-w-xs">
+						<IconSearchOff class="w-12 h-12 mx-auto text-apple-text-tertiary mb-3" />
+						<p class="text-cta text-apple-text font-semibold mb-1 tracking-tight">該当する科目がありません</p>
+						<p class="text-caption text-apple-text-secondary mb-4 tracking-tight leading-relaxed">検索語や絞り込みを見直してみてください。</p>
+						<button
+							onclick={resetFilters}
+							class="rounded-full bg-apple-blue text-on-accent px-4 py-2 text-cta font-normal hover:bg-apple-blue-hover transition-colors cursor-pointer"
+						>
+							条件をリセット
+						</button>
+					</div>
 				</div>
-			</div>
-		{:else}
-			<Timetable {grid} {planGrid} {conflictKeys} days={engine.days} onselect={(c) => { selectedCourse = c }} />
-		{/if}
+			{:else}
+				<Timetable {grid} {planGrid} {conflictKeys} days={engine.days} onselect={(c) => { selectedCourse = c }} />
+			{/if}
+		</main>
 	</div>
 
 	<!-- Floating plan control: a compact pill showing the total credits (red on a
