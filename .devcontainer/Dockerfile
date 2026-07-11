@@ -1,7 +1,10 @@
 # syntax=docker/dockerfile:1
 #
-# Dev Container image for gyakubiki-syllabus — a Rust/WASM + Bun toolchain kept
-# entirely inside the container so the host stays clean.
+# Optional Dev Container for gyakubiki-syllabus — a Rust/WASM + Bun toolchain kept
+# inside the container so the host stays clean. This is a FALLBACK: the primary,
+# recommended path is host + mise (`.mise.toml`), and the git hooks run natively
+# there — not via `docker compose run` anymore. E2E (Playwright/CJK fonts) is
+# CI-only, so it's deliberately absent here.
 #
 # Design notes:
 # - Toolchains are baked read-only into the image; every *writable* cache lives
@@ -17,11 +20,9 @@ FROM oven/bun:1.2 AS bun
 FROM rust:1.95.0-bookworm
 
 # OS deps: TLS, git, and jq (handy in scripts); build-essential ships with the
-# full rust image already (needed to link proc-macros). nodejs runs the WASM
-# boundary tests (`wasm-pack test --node`); fonts-noto-cjk gives local E2E the
-# same CJK glyphs the CI baselines were shot with.
+# full rust image already (needed to link proc-macros).
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates curl git jq nodejs fonts-noto-cjk \
+ && apt-get install -y --no-install-recommends ca-certificates curl git jq \
  && rm -rf /var/lib/apt/lists/*
 
 # Bun — frontend runtime + Vite.
@@ -37,18 +38,6 @@ RUN set -eux; arch="$(uname -m)"; \
       | tar -xz -C /usr/local/bin just; \
     curl -fsSL "https://github.com/rustwasm/wasm-pack/releases/download/v${WASM_PACK_VERSION}/wasm-pack-v${WASM_PACK_VERSION}-${arch}-unknown-linux-musl.tar.gz" \
       | tar -xz --strip-components=1 -C /usr/local/bin "wasm-pack-v${WASM_PACK_VERSION}-${arch}-unknown-linux-musl/wasm-pack"
-
-# Playwright chromium for local E2E parity: its system libraries (via apt) and
-# the browser binary, baked to a shared, world-readable path so the non-root
-# `dev` user finds it. Pinned to web's @playwright/test minor — bump this ARG and
-# rebuild the image when that version moves (else Playwright will ask for a
-# matching browser). `--with-deps` also apt-installs the required libs.
-ARG PLAYWRIGHT_VERSION=1.61.1
-ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
-RUN apt-get update \
- && bunx playwright@${PLAYWRIGHT_VERSION} install --with-deps chromium \
- && chmod -R a+rX /ms-playwright \
- && rm -rf /var/lib/apt/lists/*
 
 # Non-root user matching the host (UID/GID 1000) → clean bind-mount ownership.
 ARG USER=dev
