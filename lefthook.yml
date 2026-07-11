@@ -1,20 +1,21 @@
 # lefthook Git hooks manager. Enable with `just install-hooks`.
 # https://github.com/evilmartians/lefthook
 #
-# Hooks mirror CI so failures surface locally, not in Actions. Rust/WASM/web
-# checks run inside the Dev Container (`docker compose run --rm`) to keep target/
-# and node_modules off the host; the lint tools (typos/actionlint/markdownlint)
-# run on the host via mise.
+# Hooks mirror CI so failures surface locally, not in Actions. Everything runs
+# natively on the toolchain mise provides (.mise.toml) plus the rust-toolchain
+# (rust-toolchain.toml) — no Docker. E2E is deliberately left to CI: it's heavy,
+# it rewrites the sample dataset, and its visual specs are runner-specific. Run
+# it on demand with `just e2e`.
 
 pre-commit:
   parallel: true
   commands:
     rustfmt:
       glob: "*.rs"
-      run: docker compose run --rm -T dev cargo fmt --check
+      run: cargo fmt --check
       fail_text: "rustfmt violations; fix with `just fmt`"
     typos:
-      run: typos
+      run: typos {staged_files}
     actionlint:
       glob: ".github/workflows/*.{yml,yaml}"
       run: actionlint {staged_files}
@@ -25,48 +26,29 @@ pre-commit:
 pre-push:
   parallel: false # cargo / wasm / web are heavy; run them sequentially
   commands:
-    # Every Rust CI gate in one container: fmt, clippy, tests + the 80% coverage
-    # threshold (via cargo-llvm-cov, exactly as CI), and the two derivation
-    # guards — FIELD_SPEC (generated TS + docs must not be stale) and the OKLCH
-    # palette (colors.ts must match its derivation).
+    # Mirrors the CI Rust job: fmt, clippy, tests + the 80% line-coverage gate
+    # (cargo-llvm-cov driving nextest, exactly as CI), and the two derivation
+    # guards — FIELD_SPEC (generated TS + docs) and the OKLCH palette (colors.ts).
     rust:
       run: >-
-        docker compose run --rm -T dev bash -c "cargo fmt --check
+        cargo fmt --check
         && cargo clippy --locked --all-targets -- -D warnings
-        && cargo llvm-cov --locked --workspace --exclude syllabus-wasm --fail-under-lines 80
+        && cargo llvm-cov nextest --locked --workspace --exclude syllabus-wasm --fail-under-lines 80
         && cargo run --locked -q -p syllabus-cli -- gen-field-docs --check
-        && cargo run --locked -q -p syllabus-cli -- gen-palette --check"
+        && cargo run --locked -q -p syllabus-cli -- gen-palette --check
       fail_text: "Rust checks failed (fmt/clippy/test/coverage/gen-field-docs/gen-palette); see `just check`"
-    # Mirrors the CI "Web (check / test)" job: build the wasm glue first, then
-    # svelte-check/tsc and vitest *with the coverage gate* (test:cov — same
-    # thresholds CI enforces, so a coverage drop fails here, not in Actions).
+    # Mirrors the CI "wasm boundary tests": the crate's #[wasm_bindgen] surface
+    # under node (the JsValue shapes the frontend depends on).
+    wasm-boundary:
+      run: wasm-pack test --node crates/wasm
+      fail_text: "WASM boundary tests failed (wasm-pack test --node)"
+    # Mirrors the CI "Web (check / test)" job: build the wasm glue, then
+    # svelte-check/tsc and vitest with the coverage gate (test:cov).
     web:
       run: >-
-        docker compose run --rm -T dev bash -c "wasm-pack build crates/wasm
-        --target web --out-dir ../../web/src/wasm --out-name syllabus
-        && cd web && bun install --frozen-lockfile && bun run check && bun run test:cov"
+        wasm-pack build crates/wasm --target web --out-dir ../../web/src/wasm --out-name syllabus
+        && cd web && bun install --frozen-lockfile && bun run check && bun run test:cov
       fail_text: "Web checks failed (svelte-check/tsc/vitest + coverage gate)"
-    # CI "wasm boundary tests": run the crate's #[wasm_bindgen] surface under
-    # node (the JsValue shapes the frontend depends on). Needs node — baked into
-    # the dev image.
-    wasm-boundary:
-      run: docker compose run --rm -T dev wasm-pack test --node crates/wasm
-      fail_text: "WASM boundary tests failed (wasm-pack test --node)"
-    # CI "E2E (Playwright)" job: build the wasm glue, synthesize the KULAS-free
-    # sample dataset (the specs anchor on it), then run Playwright. The visual
-    # specs self-skip off CI (their baselines are runner-specific), so this runs
-    # the functional suite. NB: it rewrites web/public with the sample dataset —
-    # run `just convert` afterwards to restore your real data for `bun run dev`.
-    e2e:
-      run: >-
-        docker compose run --rm -T dev bash -c "wasm-pack build crates/wasm
-        --target web --out-dir ../../web/src/wasm --out-name syllabus
-        && cargo run --release -q -p syllabus-cli -- gen-sample
-        && cargo run --release -q -p syllabus-cli -- convert dev-data/sample-raw.json
-        --compact --details-dir dev-data/sample-details
-        --details-out web/public/details -o web/public/data.json
-        && cd web && bun install --frozen-lockfile && bun run test:e2e"
-      fail_text: "E2E (Playwright) failed; see web/test-results/"
     typos-full:
       run: typos
     markdown-full:
