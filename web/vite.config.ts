@@ -22,6 +22,29 @@ const minifyHtml = (): PluginOption => ({
 	},
 })
 
+// The whole app ships one small CSS file, and as a <link> it render-blocks a
+// round-trip. Inline it into index.html and drop the asset.
+const inlineCss = (): PluginOption => ({
+	name: 'inline-css',
+	apply: 'build',
+	enforce: 'post',
+	generateBundle(_options, bundle) {
+		const html = bundle['index.html']
+		if (!html || html.type !== 'asset') return
+		let source = html.source.toString()
+		for (const [name, chunk] of Object.entries(bundle)) {
+			if (chunk.type !== 'asset' || !name.endsWith('.css')) continue
+			const link = new RegExp(
+				`<link[^>]+href="[^"]*${name.split('/').pop()?.replace(/[.[\]]/g, '\\$&')}"[^>]*>`,
+			)
+			if (!link.test(source)) continue
+			source = source.replace(link, `<style>${chunk.source}</style>`)
+			delete bundle[name]
+		}
+		html.source = source
+	},
+})
+
 export default defineConfig({
 	// On GitHub Pages the app is served from a sub-path; the WASM asset URL
 	// (resolved via import.meta.url) follows this base automatically.
@@ -30,7 +53,7 @@ export default defineConfig({
 	// afterEach unmount so component tests don't leak between cases.
 	// Icons are inlined from the Iconify `ic` set at build time (offline, tree-
 	// shaken, zero runtime fetch): `import Foo from '~icons/ic/round-foo'`.
-	plugins: [svelte(), tailwindcss(), svelteTesting(), Icons({ compiler: 'svelte' }), minifyHtml()],
+	plugins: [svelte(), tailwindcss(), svelteTesting(), Icons({ compiler: 'svelte' }), minifyHtml(), inlineCss()],
 	// Unit tests live in src/; the Playwright E2E specs in e2e/ run separately.
 	test: {
 		// Two projects: pure logic in `node` (fast, DOM-free) and component /

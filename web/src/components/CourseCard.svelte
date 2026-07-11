@@ -73,7 +73,7 @@ const creditHalf = $derived(creditsN - Math.floor(creditsN) >= 0.5)
 
 <button
 	data-course-card
-	class="relative w-full text-left rounded-lg p-3 sm:p-2 mb-1 sm:mb-1 cursor-pointer transition-transform active:brightness-95 sm:hover:scale-[1.02] sm:hover:shadow-card-hover min-h-tap sm:min-h-0"
+	class="relative w-full text-left rounded-lg p-3 sm:p-2 mb-1 sm:mb-1 cursor-pointer transition-transform active:brightness-95 sm:hover:scale-[1.02] sm:hover:shadow-card-hover min-h-tap sm:min-h-0 content-auto"
 	style="background: {color.bg};"
 	{onclick}
 >

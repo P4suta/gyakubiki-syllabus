@@ -182,6 +182,15 @@ onMount(async () => {
 onDestroy(() => teardownPlanSync?.())
 </script>
 
+<!-- Mounted over the loading skeleton, not the filled grid: showModal() forces
+     a synchronous layout of whatever is already in the DOM, and opening it in
+     the same flush that renders ~5k grid elements doubled that work (the boot
+     forced-reflow Lighthouse flagged). Over the skeleton it costs ~nothing, and
+     the disclaimer is readable while data loads. -->
+{#if !error}
+	<Disclaimer />
+{/if}
+
 {#if loading}
 	<!-- Skeleton shaped like the app shell (faux filter bar + timetable grid), so
 	     the first paint reads as the real screen rather than a bare spinner. -->
@@ -206,7 +215,6 @@ onDestroy(() => teardownPlanSync?.())
 		</div>
 	</div>
 {:else if engine}
-	<Disclaimer />
 	<!-- data-*-count: invisible counter anchor for the E2E suite (helpers.counts). -->
 	<div
 		class="h-dvh bg-surface-page font-sans flex flex-col overflow-hidden animate-fade-in"
