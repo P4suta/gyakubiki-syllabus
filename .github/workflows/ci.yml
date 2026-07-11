@@ -13,30 +13,51 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  rust:
-    name: Rust (test / clippy / fmt)
+  # Which kind of change is this? Docs-only PRs skip the heavy build/test jobs.
+  changes:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
     steps:
       - uses: actions/checkout@v7
-      # Reads rust-toolchain.toml (channel + components + wasm32 target); also
-      # caches ~/.cargo + target automatically.
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            code:
+              - 'crates/**'
+              - 'web/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - 'rust-toolchain.toml'
+              - '.mise.toml'
+              - 'dev-data/**'
+              - '.github/workflows/ci.yml'
+
+  rust:
+    name: Rust (test / clippy / fmt)
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+      # rust-toolchain.toml drives the version; the action caches ~/.cargo + target.
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           components: llvm-tools-preview
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-llvm-cov
-      # fmt needs no build — run it first so a formatting slip fails in seconds.
+      # cargo-llvm-cov + cargo-nextest (+ the rest) from .mise.toml — same versions
+      # as local and every other job.
+      - uses: jdx/mise-action@v2
       - name: fmt
         run: cargo fmt --check
       - name: clippy
         run: cargo clippy --locked --all-targets -- -D warnings
-      # llvm-cov *runs the tests* under instrumentation, so test + coverage share
-      # one build here instead of two jobs each doing a full workspace compile.
-      # Native coverage only (the wasm crate's #[wasm_bindgen] surface isn't
-      # exercised natively).
-      - name: test + coverage
-        run: cargo llvm-cov --locked --workspace --exclude syllabus-wasm --no-report
+      # nextest under llvm-cov instrumentation — one build for test + coverage.
+      # The workspace has no doctests, so nextest runs the complete set.
+      - name: test + coverage (nextest)
+        run: cargo llvm-cov nextest --locked --workspace --exclude syllabus-wasm --no-report
       - name: coverage report + enforce threshold (lines >= 80%)
         run: |
           cargo llvm-cov report --summary-only >> "$GITHUB_STEP_SUMMARY"
@@ -53,9 +74,113 @@ jobs:
       - name: palette matches its derivation
         run: cargo run --locked -q -p syllabus-cli -- gen-palette --check
 
+  # Build the WASM glue once (+ its node boundary tests) and share it, so web/e2e
+  # don't each re-run the Rust/wasm-pack toolchain.
+  wasm:
+    name: WASM (build / boundary tests)
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: jdx/mise-action@v2
+      - name: build wasm glue
+        run: wasm-pack build crates/wasm --target web --out-dir web/src/wasm --out-name syllabus
+      - name: wasm boundary tests (node)
+        run: wasm-pack test --node crates/wasm
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wasm-glue
+          path: web/src/wasm
+
+  web:
+    name: Web (check / test)
+    needs: [changes, wasm]
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v7
+      # Bun (+ node) from .mise.toml — no Rust toolchain needed here.
+      - uses: jdx/mise-action@v2
+      - uses: actions/download-artifact@v4
+        with:
+          name: wasm-glue
+          path: web/src/wasm
+      - name: cache bun install
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('web/bun.lock') }}
+          restore-keys: bun-${{ runner.os }}-
+      - run: bun install --frozen-lockfile
+      - run: bun run check
+      # Unit tests with the coverage gate on the pure lib/ modules (see vite.config).
+      - run: bun run test:cov
+
+  e2e:
+    name: E2E (Playwright)
+    needs: [changes, wasm]
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+      # The CLI (gen-sample) needs Rust; Bun/Playwright come from mise.
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: jdx/mise-action@v2
+      - uses: actions/download-artifact@v4
+        with:
+          name: wasm-glue
+          path: web/src/wasm
+      # Generate the KULAS-free sample dataset the specs anchor on (no network).
+      - name: generate sample data
+        run: |
+          cargo run --release -q -p syllabus-cli -- gen-sample
+          cargo run --release -q -p syllabus-cli -- convert dev-data/sample-raw.json \
+            --compact --details-dir dev-data/sample-details \
+            --details-out web/public/details -o web/public/data.json
+      # CJK fonts so the visual baselines' glyphs match (visual specs run only on CI).
+      - name: install fonts
+        run: sudo apt-get update && sudo apt-get install -y fonts-noto-cjk
+      - name: cache bun install
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('web/bun.lock') }}
+          restore-keys: bun-${{ runner.os }}-
+      - name: install web deps
+        working-directory: web
+        run: bun install --frozen-lockfile
+      # Cache the Playwright browser, keyed on the pinned @playwright/test version.
+      - name: cache Playwright browser
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('web/bun.lock') }}
+      - name: install Playwright browser
+        working-directory: web
+        run: bunx playwright install --with-deps chromium
+      - name: run E2E (geometry / gestures / a11y / smoke / visual)
+        working-directory: web
+        run: bun run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: playwright-results
+          path: web/test-results/
+          retention-days: 7
+          if-no-files-found: ignore
+
   typos:
     name: typos (spell check)
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
       - uses: crate-ci/typos@master
@@ -63,6 +188,7 @@ jobs:
   actionlint:
     name: actionlint (workflow lint)
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
       - name: actionlint
@@ -74,6 +200,7 @@ jobs:
   markdownlint:
     name: markdownlint
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
       - uses: DavidAnson/markdownlint-cli2-action@v23
@@ -82,73 +209,3 @@ jobs:
             **/*.md
             !node_modules
             !web/**
-
-  web:
-    name: Web (check / test)
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: web
-    steps:
-      - uses: actions/checkout@v7
-      # The frontend imports the generated WASM glue, so build it first.
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: wasm-pack@0.13.1
-      - name: build wasm
-        working-directory: ${{ github.workspace }}
-        # --out-dir is relative to the crate root (crates/wasm), hence ../../.
-        run: wasm-pack build crates/wasm --target web --out-dir ../../web/src/wasm --out-name syllabus
-      - name: wasm boundary tests (node)
-        working-directory: ${{ github.workspace }}
-        # Exercise the JsValue shapes the frontend depends on (camelCase keys, …).
-        run: wasm-pack test --node crates/wasm
-      - uses: oven-sh/setup-bun@v2
-      - run: bun install --frozen-lockfile
-      - run: bun run check
-      # Unit tests with the coverage gate on the pure lib/ modules (see vite.config).
-      - run: bun run test:cov
-
-  e2e:
-    name: E2E (Playwright)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      # The dev server imports the generated WASM glue; global-setup shells out to
-      # the CLI for the sample dataset — both need the Rust toolchain.
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: wasm-pack@0.13.1
-      - name: build wasm
-        run: wasm-pack build crates/wasm --target web --out-dir ../../web/src/wasm --out-name syllabus
-      # Generate the KULAS-free sample data up front (so global-setup skips it) and
-      # surface the cargo build as its own timed step.
-      - name: generate sample data
-        run: |
-          cargo run --release -q -p syllabus-cli -- gen-sample
-          cargo run --release -q -p syllabus-cli -- convert dev-data/sample-raw.json \
-            --compact --details-dir dev-data/sample-details \
-            --details-out web/public/details -o web/public/data.json
-      # CJK fonts must match the visual-baseline workflow exactly, or the visual
-      # specs diff on every glyph. Keep this line identical in both workflows.
-      - name: install fonts
-        run: sudo apt-get update && sudo apt-get install -y fonts-noto-cjk
-      - uses: oven-sh/setup-bun@v2
-      - name: install web deps
-        working-directory: web
-        run: bun install --frozen-lockfile
-      - name: install Playwright browser
-        working-directory: web
-        run: bunx playwright install --with-deps chromium
-      - name: run E2E (geometry / gestures / a11y / smoke)
-        working-directory: web
-        run: bun run test:e2e
-      - uses: actions/upload-artifact@v4
-        if: ${{ !cancelled() }}
-        with:
-          name: playwright-results
-          path: web/test-results/
-          retention-days: 7
-          if-no-files-found: ignore
