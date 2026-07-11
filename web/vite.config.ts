@@ -35,9 +35,9 @@ const inlineCss = (): PluginOption => ({
 		let source = html.source.toString()
 		for (const [name, chunk] of Object.entries(bundle)) {
 			if (chunk.type !== 'asset' || !name.endsWith('.css')) continue
-			const link = new RegExp(
-				`<link[^>]+href="[^"]*${name.split('/').pop()?.replace(/[.[\]]/g, '\\$&')}"[^>]*>`,
-			)
+			const file = name.split('/').pop() ?? name
+			const escaped = file.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+			const link = new RegExp(`<link[^>]+href="[^"]*${escaped}"[^>]*>`)
 			if (!link.test(source)) continue
 			source = source.replace(link, `<style>${chunk.source}</style>`)
 			delete bundle[name]
