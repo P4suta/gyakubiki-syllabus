@@ -5,6 +5,7 @@
 
 use std::sync::LazyLock;
 
+use super::classify::{delivery_mode, eval_type};
 use super::model::{PrepInfo, SanshoDetail, TextbookInfo, TextbookSection};
 
 /// Annotate a `SanshoDetail` in place with derived fields, before it is written
@@ -12,6 +13,19 @@ use super::model::{PrepInfo, SanshoDetail, TextbookInfo, TextbookSection};
 pub fn enrich(detail: &mut SanshoDetail) {
     // Normalise the display text first so the derived views inherit the folding.
     purify_in_place(detail);
+    // Re-derive the classified enums from their stored source strings.
+    // fetch-details bakes them at crawl time; refreshing here ships classifier
+    // changes on the next convert instead of the next (impolite) re-crawl.
+    if let Some(eval) = detail.eval.as_mut() {
+        for row in &mut eval.rows {
+            row.kind = eval_type(&row.item).to_owned();
+        }
+    }
+    if let Some(delivery) = detail.delivery.as_mut()
+        && !delivery.raw.is_empty()
+    {
+        delivery.mode = delivery_mode(&delivery.raw).to_owned();
+    }
     for item in &mut detail.plan {
         item.kind = classify_plan_kind(&item.text, item.n);
     }

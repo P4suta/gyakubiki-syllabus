@@ -121,10 +121,16 @@ fn convert(args: ConvertArgs) -> Result<()> {
         bail!("No course data found. Check the input file contents");
     }
 
-    let details = match &args.details_dir {
+    let mut details = match &args.details_dir {
         Some(dir) if dir.is_dir() => load_details(dir)?,
         _ => std::collections::HashMap::new(),
     };
+    // Enrich once, up front: the web details copy and data.json's card fields
+    // (ev/dm) must agree — enriching only at write-out left the card summary
+    // built from the crawl-time classifications.
+    for detail in details.values_mut() {
+        syllabus_cli::detail::enrich(detail);
+    }
     if !details.is_empty() {
         write_details_out(&details, &args.details_out)?;
     }
@@ -211,10 +217,7 @@ fn write_details_out(
         )
     })?;
     for detail in details.values() {
-        // Derive display-ready fields (plan highlights, …) at write time so the
-        // frozen raw-details stay untouched and only the web copy is enriched.
-        let mut detail = detail.clone();
-        syllabus_cli::detail::enrich(&mut detail);
+        // Already enriched at load; the frozen raw-details stay untouched.
         let path = out.join(format!("{}.json", detail.cd));
         let bytes = serde_json::to_vec(&detail).context("failed to serialize detail JSON")?;
         fs::write(&path, bytes)

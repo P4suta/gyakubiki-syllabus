@@ -3,11 +3,29 @@
 //! concern owned by `web/src/lib/syllabus-fields`.
 
 /// Classify a grade-weight item label into an assessment `type`.
-/// First match wins (most-specific first); falls back to `"other"`.
+///
+/// KULAS's grade table is a fixed vocabulary — the eight exact labels below
+/// cover every row of the real data (3,857 crawled courses, 8,178 rows). The
+/// form encodes two axes: 形式 (試験/レポート) × 時期・規模 (期末・中間 = one-shot
+/// milestones; 小 = recurring low-stakes). 小レポート/小テスト stay their own
+/// categories for the same reason KULAS separates them: weekly mini-reports
+/// and a single 期末レポート are different animals to a student.
+///
+/// The keyword scan below only catches future/free-form variants.
 #[must_use]
 pub fn eval_type(item: &str) -> &'static str {
+    match item.trim() {
+        "期末試験" | "中間試験" => return "exam",
+        "期末レポート" | "中間レポート" => return "report",
+        "小レポート" => return "minireport",
+        "小テスト" => return "quiz",
+        "学習意欲・授業参加度" => return "attendance",
+        "その他" => return "other",
+        _ => {}
+    }
     const TABLE: &[(&str, &[&str])] = &[
         ("exam", &["試験", "テスト", "定期"]),
+        ("minireport", &["小レポート", "ミニレポート"]),
         ("report", &["レポート", "課題", "提出", "作品", "小論"]),
         (
             "attendance",
@@ -21,11 +39,11 @@ pub fn eval_type(item: &str) -> &'static str {
                 "取り組み",
             ],
         ),
-        ("presentation", &["発表", "プレゼン", "報告", "口頭"]),
         ("quiz", &["小テスト", "小テ", "クイズ", "確認テスト"]),
     ];
-    // 「小テスト」(quiz) also contains「テスト」(exam), so scan quiz first.
-    for kind in ["quiz", "exam", "report", "attendance", "presentation"] {
+    // 「小テスト」(quiz) also contains「テスト」(exam), and「小レポート」contains
+    // 「レポート」(report) — scan the specific kinds before the general ones.
+    for kind in ["quiz", "minireport", "exam", "report", "attendance"] {
         if let Some((_, kws)) = TABLE.iter().find(|(k, _)| *k == kind)
             && kws.iter().any(|kw| item.contains(kw))
         {
@@ -33,8 +51,8 @@ pub fn eval_type(item: &str) -> &'static str {
         }
     }
     // Bare 期末/中間 (e.g.「期末評価」) reads as an exam — but only when nothing
-    // more specific matched:「期末レポート」is a report, same as the plan-kind
-    // classifier treats it.
+    // more specific matched:「期末レポートの提出」is a report, same as the
+    // plan-kind classifier treats it.
     if item.contains("期末") || item.contains("中間") {
         return "exam";
     }
@@ -46,8 +64,8 @@ fn kind_static(kind: &str) -> &'static str {
     match kind {
         "exam" => "exam",
         "report" => "report",
+        "minireport" => "minireport",
         "attendance" => "attendance",
-        "presentation" => "presentation",
         "quiz" => "quiz",
         _ => "other",
     }
@@ -85,22 +103,36 @@ mod tests {
     use super::{delivery_mode, eval_type};
 
     #[test]
-    fn eval_types() {
+    fn eval_types_cover_the_full_kulas_vocabulary() {
+        // The eight labels below are the complete real-data vocabulary
+        // (3,857 crawled courses) — every one must map exactly.
         assert_eq!(eval_type("期末試験"), "exam");
-        assert_eq!(eval_type("レポート"), "report");
+        assert_eq!(eval_type("中間試験"), "exam");
+        assert_eq!(eval_type("期末レポート"), "report");
+        assert_eq!(eval_type("中間レポート"), "report");
+        assert_eq!(eval_type("小レポート"), "minireport");
+        assert_eq!(eval_type("小テスト"), "quiz");
         assert_eq!(eval_type("学習意欲・授業参加度"), "attendance");
-        assert_eq!(eval_type("最終発表"), "presentation");
-        assert_eq!(eval_type("毎回の小テスト"), "quiz");
         assert_eq!(eval_type("その他"), "other");
+    }
+
+    #[test]
+    fn eval_type_keyword_fallback_for_unknown_labels() {
+        // presentation was dropped: it never occurs in the real vocabulary, so
+        // free-form 発表 labels land in "other" like any unclassified text.
+        assert_eq!(eval_type("レポート"), "report");
+        assert_eq!(eval_type("最終発表"), "other");
+        assert_eq!(eval_type("毎回の小テスト"), "quiz");
+        assert_eq!(eval_type("毎回のミニレポート"), "minireport");
+        assert_eq!(eval_type("授業への貢献"), "other");
     }
 
     #[test]
     fn interim_final_qualifiers_do_not_hijack_the_category() {
         // 中間レポート + 期末レポート is a report course, exactly as
-        // 中間試験 + 期末試験 is an exam course — the qualifier must not win.
-        assert_eq!(eval_type("中間レポート"), "report");
-        assert_eq!(eval_type("期末レポート"), "report");
-        assert_eq!(eval_type("中間発表"), "presentation");
+        // 中間試験 + 期末試験 is an exam course — the qualifier must not win,
+        // in the exact table and in the keyword fallback alike.
+        assert_eq!(eval_type("中間レポートの提出"), "report");
         // Bare 期末/中間 with no category word still reads as an exam.
         assert_eq!(eval_type("期末評価"), "exam");
         assert_eq!(eval_type("中間"), "exam");
@@ -109,10 +141,10 @@ mod tests {
     #[test]
     fn eval_type_precedence_is_intentional() {
         // Characterization: for labels that hit several keyword groups the scan
-        // order [quiz, exam, report, attendance, presentation] decides the
+        // order [quiz, minireport, exam, report, attendance] decides the
         // winner. Pinned so the precedence is a conscious choice, not accidental.
         assert_eq!(eval_type("レポート試験"), "exam"); // exam scanned before report
-        assert_eq!(eval_type("発表課題"), "report"); // report before presentation
+        assert_eq!(eval_type("小レポート課題"), "minireport"); // minireport before report
         assert_eq!(eval_type("出席課題"), "report"); // report before attendance
     }
 

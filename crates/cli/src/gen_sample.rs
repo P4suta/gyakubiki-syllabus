@@ -204,32 +204,34 @@ fn eval_for(i: usize) -> Eval {
             kind: kind.to_owned(),
         }
     }
+    // Item labels come from KULAS's fixed grade-table vocabulary (classify.rs).
     let (rows, note) = match i % 6 {
         0 => (
             vec![
                 row("期末試験", Some(60), "exam"),
-                row("レポート", Some(40), "report"),
+                row("期末レポート", Some(40), "report"),
             ],
             None,
         ),
         1 => (
             vec![
                 row("小テスト", Some(20), "quiz"),
-                row("定期試験", Some(50), "exam"),
-                row("受講態度", Some(30), "attendance"),
+                row("期末試験", Some(50), "exam"),
+                row("学習意欲・授業参加度", Some(30), "attendance"),
             ],
             Some("小テストは毎回実施".to_owned()),
         ),
         2 => (
+            // An exact tie: exercises the「同率あり」marker on the card.
             vec![
-                row("最終発表", Some(50), "presentation"),
-                row("レポート", Some(50), "report"),
+                row("期末レポート", Some(50), "report"),
+                row("小レポート", Some(50), "minireport"),
             ],
             None,
         ),
         3 => (
             vec![
-                row("平常点", Some(40), "attendance"),
+                row("学習意欲・授業参加度", Some(40), "attendance"),
                 row("その他", Some(60), "other"),
             ],
             Some("出席が3分の2に満たない場合は評価対象外".to_owned()),
@@ -237,16 +239,16 @@ fn eval_for(i: usize) -> Eval {
         4 => (
             // A weightless row: the card must not fabricate ":0".
             vec![
-                row("レポート", None, "report"),
+                row("期末レポート", None, "report"),
                 row("期末試験", Some(60), "exam"),
             ],
             None,
         ),
         _ => (
             vec![
-                row("課題", Some(30), "report"),
-                row("プレゼンテーション", Some(30), "presentation"),
-                row("試験", Some(40), "exam"),
+                row("小レポート", Some(30), "minireport"),
+                row("中間レポート", Some(30), "report"),
+                row("中間試験", Some(40), "exam"),
             ],
             None,
         ),
@@ -407,8 +409,8 @@ mod tests {
         for k in [
             "exam",
             "report",
+            "minireport",
             "attendance",
-            "presentation",
             "quiz",
             "other",
         ] {

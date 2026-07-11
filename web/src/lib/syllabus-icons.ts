@@ -9,7 +9,7 @@ import type { Component } from 'svelte'
 import IconAttendance from '~icons/ic/round-front-hand'
 import IconExam from '~icons/ic/round-history-edu'
 import IconOther from '~icons/ic/round-label'
-import IconPresentation from '~icons/ic/round-co-present'
+import IconMiniReport from '~icons/ic/round-edit-note'
 import IconQuiz from '~icons/ic/round-quiz'
 import IconReport from '~icons/ic/round-description'
 import IconHybrid from '~icons/ic/round-shuffle'
@@ -46,8 +46,8 @@ export interface KindStyle {
 export const EVAL_KIND: Record<string, KindStyle> = {
 	exam: { icon: IconExam, label: '試験', color: { light: '#fa285c', dark: '#fb7e8c' } },
 	report: { icon: IconReport, label: 'レポート', color: { light: '#1a8fef', dark: '#65b0fb' } },
-	attendance: { icon: IconAttendance, label: '出席・参加', color: { light: '#1da751', dark: '#26cb64' } },
-	presentation: { icon: IconPresentation, label: '発表', color: { light: '#be7c18', dark: '#e79720' } },
+	minireport: { icon: IconMiniReport, label: '小レポート', color: { light: '#1da09a', dark: '#26c3bc' } },
+	attendance: { icon: IconAttendance, label: '意欲・参加', color: { light: '#1da751', dark: '#26cb64' } },
 	quiz: { icon: IconQuiz, label: '小テスト', color: { light: '#a362f9', dark: '#ba93fb' } },
 	other: { icon: IconOther, label: 'その他', color: { light: '#788fa7', dark: '#9badc1' } },
 }
