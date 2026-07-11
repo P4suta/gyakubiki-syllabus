@@ -7,7 +7,7 @@
 #[must_use]
 pub fn eval_type(item: &str) -> &'static str {
     const TABLE: &[(&str, &[&str])] = &[
-        ("exam", &["試験", "テスト", "期末", "中間", "定期"]),
+        ("exam", &["試験", "テスト", "定期"]),
         ("report", &["レポート", "課題", "提出", "作品", "小論"]),
         (
             "attendance",
@@ -31,6 +31,12 @@ pub fn eval_type(item: &str) -> &'static str {
         {
             return kind_static(kind);
         }
+    }
+    // Bare 期末/中間 (e.g.「期末評価」) reads as an exam — but only when nothing
+    // more specific matched:「期末レポート」is a report, same as the plan-kind
+    // classifier treats it.
+    if item.contains("期末") || item.contains("中間") {
+        return "exam";
     }
     "other"
 }
@@ -86,6 +92,18 @@ mod tests {
         assert_eq!(eval_type("最終発表"), "presentation");
         assert_eq!(eval_type("毎回の小テスト"), "quiz");
         assert_eq!(eval_type("その他"), "other");
+    }
+
+    #[test]
+    fn interim_final_qualifiers_do_not_hijack_the_category() {
+        // 中間レポート + 期末レポート is a report course, exactly as
+        // 中間試験 + 期末試験 is an exam course — the qualifier must not win.
+        assert_eq!(eval_type("中間レポート"), "report");
+        assert_eq!(eval_type("期末レポート"), "report");
+        assert_eq!(eval_type("中間発表"), "presentation");
+        // Bare 期末/中間 with no category word still reads as an exam.
+        assert_eq!(eval_type("期末評価"), "exam");
+        assert_eq!(eval_type("中間"), "exam");
     }
 
     #[test]
