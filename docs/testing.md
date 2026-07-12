@@ -26,7 +26,7 @@ is on-screen-but-mispositioned. The layers below close those gaps.
 | Fuzzing (parsers) | `cargo-fuzz` | weekly, advisory | `just fuzz <target>` |
 | Mutation (Rust: core + tested cli logic) | `cargo-mutants` | weekly, advisory | `just mutants` |
 | Mutation (web lib) | Stryker | weekly, advisory | `just stryker` |
-| Mutation (PR diff, changed lines) | `cargo-mutants --in-diff` / Stryker `--since` | per-PR, advisory (non-blocking) | — |
+| Mutation (PR diff, changed code) | `cargo-mutants --in-diff` / Stryker `--mutate` changed files | per-PR, advisory (non-blocking) | — |
 
 ## Techniques
 
@@ -61,7 +61,7 @@ is on-screen-but-mispositioned. The layers below close those gaps.
   (`fingerprint.rs`), and `insta` for generated TS/MD (`fields.rs`).
 - **Mutation testing**: measures whether the suite *kills* injected bugs. Advisory
   — surfaced a real gap once (an arc test that ignored the dash gap). Runs full
-  weekly and per-PR on just the changed lines (`--in-diff` / `--since`) for fast
+  weekly and per-PR on just the changed code (`--in-diff` / changed-file `--mutate`) for fast
   feedback. Rust scope (all of `syllabus-core` plus the tested `syllabus-cli`
   parsers/converters) is declared in `.cargo/mutants.toml`; the web scope in
   `web/stryker.conf.json`. Both exclude data tables and the worker/network/IO

@@ -131,11 +131,17 @@ jobs:
           fetch-depth: 0
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile
-      # --since limits mutation to files changed vs the base branch.
+      # Stryker has no git-diff flag, so pass the changed lib sources (whole
+      # files, minus tests) to --mutate. --relative yields web-relative paths.
       - name: mutate changed files
         env:
           BASE_REF: ${{ github.base_ref }}
-        run: bunx stryker run --since "origin/$BASE_REF"
+        run: |
+          mapfile -t FILES < <(git diff --relative --name-only --diff-filter=d \
+            "origin/$BASE_REF"...HEAD -- 'src/lib/**/*.ts' ':!src/lib/**/*.test.ts' ':!src/lib/**/*.spec.ts')
+          if [ ${#FILES[@]} -eq 0 ]; then echo "No lib source changed; nothing to mutate."; exit 0; fi
+          printf 'Mutating: %s\n' "${FILES[@]}"
+          bunx stryker run --mutate "$(IFS=,; echo "${FILES[*]}")"
       - uses: actions/upload-artifact@v4
         if: ${{ !cancelled() }}
         with:
