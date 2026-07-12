@@ -164,6 +164,15 @@ mod tests {
     }
 
     #[test]
+    fn the_last_known_semester_still_beats_an_unknown() {
+        // 後期 has the highest domain order (8); dropping its arm would tie it with
+        // the unknowns, so pin that a known label wins even against an unknown that
+        // precedes it lexically (AAA < 後).
+        let got = sort_semesters(&set(&["AAA", "後期"]));
+        assert_eq!(got, ["後期", "AAA"]);
+    }
+
+    #[test]
     fn sonota_campus_sorts_before_a_lexically_earlier_unknown() {
         // その他 (order 3) sits between the known campuses and the unknowns, so it
         // must beat an unknown label even one that would precede it lexically.
