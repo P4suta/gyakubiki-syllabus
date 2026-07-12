@@ -572,6 +572,33 @@ mod tests {
     }
 
     #[test]
+    fn exposes_the_dataset_metadata() {
+        let e = engine_of(sample());
+        assert_eq!(e.year(), "2026");
+        assert_eq!(e.generated_at(), "2026-05-31T00:00:00Z");
+    }
+
+    #[test]
+    fn grid_places_only_the_named_semester() {
+        let e = engine_of(sample());
+        let all = e.filter(&Filters::default());
+        let cells: Vec<(u8, u8, Vec<usize>)> = e
+            .grid(&all, Some("2学期"))
+            .cells()
+            .map(|(d, p, idx)| (d.get(), p.get(), idx.iter().map(|i| i.get()).collect()))
+            .collect();
+        // 002 (2学期, 火2 = day1/period2) is placed; 001 (1学期, 月1) is filtered out.
+        assert!(
+            cells.contains(&(1, 2, vec![1])),
+            "002 belongs in the 2学期 grid: {cells:?}"
+        );
+        assert!(
+            !cells.iter().any(|(d, p, _)| (*d, *p) == (0, 1)),
+            "001 (1学期) must not appear: {cells:?}"
+        );
+    }
+
+    #[test]
     fn filters_by_semester_first_term() {
         let e = engine_of(sample());
         assert_eq!(

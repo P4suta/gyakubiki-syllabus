@@ -39,4 +39,14 @@ exclude_re = [
     # negative alike — the guard boundary is never observable.
     "match guard depth > 0 with true in open_paren_debt",
     "replace > with >= in open_paren_debt",
+    # BitSet::empty is literally `Self::default()`, so the `Default::default()`
+    # replacement is the same value.
+    "replace BitSet::empty -> Self with Default::default",
+    # search's `count > 0` only guards adding `weight * 0 = 0`; `>= 0` adds a zero
+    # score and the spans were already collected, so the result is identical.
+    "replace > with >= in SearchIndex::search",
+    # split_semester's `colon + 1` skips the delimiter; `* 1` keeps a leading ':'
+    # in `rest`, but its only consumer (parse_jikanwari) scans the whole string
+    # with find_day/find_period, which are unaffected by the leading char.
+    'replace \+ with \* in split_semester',
 ]

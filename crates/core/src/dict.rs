@@ -132,6 +132,46 @@ mod tests {
     }
 
     #[test]
+    fn semester_domain_order_covers_every_label() {
+        // Every domain label in a scrambled set must come back in domain order —
+        // pins each arm of `semester_order`, and (via 通年 < 前期 < 後期, which is
+        // the reverse of their lexical order) that the ordering is not lexical.
+        let all = set(&[
+            "後期",
+            "前期",
+            "通年",
+            "2学期後半",
+            "2学期前半",
+            "2学期",
+            "1学期後半",
+            "1学期前半",
+            "1学期",
+        ]);
+        assert_eq!(
+            sort_semesters(&all),
+            [
+                "1学期",
+                "1学期前半",
+                "1学期後半",
+                "2学期",
+                "2学期前半",
+                "2学期後半",
+                "通年",
+                "前期",
+                "後期",
+            ]
+        );
+    }
+
+    #[test]
+    fn sonota_campus_sorts_before_a_lexically_earlier_unknown() {
+        // その他 (order 3) sits between the known campuses and the unknowns, so it
+        // must beat an unknown label even one that would precede it lexically.
+        let got = sort_campuses(&set(&["あ大学", "その他"]));
+        assert_eq!(got, ["その他", "あ大学"]);
+    }
+
+    #[test]
     fn sonota_catch_all_sorts_last_in_departments_and_kubun() {
         // その他 begins with a hiragana (U+305D) that would sort *before* the
         // kanji-led names lexically; the catch-all must still land last.

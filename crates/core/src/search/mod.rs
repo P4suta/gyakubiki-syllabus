@@ -376,6 +376,24 @@ mod tests {
     }
 
     #[test]
+    fn len_and_is_empty_track_the_doc_count() {
+        let idx = SearchIndex::build([doc("a", "b", "001"), doc("c", "d", "002")]);
+        assert_eq!(idx.len(), 2);
+        assert!(!idx.is_empty());
+        let empty = SearchIndex::build(Vec::<DocFields<'static>>::new());
+        assert_eq!(empty.len(), 0);
+        assert!(empty.is_empty());
+    }
+
+    #[test]
+    fn score_is_field_weight_times_occurrence_count() {
+        // 学 appears twice in the name; Name weight is 3.0, so the score is 6.0 —
+        // pins the multiply (a `+` would give 3.0 + 2 = 5.0).
+        let idx = SearchIndex::build([doc("学学", "x", "001")]);
+        assert_eq!(idx.search("学", all(1))[0].score, 6.0);
+    }
+
+    #[test]
     fn finds_a_name_match_and_reports_its_span() {
         let idx = SearchIndex::build([doc("微分積分学", "山田 太郎", "001")]);
         let hits = idx.search("積分", all(1));
