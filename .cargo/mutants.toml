@@ -1,0 +1,21 @@
+# cargo-mutants scope — declares which source is worth mutating, so the run no
+# longer depends on a `--package` flag or prose in docs/testing.md.
+#
+# Mutation testing measures whether the suite *kills* injected bugs, so it only
+# pays off on code the tests actually assert against. We mutate the pure logic —
+# all of syllabus-core plus the tested parsers/converters in syllabus-cli — and
+# exclude the surfaces other layers cover instead: the wasm boundary (wasm-pack
+# node tests), and the CLI's network / scrape / IO / terminal plumbing (E2E and
+# integration tests, not unit assertions). Mutants there survive by design and
+# would only add noise.
+exclude_globs = [
+    "crates/wasm/**",
+    "crates/cli/src/main.rs",
+    "crates/cli/src/net.rs",
+    "crates/cli/src/io.rs",
+    "crates/cli/src/commit.rs",
+    "crates/cli/src/banner.rs",
+    "crates/cli/src/term.rs",
+    "crates/cli/src/fetch/**",
+    "crates/cli/src/fetch_details/**",
+]

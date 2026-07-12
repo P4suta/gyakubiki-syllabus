@@ -4,6 +4,7 @@ import {
 	courseLanguage,
 	decodeNumbering,
 	formatProse,
+	isRelatedLabel,
 	linkifyText,
 	parseTeachers,
 	splitRelated,
@@ -32,6 +33,22 @@ describe('classifyGoals', () => {
 		expect(classifyGoals(['36の母音を発音できる'])[0].text).toBe('36の母音を発音できる')
 		// But a real enumeration marker is still stripped.
 		expect(classifyGoals(['1. 課題を分析できる'])[0].text).toBe('課題を分析できる')
+	})
+	it('strips varied enumeration markers (paren / circled / bullet)', () => {
+		expect(classifyGoals(['(1) 説明できる'])[0].text).toBe('説明できる')
+		expect(classifyGoals(['① 説明できる'])[0].text).toBe('説明できる')
+		expect(classifyGoals(['・説明できる'])[0].text).toBe('説明できる')
+	})
+	it('trims whitespace inside the 【tag】', () => {
+		expect(classifyGoals(['【 学部卒 】課題を解決できる'])[0].tag).toBe('学部卒')
+	})
+	it('only a 【tag】 at the very start is lifted', () => {
+		const g = classifyGoals(['前置き【区分】本文できる'])
+		expect(g[0].tag).toBeUndefined()
+		expect(g[0].text).toBe('前置き【区分】本文できる')
+	})
+	it('can-do requires 〜できる at the END, not mid-sentence', () => {
+		expect(classifyGoals(['できるだけ努力する'])[0].canDo).toBe(false)
 	})
 })
 
@@ -77,6 +94,10 @@ describe('decodeNumbering', () => {
 		expect(decodeNumbering('GEN-100')).toBeNull()
 		expect(decodeNumbering('')).toBeNull()
 	})
+	it('is fully anchored — extra leading/trailing characters do not match', () => {
+		expect(decodeNumbering('X01-0200-11')).toBeNull()
+		expect(decodeNumbering('01-0200-11X')).toBeNull()
+	})
 })
 
 describe('courseLanguage', () => {
@@ -85,6 +106,9 @@ describe('courseLanguage', () => {
 		expect(courseLanguage(['01-0200-11'])).toBeNull() // 日本語 = default, not surfaced
 		expect(courseLanguage([])).toBeNull()
 		expect(courseLanguage(undefined)).toBeNull()
+	})
+	it('skips unparsable codes without throwing, then reads the next', () => {
+		expect(courseLanguage(['GEN-100', '01-0200-22'])).toBe('英語')
 	})
 })
 
@@ -99,6 +123,16 @@ describe('formatProse', () => {
 			{ kind: 'paragraph', items: ['ただの一文です。'] },
 		])
 	})
+	it('a blank line flushes and separates paragraphs', () => {
+		expect(formatProse('前段です。\n\n後段です。')).toEqual([
+			{ kind: 'paragraph', items: ['前段です。'] },
+			{ kind: 'paragraph', items: ['後段です。'] },
+		])
+	})
+	it('recognises varied bullet markers (circled / parenthesised)', () => {
+		expect(formatProse('①一つ目\n②二つ目')).toEqual([{ kind: 'list', items: ['一つ目', '二つ目'] }])
+		expect(formatProse('(1)甲\n(2)乙')).toEqual([{ kind: 'list', items: ['甲', '乙'] }])
+	})
 })
 
 describe('splitRelated', () => {
@@ -112,6 +146,27 @@ describe('splitRelated', () => {
 	})
 	it('a name-only entry produces no links', () => {
 		expect(splitRelated('「学問基礎論」', known).every((p) => !p.code)).toBe(true)
+	})
+	it('preserves the exact text around each code, in order', () => {
+		expect(splitRelated('前07011中28008後', known)).toEqual([
+			{ text: '前' },
+			{ text: '07011', code: '07011' },
+			{ text: '中' },
+			{ text: '28008', code: '28008' },
+			{ text: '後' },
+		])
+	})
+	it('a code at the very start adds no leading empty part', () => {
+		expect(splitRelated('07011のみ', known)).toEqual([
+			{ text: '07011', code: '07011' },
+			{ text: 'のみ' },
+		])
+	})
+	it('a code at the very end adds no trailing empty part', () => {
+		expect(splitRelated('科目は07011', known)).toEqual([
+			{ text: '科目は' },
+			{ text: '07011', code: '07011' },
+		])
 	})
 })
 
@@ -154,5 +209,20 @@ describe('linkifyText', () => {
 		const links = parts.filter((p) => p.href)
 		expect(links).toHaveLength(1)
 		expect(links[0].text).toBe('『経済学基礎』')
+	})
+	it('a link at the very start adds no leading empty text part', () => {
+		const parts = linkifyText('『本』の話')
+		expect(parts[0].kind).toBe('title')
+		expect(parts.some((p) => p.text === '')).toBe(false)
+	})
+})
+
+describe('isRelatedLabel', () => {
+	it('matches the related-courses / COMPUTER LINK labels only', () => {
+		expect(isRelatedLabel('関連科目')).toBe(true)
+		expect(isRelatedLabel('RELATED COURSES')).toBe(true)
+		expect(isRelatedLabel('COMPUTER LINK')).toBe(true)
+		expect(isRelatedLabel('到達目標')).toBe(false)
+		expect(isRelatedLabel('')).toBe(false)
 	})
 })

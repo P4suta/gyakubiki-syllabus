@@ -5,12 +5,14 @@
   "testRunner": "vitest",
   "reporters": ["progress", "clear-text", "html"],
   "coverageAnalysis": "perTest",
-  "_mutate_comment": "Logic-bearing modules. gestures.ts is included now that swipeNavigate is unit-tested in jsdom. Omitted: syllabus-icons.ts (a presentation data table — mutating emoji/colour literals reflects data, not a test weakness).",
+  "_mutate_comment": "Logic-bearing modules backed by dedicated unit tests. gestures.ts is included for its pure helpers (shouldCommit/rubberBand/clamp); its swipeNavigate DOM action is inline-disabled (`// Stryker disable all`) because Stryker's vitest runner drives only the `node` project, not the jsdom one that covers it. Omitted: syllabus-icons.ts and sdgs.ts (presentation data tables — mutating colour/title literals reflects data, not a test weakness) and contrast.ts (no dedicated test to measure against).",
   "mutate": [
     "src/lib/eval-chart.ts",
     "src/lib/colors.ts",
     "src/lib/semester.ts",
-    "src/lib/gestures.ts"
+    "src/lib/gestures.ts",
+    "src/lib/detail-format.ts",
+    "src/lib/plan-codec.ts"
   ],
   "ignorePatterns": ["src/wasm", "dist", "test-results", "playwright-report"],
   "thresholds": { "high": 90, "low": 75, "break": 70 }

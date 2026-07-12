@@ -24,8 +24,9 @@ is on-screen-but-mispositioned. The layers below close those gaps.
 | E2E: accessibility (WCAG 2 A/AA) | `@axe-core/playwright` | CI `e2e` | `bun run test:e2e` |
 | E2E: **visual** (screenshot diff) | Playwright `toHaveScreenshot` | CI `e2e` (Linux) | `bun run test:e2e` |
 | Fuzzing (parsers) | `cargo-fuzz` | weekly, advisory | `just fuzz <target>` |
-| Mutation (Rust core) | `cargo-mutants` | weekly, advisory | `just mutants` |
+| Mutation (Rust: core + tested cli logic) | `cargo-mutants` | weekly, advisory | `just mutants` |
 | Mutation (web lib) | Stryker | weekly, advisory | `just stryker` |
+| Mutation (PR diff, changed code) | `cargo-mutants --in-diff` / Stryker `--mutate` changed files | per-PR, advisory (non-blocking) | — |
 
 ## Techniques
 
@@ -59,8 +60,12 @@ is on-screen-but-mispositioned. The layers below close those gaps.
 - **Snapshots**: byte-exact golden (`golden_convert.rs`), semantic fingerprint
   (`fingerprint.rs`), and `insta` for generated TS/MD (`fields.rs`).
 - **Mutation testing**: measures whether the suite *kills* injected bugs. Advisory
-  (weekly) — surfaced a real gap once (an arc test that ignored the dash gap).
-  Excludes data tables and the worker/network code, which other layers cover.
+  — surfaced a real gap once (an arc test that ignored the dash gap). Runs full
+  weekly and per-PR on just the changed code (`--in-diff` / changed-file `--mutate`) for fast
+  feedback. Rust scope (all of `syllabus-core` plus the tested `syllabus-cli`
+  parsers/converters) is declared in `.cargo/mutants.toml`; the web scope in
+  `web/stryker.conf.json`. Both exclude data tables and the worker/network/IO
+  code, which other layers cover.
 
 ## Determinism notes
 

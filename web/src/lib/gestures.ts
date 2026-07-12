@@ -61,6 +61,11 @@ export interface SwipeNavigateOptions {
 	canNext: () => boolean
 }
 
+// Stryker disable all: this touch/DOM action is exercised by the jsdom vitest
+// project (gestures.svelte.test.ts) + the E2E gesture specs, but Stryker's
+// vitest runner executes only the `node` project — so every mutant here reports
+// as NoCoverage, a tool artifact, not a test gap. The pure helpers above stay
+// mutated. Re-enable if the runner learns to drive both vitest projects.
 /**
  * Horizontal swipe navigation with finger-follow and edge rubber-banding. Only
  * hijacks once the gesture is clearly horizontal, so vertical scrolling is never
@@ -145,3 +150,4 @@ export function swipeNavigate(node: HTMLElement, options: SwipeNavigateOptions) 
 		},
 	}
 }
+// Stryker restore all

@@ -1,12 +1,15 @@
 name: Mutation
 
 # Mutation testing: inject small bugs and check the suite kills them — measures
-# whether the tests actually catch regressions (vs merely running). Weekly plus
-# on-demand; never gates a PR (it is slow and advisory, like Fuzz).
+# whether the tests actually catch regressions (vs merely running). Two modes,
+# both advisory (never gate a PR, like Fuzz):
+#   - full   — weekly + on demand, the whole scoped surface (slow).
+#   - PR diff — every PR, only the changed lines (fast feedback).
 on:
   schedule:
     - cron: "0 5 * * 1" # Mondays 05:00 UTC
   workflow_dispatch:
+  pull_request:
 
 permissions:
   contents: read
@@ -16,29 +19,57 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # PR path filter — the diff jobs only run for the language that changed.
+  changes:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      rust: ${{ steps.filter.outputs.rust }}
+      web: ${{ steps.filter.outputs.web }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            rust:
+              - 'crates/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - 'rust-toolchain.toml'
+              - '.cargo/mutants.toml'
+              - '.github/workflows/mutants.yml'
+            web:
+              - 'web/src/lib/**'
+              - 'web/stryker.conf.json'
+              - '.github/workflows/mutants.yml'
+
+  # === Full run: weekly + on demand (slow, advisory) ===
   cargo-mutants:
-    name: cargo-mutants (core)
+    name: cargo-mutants (full)
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - uses: actions-rust-lang/setup-rust-toolchain@v1
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-mutants
-      # The proptest-heavy core is where mutation testing pays off; --timeout
-      # guards mutants that spin an infinite loop.
-      - name: mutate syllabus-core
-        run: cargo mutants --package syllabus-core --timeout 60 -j 2
+      # cargo-mutants (+ toolchain helpers) from .mise.toml — same version as local.
+      - uses: jdx/mise-action@v2
+      # Scope (core + tested cli logic, minus net/IO) lives in mutants.toml.
+      # --timeout guards mutants that spin an infinite loop.
+      - name: mutate
+        run: cargo mutants --timeout 60 -j 2
       - uses: actions/upload-artifact@v4
         if: ${{ !cancelled() }}
         with:
-          name: mutants-core
+          name: mutants-full
           path: mutants.out/
           retention-days: 14
           if-no-files-found: ignore
 
   stryker:
-    name: Stryker (web lib)
+    name: Stryker (web lib, full)
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -52,6 +83,69 @@ jobs:
         if: ${{ !cancelled() }}
         with:
           name: stryker-report
+          path: web/reports/
+          retention-days: 14
+          if-no-files-found: ignore
+
+  # === PR-diff run: fast, changed lines only, advisory (continue-on-error) ===
+  cargo-mutants-diff:
+    name: cargo-mutants (PR diff)
+    needs: changes
+    if: github.event_name == 'pull_request' && needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: jdx/mise-action@v2
+      - name: diff vs base
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: git diff "origin/$BASE_REF"...HEAD > pr.diff
+      # --in-diff restricts mutants to lines the PR touched (still inside the
+      # mutants.toml scope).
+      - name: mutate changed lines
+        run: cargo mutants --in-diff pr.diff --timeout 60 -j 2
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: mutants-pr-diff
+          path: mutants.out/
+          retention-days: 14
+          if-no-files-found: ignore
+
+  stryker-diff:
+    name: Stryker (web lib, PR diff)
+    needs: changes
+    if: github.event_name == 'pull_request' && needs.changes.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      # Stryker has no git-diff flag, so pass the changed lib sources (whole
+      # files, minus tests) to --mutate. --relative yields web-relative paths.
+      - name: mutate changed files
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          mapfile -t FILES < <(git diff --relative --name-only --diff-filter=d \
+            "origin/$BASE_REF"...HEAD -- 'src/lib/**/*.ts' ':!src/lib/**/*.test.ts' ':!src/lib/**/*.spec.ts')
+          if [ ${#FILES[@]} -eq 0 ]; then echo "No lib source changed; nothing to mutate."; exit 0; fi
+          printf 'Mutating: %s\n' "${FILES[@]}"
+          bunx stryker run --mutate "$(IFS=,; echo "${FILES[*]}")"
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: stryker-pr-diff
           path: web/reports/
           retention-days: 14
           if-no-files-found: ignore

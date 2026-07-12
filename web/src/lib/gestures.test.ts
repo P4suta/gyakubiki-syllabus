@@ -83,6 +83,12 @@ describe('shouldCommit', () => {
 		expect(shouldCommit(10, 0.4, size, { velocityThreshold: 0.5 })).toBe(false)
 	})
 
+	it('is a strict threshold — exactly at the boundary does NOT commit', () => {
+		// distance == size*ratio and speed == threshold are both "not past it yet".
+		expect(shouldCommit(100, 0, size, { distanceRatio: 0.25 })).toBe(false) // == 100
+		expect(shouldCommit(10, 0.5, size, { velocityThreshold: 0.5 })).toBe(false) // == 0.5
+	})
+
 	it('uses magnitudes only (direction is the caller’s concern)', () => {
 		// Same magnitude → same decision.
 		expect(shouldCommit(150, 0, size)).toBe(shouldCommit(150, 0, size))
