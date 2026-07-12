@@ -43,5 +43,5 @@ Thumbs.db
 # Coverage
 *.out
 
-# cargo-mutants output
-mutants.out/
+# cargo-mutants output (mutants.out/ and the rotated mutants.out.old/)
+mutants.out*/
