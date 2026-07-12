@@ -142,6 +142,20 @@ mod tests {
     }
 
     #[test]
+    fn bunrui_tally_only_counts_a_non_empty_label() {
+        let summary = summarize_credits(
+            [
+                course(Some("2"), 0, Some("必修"), None),
+                course(Some("2"), 0, Some(""), None), // empty 分類 → no tally
+            ]
+            .iter(),
+            &["講義".to_owned()],
+        );
+        let keys: Vec<&str> = summary.by_bunrui.iter().map(|t| t.key.as_str()).collect();
+        assert_eq!(keys, ["必修"]);
+    }
+
+    #[test]
     fn totals_are_the_sum_of_parts_and_count_uncredited() {
         let kubun = ["講義".to_owned(), "演習".to_owned()];
         let courses = [

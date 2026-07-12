@@ -562,7 +562,22 @@ mod tests {
             },
         ]);
         assert_eq!(data.courses.len(), 1);
-        assert_eq!(data.courses[0].slots.len(), 2);
+        // The merge must add the *new* slot, not re-push the shared one.
+        let slots: Vec<(i32, i32)> = data.courses[0].slots.iter().map(|s| (s.d, s.p)).collect();
+        assert_eq!(slots, [(0, 1), (2, 3)]); // 月1 then the merged 水3
+    }
+
+    #[test]
+    fn day_index_covers_thursday_through_sunday() {
+        // 木/金/土/日 each resolve to their column; a dropped arm loses that slot.
+        let data = convert(&[RawCourse {
+            jikanwari:
+                "1学期: 木曜日１時限, 1学期: 金曜日２時限, 1学期: 土曜日３時限, 1学期: 日曜日４時限"
+                    .into(),
+            ..raw("001", "A")
+        }]);
+        let days: Vec<i32> = data.courses[0].slots.iter().map(|s| s.d).collect();
+        assert_eq!(days, [3, 4, 5, 6]); // 木, 金, 土, 日
     }
 
     #[test]

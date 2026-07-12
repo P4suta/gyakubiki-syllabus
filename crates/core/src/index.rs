@@ -131,4 +131,10 @@ mod tests {
         assert!(Period::new(0).is_none());
         assert!(Period::new(7).is_none());
     }
+
+    #[test]
+    fn period_get_returns_the_wrapped_number() {
+        assert_eq!(Period::new(3).unwrap().get(), 3);
+        assert_eq!(Period::new(6).unwrap().get(), 6);
+    }
 }

@@ -183,6 +183,17 @@ mod tests {
     }
 
     #[test]
+    fn day_count_and_has_saturday_track_the_saturday_flag() {
+        let no_courses = || Vec::<(CourseIndex, &[GridSlot])>::new();
+        let weekdays = build_grid(no_courses(), None, TSUUNEN, false);
+        assert_eq!(weekdays.day_count(), 5);
+        assert!(!weekdays.has_saturday());
+        let with_sat = build_grid(no_courses(), None, TSUUNEN, true);
+        assert_eq!(with_sat.day_count(), 6);
+        assert!(with_sat.has_saturday());
+    }
+
+    #[test]
     fn empty_courses_yield_no_cells() {
         let g = grid(&[], None);
         assert_eq!(g.cells().count(), 0);
