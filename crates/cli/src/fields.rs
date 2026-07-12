@@ -237,6 +237,27 @@ mod tests {
     }
 
     #[test]
+    fn generate_writes_then_check_roundtrips() {
+        // Exercises the write/verify logic (not just the renderers): write the
+        // artifacts, confirm --check accepts them, then confirm a drifted file is
+        // rejected. Uses a throwaway root so the real repo files are untouched.
+        let dir = std::env::temp_dir().join(format!("syllabus-fieldspec-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        generate(&dir, false).expect("write artifacts");
+        assert!(
+            dir.join(TS_PATH).exists(),
+            "generate(false) must write the TS file"
+        );
+        generate(&dir, true).expect("--check accepts freshly-written files");
+        std::fs::write(dir.join(TS_PATH), "drifted\n").unwrap();
+        assert!(
+            generate(&dir, true).is_err(),
+            "--check must reject a stale file"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn spec_covers_every_populated_detail_field() {
         // A fully-populated detail: every content field non-empty so it serializes.
         let detail = SanshoDetail {

@@ -88,6 +88,80 @@ fn round_trips_through_json() {
 }
 
 #[test]
+fn office_hours_route_on_weekday_plus_time_alone() {
+    // 曜日 + 時間 (no 場所) still routes to the office-hour extractor.
+    let html = "<table><tr><th>氏名</th><th>曜日</th><th>時間</th></tr>\
+                <tr><td>山田</td><td>月</td><td>10:00</td></tr></table>";
+    let d = parse_sansho_html("X", html);
+    assert_eq!(d.office_hour.len(), 1);
+    assert_eq!(d.office_hour[0].day, "月");
+}
+
+#[test]
+fn office_hour_data_row_with_basho_in_a_value_is_not_dropped_as_header() {
+    // Only a <th> cell naming 曜日/場所 marks the header — a data value that
+    // merely contains 場所 must still be kept.
+    let html = "<table><tr><th>氏名</th><th>曜日</th><th>時間</th><th>場所</th></tr>\
+                <tr><td>山田</td><td>月</td><td>10:00</td><td>第二場所</td></tr></table>";
+    let d = parse_sansho_html("X", html);
+    assert_eq!(d.office_hour.len(), 1);
+    assert_eq!(d.office_hour[0].place, "第二場所");
+}
+
+#[test]
+fn teacher_name_skips_a_leading_empty_cell() {
+    // The name is the first non-empty data cell, not merely the first non-th one.
+    let html = "<table><tr><th>氏名</th><th>所属</th></tr>\
+                <tr><td></td><td>山田太郎</td><td>理工学部</td></tr></table>";
+    let d = parse_sansho_html("X", html);
+    assert_eq!(d.teachers, vec!["山田太郎"]);
+}
+
+#[test]
+fn goals_require_a_numbered_row() {
+    // A 到達目標 row without a number is not captured (both signals required).
+    let html = "<table><tr><th>番号</th><th>到達目標</th></tr>\
+                <tr><th>1</th><td>目標A</td></tr>\
+                <tr><th>あ</th><td>目標B</td></tr></table>";
+    let d = parse_sansho_html("X", html);
+    assert_eq!(d.goals, vec!["目標A"]);
+}
+
+#[test]
+fn eval_header_row_is_skipped_by_either_keyword() {
+    // A 配分-only header (no 比重) must still be dropped, not read as a weight row.
+    let html = "<table><tr><th>配分</th><td>割合</td></tr>\
+                <tr><th>期末試験</th><td>60点</td></tr></table>";
+    let d = parse_sansho_html("X", html);
+    let eval = d.eval.expect("eval present");
+    assert_eq!(eval.rows.len(), 1);
+    assert!(eval.rows[0].item.contains("期末試験"));
+}
+
+#[test]
+fn generic_meta_rows_route_to_their_own_fields() {
+    let html = "<table>\
+        <tr><th>メディア授業科目</th><td>該当する</td></tr>\
+        <tr><th>受講生に求めるもの</th><td>予習必須</td></tr>\
+        <tr><th>授業時間外の学習</th><td>毎回2時間</td></tr>\
+        <tr><th>SDGs</th><td>4</td><td>7</td></tr></table>";
+    let d = parse_sansho_html("X", html);
+    assert!(d.delivery.expect("delivery present").is_media); // メディア: !value.is_empty()
+    assert_eq!(d.prereq.as_deref(), Some("予習必須")); // 求めるもの ||
+    assert_eq!(d.prep.as_deref(), Some("毎回2時間")); // 授業時間外 ||
+    assert_eq!(d.sdgs, vec!["4", "7"]); // parse_sdgs pulls the goal numbers
+}
+
+#[test]
+fn keywords_split_respects_a_stray_close_paren() {
+    // A lone ')' must not drive the paren depth negative and swallow the next
+    // delimiter — 「用語)」and「次の語」stay two keywords.
+    let html = "<table><tr><th>キーワード</th><td>用語)、次の語</td></tr></table>";
+    let d = parse_sansho_html("X", html);
+    assert_eq!(d.keywords, vec!["用語)", "次の語"]);
+}
+
+#[test]
 fn adversarial_inputs_do_not_panic() {
     for s in [
         "",

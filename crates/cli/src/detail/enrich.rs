@@ -276,6 +276,59 @@ mod tests {
     use super::classify_plan_kind;
 
     #[test]
+    fn enrich_derives_all_views_and_purifies_in_place() {
+        use super::enrich;
+        use crate::detail::model::{Delivery, Eval, EvalRow, PlanItem, SanshoDetail};
+        let mut d = SanshoDetail {
+            summary: Some("ＴＯＥＩＣ対策".into()), // full-width latin → folded
+            delivery: Some(Delivery {
+                mode: "stale".into(),
+                raw: "すべて対面".into(),
+                ..Default::default()
+            }),
+            eval: Some(Eval {
+                rows: vec![EvalRow {
+                    item: "期末試験".into(),
+                    kind: "stale".into(),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }),
+            plan: vec![PlanItem {
+                n: 1,
+                text: "ガイダンス".into(),
+                ..Default::default()
+            }],
+            prep: Some("毎回２時間の学習が必要".into()), // full-width digit
+            keywords: vec!["方程式(Euler".into(), "equation)".into()],
+            ..Default::default()
+        };
+        enrich(&mut d);
+        assert_eq!(d.summary.as_deref(), Some("TOEIC対策")); // purify_in_place + purify_opt
+        assert_eq!(d.delivery.unwrap().mode, "onsite"); // re-derived past the !raw.is_empty() guard
+        assert_eq!(d.eval.unwrap().rows[0].kind, "exam"); // eval kind re-derived
+        assert_eq!(d.plan[0].kind.as_deref(), Some("start")); // plan classified
+        assert_eq!(d.prep_info.unwrap().hours, Some(2.0)); // prep parsed + kept by the filter
+        assert_eq!(d.keywords, vec!["方程式(Euler equation)"]); // keywords repaired
+    }
+
+    #[test]
+    fn enrich_keeps_prep_info_for_a_yoshu_only_note() {
+        // No hour figure, only a 予習 segment — prep_info must still be kept (pins
+        // the second `||` of the hours/yoshu/fukushu filter).
+        use super::enrich;
+        use crate::detail::model::SanshoDetail;
+        let mut d = SanshoDetail {
+            prep: Some("予習：次回の範囲を読む".into()),
+            ..Default::default()
+        };
+        enrich(&mut d);
+        let info = d.prep_info.expect("prep_info kept for a yoshu-only note");
+        assert_eq!(info.yoshu.as_deref(), Some("次回の範囲を読む"));
+        assert!(info.hours.is_none());
+    }
+
+    #[test]
     fn exam_needs_a_compound_exam_term() {
         assert_eq!(classify_plan_kind("期末試験", 15).as_deref(), Some("exam"));
         assert_eq!(
@@ -328,10 +381,11 @@ mod tests {
 
     #[test]
     fn start_only_on_first_session() {
-        assert_eq!(
-            classify_plan_kind("オリエンテーション", 1).as_deref(),
-            Some("start")
-        );
+        // Each intro keyword must trigger on session 1 (pins every `||` branch).
+        for kw in ["オリエンテーション", "ガイダンス", "イントロダクション"]
+        {
+            assert_eq!(classify_plan_kind(kw, 1).as_deref(), Some("start"), "{kw}");
+        }
         // Same word later in the term is not a "start" node.
         assert_eq!(classify_plan_kind("ガイダンス", 8), None);
     }
@@ -361,6 +415,33 @@ mod tests {
         // A real title is never hidden, even alongside a "なし".
         let info = super::split_textbooks("教科書はなし。参考書『統計学入門』を適宜参照。");
         assert!(!info.is_none);
+    }
+
+    #[test]
+    fn textbooks_none_needs_short_untitled_and_a_null_keyword() {
+        // All three signals required; drop any one and it is NOT flagged none.
+        assert!(super::split_textbooks("特になし").is_none);
+        // A 「…」 quote counts as a title, so a bracketed なし is a real entry.
+        assert!(!super::split_textbooks("「なし」").is_none);
+        // Long text is never flagged none, even when it contains a null keyword.
+        assert!(
+            !super::split_textbooks(
+                "教科書は特になし。資料はその都度こちらで配布しますのでご確認ください。"
+            )
+            .is_none
+        );
+    }
+
+    #[test]
+    fn repair_keywords_caps_a_runaway_unclosed_merge() {
+        // Never-closing fragments must be force-flushed at the merge cap (6) so a
+        // pathological input can't glue the whole list into one entry.
+        let got = super::repair_keywords(
+            ["a(", "b(", "c(", "d(", "e(", "f(", "g(", "h("]
+                .map(String::from)
+                .to_vec(),
+        );
+        assert_eq!(got.len(), 2, "cap must split the run: {got:?}");
     }
 
     #[test]
@@ -408,6 +489,17 @@ mod tests {
             super::parse_prep("授業期間中に1日1時間、終了後に5時間程度の復習。").hours,
             None
         );
+        // A single-figure range must bail on the dash itself (not the caps count),
+        // so every dash variant (～/〜/~) has to be recognised.
+        assert_eq!(super::parse_prep("2～3時間").hours, None);
+        assert_eq!(super::parse_prep("2〜3時間").hours, None);
+        assert_eq!(super::parse_prep("2~3時間").hours, None);
+    }
+
+    #[test]
+    fn prep_reads_full_width_digits() {
+        // 全角数字 must fold before the hour scan (exercises to_ascii_digits).
+        assert_eq!(super::parse_prep("毎回２時間の予習が必要").hours, Some(2.0));
     }
 
     #[test]
@@ -445,6 +537,8 @@ mod tests {
             super::purify_text("ＴＯＥＩＣ ８００点、Ｗで始まる"),
             "TOEIC 800点、Wで始まる"
         );
+        // Full-width lowercase latin folds too.
+        assert_eq!(super::purify_text("ｅｍａｉｌ"), "email");
         // Full-width punctuation/parens and half-width kana are preserved.
         assert_eq!(super::purify_text("（重要）：ﾃｽﾄ"), "（重要）：ﾃｽﾄ");
     }

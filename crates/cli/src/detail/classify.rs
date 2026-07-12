@@ -139,6 +139,14 @@ mod tests {
     }
 
     #[test]
+    fn attendance_reached_via_keyword_maps_back_to_attendance() {
+        // Exercises the keyword path (not the exact "学習意欲・授業参加度" arm), so
+        // kind_static("attendance") is actually invoked.
+        assert_eq!(eval_type("出席"), "attendance");
+        assert_eq!(eval_type("授業への参加"), "attendance");
+    }
+
+    #[test]
     fn eval_type_precedence_is_intentional() {
         // Characterization: for labels that hit several keyword groups the scan
         // order [quiz, minireport, exam, report, attendance] decides the
@@ -158,6 +166,17 @@ mod tests {
         assert_eq!(delivery_mode("オンライン（同時双方向型）"), "online");
         assert_eq!(delivery_mode("オンデマンド配信のみ"), "ondemand");
         assert_eq!(delivery_mode("未定"), "unknown");
+    }
+
+    #[test]
+    fn each_delivery_keyword_is_recognised_on_its_own() {
+        // Every ondemand/online signal must count alone — pins each `||` branch.
+        for s in ["オンデマンド", "録画", "配信"] {
+            assert_eq!(delivery_mode(s), "ondemand", "{s}");
+        }
+        for s in ["オンライン", "遠隔", "双方向", "同時"] {
+            assert_eq!(delivery_mode(s), "online", "{s}");
+        }
     }
 
     #[test]

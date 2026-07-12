@@ -18,4 +18,25 @@ exclude_globs = [
     "crates/cli/src/term.rs",
     "crates/cli/src/fetch/**",
     "crates/cli/src/fetch_details/**",
+    # palette.rs is the OKLCH colour derivation, pinned byte-for-byte by the
+    # `gen-palette --check` golden — mutating its arithmetic reflects the
+    # derivation, not a test gap (same call as the web sdgs/icons data tables).
+    "crates/cli/src/palette.rs",
+    # gen_sample.rs is the deterministic dummy-data generator (test tooling for
+    # E2E), not product logic.
+    "crates/cli/src/gen_sample.rs",
+]
+
+# Proven-equivalent mutants: no input distinguishes them from the original, so no
+# test can kill them. Excluded (with the reasoning) rather than left as noise.
+exclude_re = [
+    # eval_type's exact-match arms are a fast-path + vocabulary doc; the keyword
+    # scan below re-derives the identical label for each of the eight labels, so
+    # deleting an arm changes nothing observable.
+    "delete match arm .* in eval_type",
+    # open_paren_debt's `depth > 0` guard only stops the count going negative, but
+    # its sole caller (repair_keywords) flushes on `debt <= 0`, which treats 0 and
+    # negative alike — the guard boundary is never observable.
+    "match guard depth > 0 with true in open_paren_debt",
+    "replace > with >= in open_paren_debt",
 ]
