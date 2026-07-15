@@ -35,9 +35,15 @@ jobs:
           mkdir -p crates/cli/fuzz/corpus/fuzz_parse_sansho_html
           cp crates/cli/tests/fixtures/sansho_sample.html \
              crates/cli/fuzz/corpus/fuzz_parse_sansho_html/ || true
+      # cargo-fuzz defaults --target to the triple it was built for, and the
+      # install-action binary is musl — whose static libc cannot host ASan
+      # ("sanitizer is incompatible with statically linked libc"). Pin the real
+      # host triple instead.
       - name: fuzz
         working-directory: crates/cli/fuzz
-        run: cargo +nightly fuzz run ${{ matrix.target }} -- -max_total_time=120
+        run: |
+          cargo +nightly fuzz run ${{ matrix.target }} \
+            --target x86_64-unknown-linux-gnu -- -max_total_time=120
       - name: upload crashes
         if: failure()
         uses: actions/upload-artifact@v4
