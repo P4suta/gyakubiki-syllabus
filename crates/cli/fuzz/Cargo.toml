@@ -14,7 +14,7 @@ cargo-fuzz = true
 [dependencies]
 libfuzzer-sys = "0.4"
 syllabus-core = { path = "../../core" }
-syllabus-cli = { path = "../.." }
+syllabus-cli = { path = ".." }
 
 [[bin]]
 name = "fuzz_parse_jikanwari"
