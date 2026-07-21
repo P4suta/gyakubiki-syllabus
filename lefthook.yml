@@ -7,6 +7,16 @@
 # it rewrites the sample dataset, and its visual specs are runner-specific. Run
 # it on demand with `just e2e`.
 
+commit-msg:
+  commands:
+    # Conventional Commits feed release-please's version + CHANGELOG derivation.
+    # The lint is the earlier, local signal; committed.toml pins the accepted
+    # types. {1} = the commit-message file git hands the commit-msg hook. Do not
+    # bypass with --no-verify.
+    conventional-commit:
+      run: committed --commit-file {1}
+      fail_text: "commit message is not a valid Conventional Commit (see committed.toml)"
+
 pre-commit:
   parallel: true
   commands:
