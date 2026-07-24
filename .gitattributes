@@ -8,3 +8,6 @@
 *.woff binary
 *.woff2 binary
 *.wasm binary
+
+*.bat text eol=crlf
+*.cmd text eol=crlf
