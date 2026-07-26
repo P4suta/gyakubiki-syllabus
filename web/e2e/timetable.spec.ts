@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { CARD, MOBILE, enter, pickSemester } from './helpers'
+import { CARD, enter, MOBILE, pickSemester } from './helpers'
 
 test.describe('timetable — desktop grid', () => {
 	test('shows weekday columns and period rows', async ({ page }) => {
@@ -16,7 +16,7 @@ test.describe('timetable — desktop grid', () => {
 		await enter(page)
 		await pickSemester(page, '1学期')
 		await page.locator(CARD).first().click()
-		await expect(page.getByRole('heading', { level: 2 })).toBeVisible()
+		await expect(page.getByRole('dialog').getByRole('heading', { level: 2 })).toBeVisible()
 	})
 })
 

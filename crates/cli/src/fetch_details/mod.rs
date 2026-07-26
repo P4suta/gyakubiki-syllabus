@@ -11,13 +11,16 @@
 mod client;
 mod ui;
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail, ensure};
+use chrono::{DateTime, Days, Utc};
 use clap::Args;
+use serde::{Deserialize, Serialize};
+use syllabus_core::{CourseCode, RawCourse};
 
 use crate::detail::{SanshoDetail, parse_sansho_html};
 use crate::io;
@@ -58,11 +61,10 @@ pub struct FetchDetailsArgs {
     /// Retries per course on transient errors.
     #[arg(long, default_value_t = 3)]
     retries: u32,
-    /// Treat a course as "scanned" (stop re-requesting it in scheduled runs) after
-    /// this many "no detail" responses at the same grid lastUpdate. `--force`
-    /// retries tombstoned courses anyway.
-    #[arg(long = "tombstone-after", default_value_t = 2)]
-    tombstone_after: u32,
+    /// Days before an officially confirmed unavailable course is retried.
+    /// Protocol, parse, HTTP, and transport errors are never cached this way.
+    #[arg(long = "unavailable-ttl-days", default_value_t = 30)]
+    unavailable_ttl_days: u64,
     /// Stop cleanly after this many seconds (for CI partial commits; 0 = unlimited).
     #[arg(long = "max-secs", default_value_t = 0)]
     max_secs: u64,
@@ -73,7 +75,7 @@ pub struct FetchDetailsArgs {
 
 /// Run the detail crawl end to end.
 pub fn run(args: FetchDetailsArgs) -> Result<()> {
-    let all = course_refs(&load_dir(&args.raw_dir)?);
+    let all = course_refs(&load_dir(&args.raw_dir)?)?;
 
     fs::create_dir_all(&args.out_dir).with_context(|| {
         format!(
@@ -82,10 +84,17 @@ pub fn run(args: FetchDetailsArgs) -> Result<()> {
         )
     })?;
 
-    let no_detail = load_no_detail(&args.out_dir);
-    let selected = select_courses(all, &args, &no_detail);
+    ensure!(
+        args.unavailable_ttl_days > 0 && args.unavailable_ttl_days <= 365,
+        "--unavailable-ttl-days must be in 1..=365"
+    );
+    let now = Utc::now();
+    let unavailable = load_unavailable(&args.out_dir)?;
+    let selected = select_courses(all, &args, &unavailable, now);
     if selected.is_empty() {
-        eprintln!("fetch-details: nothing to fetch (all up to date, tombstoned, or filtered out)");
+        eprintln!(
+            "fetch-details: nothing to fetch (all up to date, temporarily unavailable, or filtered out)"
+        );
         return Ok(());
     }
     ui::header(selected.len(), args.sleep_ms, args.jitter_ms, &args.out_dir);
@@ -115,10 +124,18 @@ pub fn run(args: FetchDetailsArgs) -> Result<()> {
         report.aborted,
     );
 
-    // Persist no-detail tombstones so scheduled runs stop re-requesting courses the
-    // server declines (saved before any bail below, so it always sticks).
-    let no_detail = update_no_detail(no_detail, &report, &selected, &args.out_dir);
-    save_no_detail(&args.out_dir, &no_detail)?;
+    // Only explicit official absence responses are cached, and only for a
+    // bounded TTL. Fatal protocol/parse/save failures are never converted into
+    // absence.
+    let unavailable = update_unavailable(
+        unavailable,
+        &report,
+        &selected,
+        &args.out_dir,
+        now,
+        args.unavailable_ttl_days,
+    )?;
+    save_unavailable(&args.out_dir, &unavailable)?;
 
     let attempted = report.fetched + report.skipped.len();
     if !report.diagnostics.is_empty() || report.aborted {
@@ -127,8 +144,11 @@ pub fn run(args: FetchDetailsArgs) -> Result<()> {
         ui::diagnosis(&headline, hint.as_deref(), &path);
     }
 
+    if let Some((course, error)) = &report.fatal_error {
+        bail!("fatal detail crawl failure for {course:?}: {error}");
+    }
     if report.aborted {
-        anyhow::bail!(
+        bail!(
             "circuit breaker tripped after {} consecutive server refusals — see the diagnosis above",
             args.max_consecutive_blocks
         );
@@ -136,7 +156,7 @@ pub fn run(args: FetchDetailsArgs) -> Result<()> {
     // A crawl that attempted real work but saved nothing is a silent systemic
     // failure (bad endpoint, blocked, changed HTML). Make it loud, not a green 0.
     if report.fetched == 0 && attempted >= 3 {
-        anyhow::bail!(
+        bail!(
             "fetched 0 of {attempted} attempted courses — systemic failure; see the diagnosis above and diagnostics/fetch-details.md"
         );
     }
@@ -224,7 +244,7 @@ fn write_diagnostics(report: &CrawlReport) -> Result<PathBuf> {
 }
 
 /// Load and merge every `*.json` under `dir` (the raw findPage pages).
-fn load_dir(dir: &std::path::Path) -> Result<Vec<syllabus_core::model::RawCourse>> {
+fn load_dir(dir: &std::path::Path) -> Result<Vec<syllabus_core::RawCourse>> {
     let mut files: Vec<PathBuf> = fs::read_dir(dir)
         .with_context(|| format!("failed to read raw directory {}", dir.display()))?
         .filter_map(|e| e.ok().map(|e| e.path()))
@@ -232,40 +252,67 @@ fn load_dir(dir: &std::path::Path) -> Result<Vec<syllabus_core::model::RawCourse
         .collect();
     files.sort();
     let loaded = io::load(&files)?;
-    for warning in &loaded.warnings {
-        eprintln!("{warning}");
-    }
     Ok(loaded.courses)
 }
 
-/// De-duplicate raw courses by `kogiCd` (first wins) into fetch targets.
-fn course_refs(raw: &[syllabus_core::model::RawCourse]) -> Vec<CourseRef> {
-    let mut seen = std::collections::HashSet::new();
+/// Validate the complete source list before making a request. Missing identifiers
+/// and duplicate/unsafe course codes are source-integrity failures, not values to
+/// skip or fabricate.
+fn course_refs(raw: &[syllabus_core::RawCourse]) -> Result<Vec<CourseRef>> {
+    ensure!(!raw.is_empty(), "raw course list is empty");
+    let mut seen = HashSet::new();
     raw.iter()
-        .filter_map(|r| {
-            let cd = r.kogi_cd.trim();
-            if cd.is_empty() || !seen.insert(cd.to_owned()) {
-                return None;
-            }
-            Some(CourseRef {
-                cd: cd.to_owned(),
-                kaiko_nendo: r.kaiko_nendo.clone().unwrap_or_default(),
-                pattern_id: r
-                    .syllabus_komoku_pattern_id
-                    .clone()
-                    .filter(|p| !p.is_empty())
-                    .unwrap_or_else(|| "4".to_owned()),
-                last_update: r.last_update.clone().unwrap_or_default(),
+        .enumerate()
+        .map(|(index, course)| {
+            let code = CourseCode::parse(&course.kogi_cd)
+                .with_context(|| format!("invalid course code at record {}", index + 1))?;
+            ensure!(
+                seen.insert(code.as_str().to_owned()),
+                "duplicate course code {:?}",
+                code.as_str()
+            );
+            let kaiko_nendo = course
+                .kaiko_nendo
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .context("course has no academic year")?;
+            ensure!(
+                kaiko_nendo.len() == 4 && kaiko_nendo.chars().all(|value| value.is_ascii_digit()),
+                "course {:?} has invalid academic year {:?}",
+                code.as_str(),
+                kaiko_nendo
+            );
+            let pattern_id = course
+                .syllabus_komoku_pattern_id
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .with_context(|| {
+                    format!("course {:?} has no syllabus pattern ID", code.as_str())
+                })?;
+            ensure!(
+                !pattern_id.chars().any(char::is_control),
+                "course {:?} has a control character in its pattern ID",
+                code.as_str()
+            );
+            Ok(CourseRef {
+                cd: code.as_str().to_owned(),
+                kaiko_nendo: kaiko_nendo.to_owned(),
+                pattern_id: pattern_id.to_owned(),
+                last_update: course.last_update.clone().unwrap_or_default(),
             })
         })
         .collect()
 }
 
-/// Apply `--only`, incremental skipping, no-detail tombstones, and `--limit`.
+/// Apply `--only`, incremental skipping, temporary official-unavailable state,
+/// and `--limit`.
 fn select_courses(
     all: Vec<CourseRef>,
     args: &FetchDetailsArgs,
-    no_detail: &HashMap<String, NoDetail>,
+    unavailable: &UnavailableState,
+    now: DateTime<Utc>,
 ) -> Vec<CourseRef> {
     let existing = existing_last_updates(&args.out_dir);
     filter_courses(
@@ -274,23 +321,21 @@ fn select_courses(
         &existing,
         args.force,
         args.limit,
-        no_detail,
-        args.tombstone_after,
+        unavailable,
+        &now,
     )
 }
 
-/// Pure selection: `--only` → skip already-fetched (incremental) and tombstoned
-/// no-detail courses → `--limit`. `--force` keeps everything. Split from the
-/// filesystem read so the day-to-day window advance is unit-testable.
-#[allow(clippy::too_many_arguments)]
+/// Pure selection: `--only` → skip already-fetched (incremental) and unexpired
+/// official-unavailable records → `--limit`. `--force` keeps everything.
 fn filter_courses(
     all: Vec<CourseRef>,
     only: Option<&str>,
     existing: &HashMap<String, String>,
     force: bool,
     limit: usize,
-    no_detail: &HashMap<String, NoDetail>,
-    tombstone_after: u32,
+    unavailable: &UnavailableState,
+    now: &DateTime<Utc>,
 ) -> Vec<CourseRef> {
     let only: Option<std::collections::HashSet<&str>> = only.map(|s| {
         s.split(',')
@@ -307,7 +352,7 @@ fn filter_courses(
                 || (existing
                     .get(&c.cd)
                     .is_none_or(|prev| prev != &c.last_update || c.last_update.is_empty())
-                    && !is_tombstoned(no_detail, &c.cd, &c.last_update, tombstone_after))
+                    && !is_temporarily_unavailable(unavailable, &c.cd, &c.last_update, now))
         })
         .collect();
     if limit > 0 {
@@ -332,92 +377,145 @@ fn existing_last_updates(out_dir: &std::path::Path) -> HashMap<String, String> {
         .collect()
 }
 
-// --- "no detail" tombstones (courses the server declines; stop re-requesting) ---
+// --- bounded official-unavailable state ---
 
-const NO_DETAIL_FILE: &str = "_no-detail.tsv";
+const UNAVAILABLE_FILE: &str = "_unavailable.json";
+const LEGACY_NO_DETAIL_FILE: &str = "_no-detail.tsv";
 
-/// Per-course "the server has no detail here" record: how many times it failed and
-/// the grid `lastUpdate` it was seen at (a later update re-opens the course).
-#[derive(Clone)]
-struct NoDetail {
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct UnavailableState {
+    version: u32,
+    entries: BTreeMap<String, UnavailableRecord>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct UnavailableRecord {
     last_update: String,
-    fails: u32,
+    confirmed_at: DateTime<Utc>,
+    expires_at: DateTime<Utc>,
+    reason: String,
 }
 
-/// Load tombstones from `out_dir/_no-detail.tsv` (the `.tsv` extension keeps it out
-/// of the `*.json` detail readers). Missing/garbled lines → skipped.
-fn load_no_detail(out_dir: &std::path::Path) -> HashMap<String, NoDetail> {
-    let Ok(text) = fs::read_to_string(out_dir.join(NO_DETAIL_FILE)) else {
-        return HashMap::new();
-    };
-    text.lines()
-        .filter_map(|line| {
-            let mut c = line.split('\t');
-            let cd = c.next()?;
-            let last_update = c.next()?.to_owned();
-            let fails: u32 = c.next()?.parse().ok()?;
-            (!cd.is_empty()).then(|| (cd.to_owned(), NoDetail { last_update, fails }))
-        })
-        .collect()
+fn load_unavailable(out_dir: &Path) -> Result<UnavailableState> {
+    let path = out_dir.join(UNAVAILABLE_FILE);
+    if !path.exists() {
+        return Ok(UnavailableState {
+            version: 1,
+            entries: BTreeMap::new(),
+        });
+    }
+    let state: UnavailableState = serde_json::from_slice(&fs::read(&path)?)
+        .with_context(|| format!("failed to parse {}", path.display()))?;
+    ensure!(state.version == 1, "unsupported unavailable-state version");
+    for (code, record) in &state.entries {
+        CourseCode::parse(code).context("unavailable state contains an invalid course code")?;
+        ensure!(
+            record.expires_at > record.confirmed_at,
+            "unavailable state for {code:?} has an invalid expiry"
+        );
+        ensure!(
+            !record.reason.trim().is_empty(),
+            "unavailable state for {code:?} has no official reason"
+        );
+    }
+    Ok(state)
 }
 
-/// Persist tombstones (sorted for clean diffs); empty → remove the file.
-fn save_no_detail(out_dir: &std::path::Path, map: &HashMap<String, NoDetail>) -> Result<()> {
-    let path = out_dir.join(NO_DETAIL_FILE);
-    if map.is_empty() {
-        let _ = fs::remove_file(&path);
+fn save_unavailable(out_dir: &Path, state: &UnavailableState) -> Result<()> {
+    let path = out_dir.join(UNAVAILABLE_FILE);
+    let legacy = out_dir.join(LEGACY_NO_DETAIL_FILE);
+    if legacy.exists() {
+        fs::remove_file(&legacy)
+            .with_context(|| format!("failed to remove legacy {}", legacy.display()))?;
+    }
+    if state.entries.is_empty() {
+        if path.exists() {
+            fs::remove_file(&path)
+                .with_context(|| format!("failed to remove empty {}", path.display()))?;
+        }
         return Ok(());
     }
-    let mut rows: Vec<(&String, &NoDetail)> = map.iter().collect();
-    rows.sort_by(|a, b| a.0.cmp(b.0));
-    let out: String = rows
-        .iter()
-        .map(|(cd, rec)| format!("{cd}\t{}\t{}\n", rec.last_update, rec.fails))
-        .collect();
-    fs::write(&path, out).with_context(|| format!("failed to write {}", path.display()))
+    let bytes =
+        serde_json::to_vec_pretty(state).context("failed to serialize unavailable state")?;
+    let next = out_dir.join("_unavailable.next.json");
+    fs::write(&next, bytes)?;
+    if path.exists() {
+        fs::remove_file(&path).with_context(|| format!("failed to replace {}", path.display()))?;
+    }
+    fs::rename(&next, &path).with_context(|| format!("failed to promote {}", path.display()))
 }
 
-/// Whether a course is a confirmed no-detail at its current `lastUpdate`.
-fn is_tombstoned(
-    state: &HashMap<String, NoDetail>,
+fn is_temporarily_unavailable(
+    state: &UnavailableState,
     cd: &str,
     last_update: &str,
-    after: u32,
+    now: &DateTime<Utc>,
 ) -> bool {
     state
+        .entries
         .get(cd)
-        .is_some_and(|r| r.fails >= after && r.last_update == last_update)
+        .is_some_and(|record| record.last_update == last_update && record.expires_at > *now)
 }
 
-/// Fold this run's no-detail failures into the state: increment (resetting the
-/// count when the grid `lastUpdate` changed), then drop any course that now has a
-/// detail file (e.g. a `--force` run finally fetched it).
-fn update_no_detail(
-    mut state: HashMap<String, NoDetail>,
+/// Active courses whose explicit official-unavailable record is still valid for
+/// the same upstream `lastUpdate`. Used by the publisher to distinguish a
+/// complete crawl with genuine absences from a partial crawl.
+pub(crate) fn confirmed_unavailable_codes(
+    out_dir: &Path,
+    courses: &[RawCourse],
+    now: DateTime<Utc>,
+) -> Result<HashSet<String>> {
+    let state = load_unavailable(out_dir)?;
+    Ok(courses
+        .iter()
+        .filter(|course| {
+            is_temporarily_unavailable(
+                &state,
+                course.kogi_cd.trim(),
+                course.last_update.as_deref().unwrap_or(""),
+                &now,
+            )
+        })
+        .map(|course| course.kogi_cd.trim().to_owned())
+        .collect())
+}
+
+fn update_unavailable(
+    mut state: UnavailableState,
     report: &CrawlReport,
     selected: &[CourseRef],
-    out_dir: &std::path::Path,
-) -> HashMap<String, NoDetail> {
-    let lu: HashMap<&str, &str> = selected
+    out_dir: &Path,
+    now: DateTime<Utc>,
+    ttl_days: u64,
+) -> Result<UnavailableState> {
+    let expires_at = now
+        .checked_add_days(Days::new(ttl_days))
+        .context("unavailable TTL overflow")?;
+    let last_updates: HashMap<&str, &str> = selected
         .iter()
-        .map(|c| (c.cd.as_str(), c.last_update.as_str()))
+        .map(|course| (course.cd.as_str(), course.last_update.as_str()))
         .collect();
-    for cd in &report.no_detail {
-        let last_update = lu.get(cd.as_str()).copied().unwrap_or_default().to_owned();
-        let entry = state.entry(cd.clone()).or_insert(NoDetail {
-            last_update: last_update.clone(),
-            fails: 0,
-        });
-        if entry.last_update != last_update {
-            *entry = NoDetail {
-                last_update,
-                fails: 0,
-            };
-        }
-        entry.fails += 1;
+    for (code, reason) in &report.unavailable {
+        let last_update = last_updates
+            .get(code.as_str())
+            .copied()
+            .context("unavailable report contains an unknown course")?;
+        state.entries.insert(
+            code.clone(),
+            UnavailableRecord {
+                last_update: last_update.to_owned(),
+                confirmed_at: now,
+                expires_at,
+                reason: reason.clone(),
+            },
+        );
     }
-    state.retain(|cd, _| !out_dir.join(format!("{cd}.json")).exists());
-    state
+    state.entries.retain(|code, record| {
+        !out_dir.join(format!("{code}.json")).exists() && record.expires_at > now
+    });
+    Ok(state)
 }
 
 /// Write one course's detail as compact JSON to `out_dir/{cd}.json`.
@@ -452,9 +550,11 @@ struct CrawlReport {
     /// Rich, self-explaining context for the first few failures (status + response
     /// body), captured so a failure is diagnosable without an expensive re-run.
     diagnostics: Vec<(String, String)>,
-    /// Courses that failed with a course-specific "no detail" this run (candidates
-    /// for tombstoning so scheduled runs stop re-requesting them).
-    no_detail: Vec<String>,
+    /// Courses the official service explicitly confirmed absent this run.
+    unavailable: Vec<(String, String)>,
+    /// A protocol, parse, or persistence failure. Such a failure aborts the
+    /// complete crawl and can never be converted to unavailable.
+    fatal_error: Option<(String, String)>,
     aborted: bool,
     elapsed: Duration,
 }
@@ -470,9 +570,9 @@ impl CrawlReport {
 
 /// Crawl `courses` sequentially through `fetcher`, persisting each via `sink`.
 ///
-/// Retries transient/5xx errors with backoff; skips a course on a fatal error;
-/// and **aborts** once `max_consecutive_blocks` server refusals pile up in a row
-/// — the block never escalates into hammering.
+/// Retries transient/5xx errors with backoff; records only explicit official
+/// absence; aborts immediately on protocol/parse/save failures; and aborts once
+/// `max_consecutive_blocks` server refusals pile up in a row.
 fn crawl(
     courses: &[CourseRef],
     fetcher: &impl DetailFetcher,
@@ -495,7 +595,7 @@ fn crawl_with_clock(
     let mut fetched = 0usize;
     let mut skipped = Vec::new();
     let mut diagnostics: Vec<(String, String)> = Vec::new();
-    let mut no_detail: Vec<String> = Vec::new();
+    let mut unavailable: Vec<(String, String)> = Vec::new();
     let mut consecutive_blocks = 0u32;
     // Emit a progress line every N courses so a long run is observable live in the
     // Actions log (step logs only finalize on completion otherwise).
@@ -514,14 +614,35 @@ fn crawl_with_clock(
                 consecutive_blocks = 0;
                 let mut detail = parse_sansho_html(&course.cd, &html);
                 detail.last_update = course.last_update.clone();
-                match sink(&detail) {
-                    Err(e) => {
-                        skipped.push((course.cd.clone(), format!("save failed: {e}")));
-                    }
-                    _ => {
-                        fetched += 1;
-                    }
+                if !detail.has_public_content() {
+                    let error = "parsed HTML contained no recognized syllabus content".to_owned();
+                    diagnostics.push((course.cd.clone(), error.clone()));
+                    skipped.push((course.cd.clone(), format!("fatal: {error}")));
+                    return CrawlReport {
+                        fetched,
+                        skipped,
+                        diagnostics,
+                        unavailable,
+                        fatal_error: Some((course.cd.clone(), error)),
+                        aborted: true,
+                        elapsed: elapsed(),
+                    };
                 }
+                if let Err(error) = sink(&detail) {
+                    let error = format!("failed to persist detail: {error:#}");
+                    diagnostics.push((course.cd.clone(), error.clone()));
+                    skipped.push((course.cd.clone(), format!("fatal: {error}")));
+                    return CrawlReport {
+                        fetched,
+                        skipped,
+                        diagnostics,
+                        unavailable,
+                        fatal_error: Some((course.cd.clone(), error)),
+                        aborted: true,
+                        elapsed: elapsed(),
+                    };
+                }
+                fetched += 1;
             }
             Err(err) => {
                 let blocking = err.is_blocking();
@@ -533,9 +654,21 @@ fn crawl_with_clock(
                     }
                     diagnostics.push((course.cd.clone(), err.diagnostic()));
                 }
-                // A course-specific "no detail" counts toward tombstoning it.
-                if err.is_no_detail() {
-                    no_detail.push(course.cd.clone());
+                if let DetailError::Unavailable { reason } = &err {
+                    unavailable.push((course.cd.clone(), reason.clone()));
+                }
+                if let DetailError::Fatal(error) = &err {
+                    let error = format!("{error:#}");
+                    skipped.push((course.cd.clone(), format!("fatal: {error}")));
+                    return CrawlReport {
+                        fetched,
+                        skipped,
+                        diagnostics,
+                        unavailable,
+                        fatal_error: Some((course.cd.clone(), error)),
+                        aborted: true,
+                        elapsed: elapsed(),
+                    };
                 }
                 skipped.push((course.cd.clone(), err.to_string()));
                 if blocking {
@@ -545,7 +678,8 @@ fn crawl_with_clock(
                             fetched,
                             skipped,
                             diagnostics,
-                            no_detail,
+                            unavailable,
+                            fatal_error: None,
                             aborted: true,
                             elapsed: elapsed(),
                         };
@@ -566,7 +700,8 @@ fn crawl_with_clock(
         fetched,
         skipped,
         diagnostics,
-        no_detail,
+        unavailable,
+        fatal_error: None,
         aborted: false,
         elapsed: elapsed(),
     }
@@ -664,6 +799,17 @@ mod tests {
         "<table class=\"tbl_status\"><tr><th>単位数</th><td>2.0</td></tr></table>".to_owned()
     }
 
+    fn fixed_now() -> DateTime<Utc> {
+        "2026-07-26T00:00:00Z".parse().unwrap()
+    }
+
+    fn no_unavailable() -> UnavailableState {
+        UnavailableState {
+            version: 1,
+            entries: BTreeMap::new(),
+        }
+    }
+
     #[test]
     fn limit_and_incremental_advance_the_window() {
         let cds = |v: &[CourseRef]| v.iter().map(|c| c.cd.clone()).collect::<Vec<_>>();
@@ -676,9 +822,10 @@ mod tests {
                 course("005"),
             ]
         };
-        let none = HashMap::new();
+        let none = no_unavailable();
+        let now = fixed_now();
         // Day 1: nothing saved yet → the first `limit` courses are selected.
-        let day1 = filter_courses(all(), None, &HashMap::new(), false, 3, &none, 2);
+        let day1 = filter_courses(all(), None, &HashMap::new(), false, 3, &none, &now);
         assert_eq!(cds(&day1), ["001", "002", "003"]);
 
         // Day 2: day 1's fetches are now saved at the same lastUpdate → skipped,
@@ -687,57 +834,76 @@ mod tests {
             .iter()
             .map(|c| (c.cd.clone(), c.last_update.clone()))
             .collect();
-        let day2 = filter_courses(all(), None, &saved, false, 3, &none, 2);
+        let day2 = filter_courses(all(), None, &saved, false, 3, &none, &now);
         assert_eq!(cds(&day2), ["004", "005"]);
 
         // --force ignores saved state and re-selects from the top.
-        let forced = filter_courses(all(), None, &saved, true, 3, &none, 2);
+        let forced = filter_courses(all(), None, &saved, true, 3, &none, &now);
         assert_eq!(cds(&forced), ["001", "002", "003"]);
 
         // --only narrows to specific codes before the limit applies.
-        let only = filter_courses(all(), Some("002,004"), &HashMap::new(), false, 0, &none, 2);
+        let only = filter_courses(
+            all(),
+            Some("002,004"),
+            &HashMap::new(),
+            false,
+            0,
+            &none,
+            &now,
+        );
         assert_eq!(cds(&only), ["002", "004"]);
     }
 
     #[test]
-    fn tombstoned_no_detail_courses_are_skipped_until_forced_or_changed() {
+    fn unavailable_courses_are_skipped_until_expired_forced_or_changed() {
         let cds = |v: &[CourseRef]| v.iter().map(|c| c.cd.clone()).collect::<Vec<_>>();
         let all = || vec![course("001"), course("002"), course("003")];
         let none = HashMap::new();
+        let now = fixed_now();
 
-        // 001 confirmed no-detail (2 fails at the current lastUpdate "t") → skipped.
-        let mut tomb = HashMap::new();
-        tomb.insert(
+        let mut unavailable = no_unavailable();
+        unavailable.entries.insert(
             "001".to_owned(),
-            NoDetail {
+            UnavailableRecord {
                 last_update: "t".into(),
-                fails: 2,
+                confirmed_at: now,
+                expires_at: now.checked_add_days(Days::new(30)).unwrap(),
+                reason: "該当するシラバスがありません".into(),
             },
         );
-        let sel = filter_courses(all(), None, &none, false, 0, &tomb, 2);
+        let sel = filter_courses(all(), None, &none, false, 0, &unavailable, &now);
         assert_eq!(cds(&sel), ["002", "003"]);
 
-        // Only one failure so far → still retried (below the threshold).
-        let mut one = HashMap::new();
-        one.insert(
-            "001".to_owned(),
-            NoDetail {
-                last_update: "t".into(),
-                fails: 1,
-            },
-        );
+        // Expiry re-opens the course.
+        let expired = now.checked_add_days(Days::new(31)).unwrap();
         assert_eq!(
-            cds(&filter_courses(all(), None, &none, false, 0, &one, 2)),
+            cds(&filter_courses(
+                all(),
+                None,
+                &none,
+                false,
+                0,
+                &unavailable,
+                &expired,
+            )),
             ["001", "002", "003"]
         );
 
-        // --force retries even a tombstoned course.
+        // --force retries even an unexpired unavailable course.
         assert_eq!(
-            cds(&filter_courses(all(), None, &none, true, 0, &tomb, 2)),
+            cds(&filter_courses(
+                all(),
+                None,
+                &none,
+                true,
+                0,
+                &unavailable,
+                &now,
+            )),
             ["001", "002", "003"]
         );
 
-        // A changed grid lastUpdate re-opens it (the tombstone was for "t", not "u").
+        // A changed grid lastUpdate re-opens it.
         let changed = vec![CourseRef {
             cd: "001".into(),
             kaiko_nendo: "2026".into(),
@@ -745,9 +911,60 @@ mod tests {
             last_update: "u".into(),
         }];
         assert_eq!(
-            cds(&filter_courses(changed, None, &none, false, 0, &tomb, 2)),
+            cds(&filter_courses(
+                changed,
+                None,
+                &none,
+                false,
+                0,
+                &unavailable,
+                &now,
+            )),
             ["001"]
         );
+    }
+
+    #[test]
+    fn publisher_sees_only_current_official_unavailable_records() {
+        let directory = std::env::temp_dir().join(format!(
+            "gyakubiki-confirmed-unavailable-{}",
+            std::process::id()
+        ));
+        if directory.exists() {
+            fs::remove_dir_all(&directory).unwrap();
+        }
+        fs::create_dir_all(&directory).unwrap();
+        let now = fixed_now();
+        let mut state = no_unavailable();
+        state.entries.insert(
+            "001".into(),
+            UnavailableRecord {
+                last_update: "current".into(),
+                confirmed_at: now,
+                expires_at: now.checked_add_days(Days::new(30)).unwrap(),
+                reason: "公式応答で不存在".into(),
+            },
+        );
+        save_unavailable(&directory, &state).unwrap();
+        let courses = vec![
+            RawCourse {
+                kogi_cd: "001".into(),
+                last_update: Some("current".into()),
+                ..RawCourse::default()
+            },
+            RawCourse {
+                kogi_cd: "002".into(),
+                last_update: Some("changed".into()),
+                ..RawCourse::default()
+            },
+        ];
+
+        let confirmed = confirmed_unavailable_codes(&directory, &courses, now).unwrap();
+        assert_eq!(confirmed, HashSet::from(["001".to_owned()]));
+        let after_expiry =
+            confirmed_unavailable_codes(&directory, &courses, now + Days::new(31)).unwrap();
+        assert!(after_expiry.is_empty());
+        fs::remove_dir_all(directory).unwrap();
     }
 
     fn report_with(
@@ -760,7 +977,8 @@ mod tests {
             fetched,
             skipped,
             diagnostics,
-            no_detail: Vec::new(),
+            unavailable: Vec::new(),
+            fatal_error: None,
             aborted,
             elapsed: Duration::ZERO,
         }
@@ -817,16 +1035,61 @@ mod tests {
     }
 
     #[test]
-    fn fatal_error_skips_course_without_tripping_breaker() {
+    fn fatal_protocol_error_aborts_the_whole_crawl() {
         let courses = vec![course("001"), course("002")];
         let fake = Fake::new(vec![
             Err(DetailError::Fatal(anyhow::anyhow!("bad guid"))),
             Ok(html_table()),
         ]);
         let report = crawl(&courses, &fake, &opts(0, 2), &mut |_| Ok(()));
+        assert!(report.aborted);
+        assert_eq!(report.fetched, 0);
+        assert_eq!(report.skipped.len(), 1);
+        assert_eq!(*fake.calls.borrow(), 1);
+        assert!(report.fatal_error.is_some());
+    }
+
+    #[test]
+    fn official_unavailable_is_recorded_but_does_not_abort() {
+        let courses = vec![course("001"), course("002")];
+        let fake = Fake::new(vec![
+            Err(DetailError::Unavailable {
+                reason: "該当するシラバスがありません".into(),
+            }),
+            Ok(html_table()),
+        ]);
+        let report = crawl(&courses, &fake, &opts(0, 2), &mut |_| Ok(()));
         assert!(!report.aborted);
         assert_eq!(report.fetched, 1);
-        assert_eq!(report.skipped.len(), 1);
+        assert_eq!(
+            report.unavailable,
+            [("001".into(), "該当するシラバスがありません".into())]
+        );
+    }
+
+    #[test]
+    fn changed_empty_html_parse_aborts_instead_of_saving_empty_detail() {
+        let courses = vec![course("001"), course("002")];
+        let fake = Fake::new(vec![Ok("<html><body>changed</body></html>".into())]);
+        let saved = RefCell::new(Vec::new());
+        let report = crawl(&courses, &fake, &opts(0, 2), &mut |detail| {
+            saved.borrow_mut().push(detail.cd.clone());
+            Ok(())
+        });
+        assert!(report.aborted);
+        assert!(report.fatal_error.is_some());
+        assert!(saved.borrow().is_empty());
+        assert_eq!(*fake.calls.borrow(), 1);
+    }
+
+    #[test]
+    fn persistence_failure_aborts_instead_of_skipping() {
+        let courses = vec![course("001"), course("002")];
+        let fake = Fake::new(vec![Ok(html_table()), Ok(html_table())]);
+        let report = crawl(&courses, &fake, &opts(0, 2), &mut |_| bail!("disk full"));
+        assert!(report.aborted);
+        assert!(report.fatal_error.is_some());
+        assert_eq!(*fake.calls.borrow(), 1);
     }
 
     #[test]
@@ -871,7 +1134,8 @@ mod tests {
     }
 
     // Politeness delay + backoff are unit-tested in `crate::net`; here we cover
-    // the crawler behaviours that use them (breaker, retry, tombstoning).
+    // the crawler behaviours that use them (breaker, retry, bounded
+    // official-unavailable state).
 
     #[test]
     fn breaker_of_one_aborts_on_the_first_block() {

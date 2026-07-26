@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { DESKTOP, MOBILE, enter } from './helpers'
+import { DESKTOP, enter, MOBILE } from './helpers'
 
 // The timetable mounts only the layout for the current breakpoint (see
 // Timetable.svelte's matchMedia gate), so the inactive view is absent from the

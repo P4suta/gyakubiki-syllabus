@@ -4,16 +4,23 @@
 // theme / highlight) — any component reads or toggles registration without
 // prop-drilling through the timetable.
 
-import { decodePlan, encodePlan } from './plan-codec'
+import { decodePlan, encodePlan, PlanDecodeError } from './plan-codec'
 
 class PlanStore {
 	#cds = $state<string[]>([])
+	#notice = $state<string | null>(null)
 
 	get cds(): readonly string[] {
 		return this.#cds
 	}
 	get count(): number {
 		return this.#cds.length
+	}
+	get notice(): string | null {
+		return this.#notice
+	}
+	clearNotice(): void {
+		this.#notice = null
 	}
 	has(cd: string): boolean {
 		return this.#cds.includes(cd)
@@ -34,6 +41,10 @@ class PlanStore {
 	/** Replace the whole plan (used by the sync layer on load / hashchange). */
 	hydrate(cds: string[]): void {
 		this.#cds = cds
+	}
+	reportDecodeError(error: unknown): void {
+		this.#notice =
+			error instanceof PlanDecodeError ? error.message : '履修プランを読み込めませんでした'
 	}
 }
 
@@ -73,11 +84,21 @@ export function shareUrl(): string {
 export function initPlanSync(): () => void {
 	const fromHash = readHash()
 	if (fromHash) {
-		plan.hydrate(decodePlan(fromHash))
+		try {
+			plan.hydrate(decodePlan(fromHash))
+		} catch (error) {
+			plan.reportDecodeError(error)
+		}
 	} else {
 		try {
 			const stored = localStorage.getItem(STORAGE_KEY)
-			if (stored) plan.hydrate(decodePlan(stored))
+			if (stored) {
+				try {
+					plan.hydrate(decodePlan(stored))
+				} catch (error) {
+					plan.reportDecodeError(error)
+				}
+			}
 		} catch {
 			// storage unavailable (private mode) — start empty, still works
 		}
@@ -96,7 +117,13 @@ export function initPlanSync(): () => void {
 
 	const onHashChange = () => {
 		const token = readHash()
-		if (token) plan.hydrate(decodePlan(token)) // only a real share link, never empty
+		if (token) {
+			try {
+				plan.hydrate(decodePlan(token))
+			} catch (error) {
+				plan.reportDecodeError(error)
+			}
+		}
 	}
 	window.addEventListener('hashchange', onHashChange)
 

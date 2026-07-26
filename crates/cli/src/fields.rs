@@ -15,7 +15,7 @@ use anyhow::{Context, Result, bail};
 
 /// One displayable syllabus field.
 pub struct FieldSpec {
-    /// Matches the JSON key in `details/{cd}.json` (a `SanshoDetail` field).
+    /// Matches the JSON key in a public detail asset (a `SanshoDetail` field).
     pub key: &'static str,
     /// Japanese section label.
     pub label: &'static str,

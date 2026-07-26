@@ -36,15 +36,6 @@ fn dur(d: Duration) -> String {
 pub fn ok(msg: &str) {
     eprintln!("  {} {msg}", paint("1;32", "✓"));
 }
-/// `ℹ …` (cyan).
-pub fn info(msg: &str) {
-    eprintln!("  {} {msg}", paint("1;36", "ℹ"));
-}
-/// `⚠ …` (yellow).
-pub fn warn(msg: &str) {
-    eprintln!("  {} {}", paint("1;33", "⚠"), paint("33", msg));
-}
-
 /// Timed completion footer for a successful run.
 pub fn footer_ok(elapsed: Duration) {
     eprintln!();

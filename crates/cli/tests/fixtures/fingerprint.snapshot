@@ -10,7 +10,7 @@ kubun[4]: 実技 | 実習 | 演習 | 講義
 kaikojiki[5]: 1学期 | 1学期前半 | 2学期 | 2学期前半 | 通年
 == filters ==
 all: count=9 hash=3dd9179e52000f4c
-semester=1学期: count=5 hash=3ffaa0f822388950
+semester=1学期: count=6 hash=c3442be53ccee585
 semester=1学期前半: count=2 hash=e5543e7052beb418
 semester=2学期: count=3 hash=53212217020f422c
 semester=2学期前半: count=2 hash=e5543d7052beb265
@@ -33,8 +33,8 @@ query=通年: count=0 hash=cbf29ce484222325
 query=001: count=1 hash=4e7ef1181d60f594
 combo[sem0,dep0,camp0]: count=0 hash=cbf29ce484222325
 == grid ==
-grid[all]: count_unique=7 cells=8 hash=9e7f826f46040bf6
-grid[semester=1学期]: count_unique=4 cells=5 hash=85bd4a6d9155f261
+grid[all]: count_unique=8 cells=9 hash=4c3abbb377533463
+grid[semester=1学期]: count_unique=5 cells=6 hash=42918d7ac2a180e6
 grid[semester=1学期前半]: count_unique=2 cells=2 hash=ed38e58c28385db6
 grid[semester=2学期]: count_unique=3 cells=3 hash=9db3b4d3b0dafaf1
 grid[semester=2学期前半]: count_unique=2 cells=2 hash=a27b622b4ac616bb

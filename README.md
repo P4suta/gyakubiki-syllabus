@@ -40,10 +40,11 @@ Layout: `crates/core` (data conversion, bitset, search) / `crates/wasm` (browser
 Run `just --list` for the full recipe list. Common ones:
 
 ```bash
-just dev            # Start the web dev server (builds WASM first)
-just convert        # raw/ + raw-details/ -> data.json + details/
-just test           # Run Rust and web tests
-just check          # CI-equivalent checks (lint + test)
+just setup          # Install every pinned tool/dependency
+just doctor         # Verify the Windows/Linux prerequisites
+just build-dataset  # Atomically publish manifest-selected v4 assets
+just check          # Rust/WASM/Web required checks
+just release-check  # Build and validate the production artifact + budgets
 ```
 
 Git hooks (`lefthook`) run the same scope as CI; enable them with `just install-hooks`.
@@ -54,18 +55,28 @@ KULAS is accessed **only from GitHub Actions**, never locally, and only for open
 published syllabus data. Access is deliberately gentle and identifiable — see
 [Politeness / responsible access](docs/kulas-api-spec.md#politeness--responsible-access).
 
-- **`fetch-syllabus.yml`** — updates `raw/*.json` (basic info) via the findPage API. The
+- **`fetch-syllabus.yml`** — proposes updates to `raw/*.json` (basic info) via a
+  dedicated GitHub App branch/PR. The
   fetch is light, so it runs on a seasonal schedule: daily in the pre-term months
   (Mar/Apr/Sep/Oct), weekly otherwise, keeping data fresh when it matters most.
-- **`fetch-details.yml`** — crawls syllabus reference pages into `raw-details/{kogiCd}.json`
-  (lesson plan, grading, etc.). Daily but incremental and per-run capped, so any backlog
-  is spread over many short off-peak runs; partial runs commit and later runs resume.
+- **`fetch-details.yml`** — crawls syllabus reference pages into a dedicated
+  `raw-details/{kogiCd}.json` update branch/PR (lesson plan, grading, etc.).
+  Daily but incremental and per-run capped, so any backlog is spread over many
+  short off-peak runs.
 
-`convert` builds `data.json` (course cards with searchable body) and `details/{cd}.json` (lazy-loaded by the modal) from `raw/` and `raw-details/`. See [`docs/kulas-api-spec.md`](docs/kulas-api-spec.md) for the fetch spec and [`docs/syllabus-fields.md`](docs/syllabus-fields.md) (generated from `FIELD_SPEC` in `crates/cli/src/fields.rs`) for field priorities.
+`build-dataset` stages and validates `data`, the lazy full-text index, and active
+course details, then promotes content-addressed assets and finally the sole
+stable URL, `manifest.json`. The manifest binds every asset to a dataset ID,
+byte size, and SHA-256. See [`docs/kulas-api-spec.md`](docs/kulas-api-spec.md)
+for the fetch spec and [`docs/syllabus-fields.md`](docs/syllabus-fields.md)
+for the explicit public/search field allowlist.
 
 ### Deploy
 
-Pushing to `main` triggers `.github/workflows/deploy.yml`. `fetch-syllabus.yml` explicitly dispatches the deploy after its commit, since a `GITHUB_TOKEN` push does not trigger `on: push`.
+Every PR runs the single required gate. On `main`, `ci.yml` builds the Pages
+artifact once, validates dataset integrity, tests, audits, performance and size
+budgets, attests that artifact, and deploys those same bytes without reinstalling
+or rebuilding.
 
 ---
 

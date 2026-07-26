@@ -1,4 +1,4 @@
-import { type Page, devices, expect, test } from '@playwright/test'
+import { devices, expect, type Page, test } from '@playwright/test'
 import { CARD, enter, swipe } from './helpers'
 
 // Real touch-gesture coverage on a mobile device (hasTouch). Drags are
@@ -18,7 +18,11 @@ test('swiping the detail sheet down dismisses it', async ({ page }) => {
 	const box = await page.locator('[data-sheet]').boundingBox()
 	if (!box) throw new Error('no sheet box')
 	// Grab the handle and pull well past the commit threshold.
-	await swipe(page, { x: box.x + box.width / 2, y: box.y + 12 }, { x: box.x + box.width / 2, y: box.y + box.height * 0.85 })
+	await swipe(
+		page,
+		{ x: box.x + box.width / 2, y: box.y + 12 },
+		{ x: box.x + box.width / 2, y: box.y + box.height * 0.85 },
+	)
 	await expect(page.getByRole('dialog')).toBeHidden()
 })
 
@@ -42,8 +46,8 @@ test('the device Back button closes the sheet without leaving the app', async ({
 	await openFirstCourse(page)
 	await page.goBack()
 	await expect(page.getByRole('dialog')).toBeHidden()
-	// Still in the app (no reload → the disclaimer does not reappear).
-	await expect(page.getByRole('heading', { name: 'ご利用にあたって' })).toBeHidden()
+	// Still in the app (no reload → the first-visit notice does not reappear).
+	await expect(page.getByRole('heading', { name: '非公式のシラバス検索ツールです' })).toBeHidden()
 	await expect(page.locator(CARD).first()).toBeVisible()
 })
 
@@ -54,7 +58,11 @@ test('swiping the filter sheet down dismisses it', async ({ page }) => {
 	await page.waitForTimeout(400) // let the slide-in settle
 	const box = await page.locator('[data-sheet]').boundingBox()
 	if (!box) throw new Error('no sheet box')
-	await swipe(page, { x: box.x + box.width / 2, y: box.y + 12 }, { x: box.x + box.width / 2, y: box.y + box.height * 0.85 })
+	await swipe(
+		page,
+		{ x: box.x + box.width / 2, y: box.y + 12 },
+		{ x: box.x + box.width / 2, y: box.y + box.height * 0.85 },
+	)
 	await expect(page.getByRole('dialog', { name: 'フィルター' })).toBeHidden()
 })
 

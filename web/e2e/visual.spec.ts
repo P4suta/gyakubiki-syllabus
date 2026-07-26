@@ -1,5 +1,5 @@
-import { type Page, expect, test } from '@playwright/test'
-import { DESKTOP, FIXTURES, MOBILE, enter, openCourse } from './helpers'
+import { expect, type Page, test } from '@playwright/test'
+import { DESKTOP, enter, FIXTURES, MOBILE, openCourse } from './helpers'
 
 // Visual regression: screenshot the major layouts and diff against baselines
 // rendered on the CI OS (Linux). `toBeVisible()` passes for an element that is
@@ -60,7 +60,9 @@ for (const theme of ['light', 'dark'] as const) {
 			await enter(page)
 			await page.getByRole('button', { name: 'フィルターを開く' }).first().click()
 			await expect(page.getByRole('dialog', { name: 'フィルター' })).toBeVisible()
-			await expect(page.locator('[data-sheet]')).toHaveScreenshot(`filter-sheet-mobile${s}.png`, { mask: dateMask(page) })
+			await expect(page.locator('[data-sheet]')).toHaveScreenshot(`filter-sheet-mobile${s}.png`, {
+				mask: dateMask(page),
+			})
 		})
 
 		test('mobile day view', async ({ page }) => {

@@ -25,7 +25,7 @@ fn empty_dir(name: &str) -> PathBuf {
 #[test]
 fn help_lists_every_subcommand() {
     bin().arg("--help").assert().success().stdout(
-        predicate::str::contains("convert")
+        predicate::str::contains("build-dataset")
             .and(predicate::str::contains("fetch"))
             .and(predicate::str::contains("fetch-details"))
             .and(predicate::str::contains("gen-field-docs")),
@@ -33,28 +33,65 @@ fn help_lists_every_subcommand() {
 }
 
 #[test]
-fn convert_empty_stdin_fails_cleanly() {
+fn build_dataset_empty_input_fails_cleanly() {
+    let root = empty_dir("cli_dispatch_empty_dataset");
+    let raw = root.join("empty.json");
+    fs::write(&raw, "[]").expect("write empty fixture");
     bin()
-        .arg("convert")
-        .write_stdin("[]")
+        .arg("build-dataset")
+        .arg(&raw)
+        .args([
+            "--source-commit",
+            "0000000000000000000000000000000000000000",
+        ])
+        .arg("--output")
+        .arg(root.join("public"))
         .assert()
         .failure()
-        .stderr(predicate::str::contains("No course data"));
+        .stderr(
+            predicate::str::contains("No course data").or(predicate::str::contains("no course")),
+        );
 }
 
 #[test]
-fn convert_unrecognized_json_fails_cleanly() {
+fn build_dataset_unrecognized_json_fails_cleanly() {
+    let root = empty_dir("cli_dispatch_bad_dataset");
+    let raw = root.join("bad.json");
+    fs::write(&raw, r#"{"unexpected": true}"#).expect("write bad fixture");
     bin()
-        .arg("convert")
-        .write_stdin(r#"{"unexpected": true}"#)
+        .arg("build-dataset")
+        .arg(&raw)
+        .args([
+            "--source-commit",
+            "0000000000000000000000000000000000000000",
+        ])
+        .arg("--output")
+        .arg(root.join("public"))
         .assert()
         .failure()
-        .stderr(predicate::str::contains("Cannot recognize course data"));
+        .stderr(
+            predicate::str::contains("cannot parse typed findPage response")
+                .and(predicate::str::contains("unknown field `unexpected`")),
+        );
 }
 
 #[test]
 fn unknown_subcommand_is_rejected() {
     bin().arg("bogus").assert().failure();
+}
+
+#[test]
+fn gen_palette_stdout_is_one_machine_readable_json_document() {
+    let output = bin()
+        .arg("gen-palette")
+        .output()
+        .expect("gen-palette process runs");
+    assert!(output.status.success());
+    let value: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("stdout is strict JSON");
+    assert_eq!(value["light"].as_array().map(Vec::len), Some(10));
+    assert_eq!(value["dark"].as_array().map(Vec::len), Some(10));
+    assert_eq!(value["eval"].as_array().map(Vec::len), Some(6));
 }
 
 #[test]
@@ -77,7 +114,7 @@ fn fetch_details_with_no_courses_stops_before_any_network() {
     let out = empty_dir("cli_dispatch_out");
     fs::write(
         raw.join("courses.json"),
-        r#"{"selectKogiDtoList":[{"kogiCd":"001","kogiNm":"A"}]}"#,
+        r#"{"pageNo":1,"maxPageNo":1,"total":1,"pageSize":1,"selectKogiDtoList":[{"kogiCd":"001","kogiNm":"A","kaikoNendo":"2026","syllabusKomokuPatternId":"4"}]}"#,
     )
     .expect("write raw fixture");
     bin()

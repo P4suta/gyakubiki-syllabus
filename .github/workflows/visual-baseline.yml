@@ -33,39 +33,32 @@ jobs:
           echo "::error::Dispatch this on a feature branch, not main — baselines land via a PR."
           exit 1
 
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       # Same pipeline as the CI `e2e` job so baselines match what CI will diff.
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-      - uses: taiki-e/install-action@v2
+      - uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1
+      - uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # v2
         with:
-          tool: wasm-pack@0.13.1
+          install_args: aqua:rustwasm/wasm-pack bun
       - name: build wasm
         run: wasm-pack build crates/wasm --target web --out-dir ../../web/src/wasm --out-name syllabus
-      - name: generate sample data
-        run: |
-          cargo run --release -q -p syllabus-cli -- gen-sample
-          cargo run --release -q -p syllabus-cli -- convert dev-data/sample-raw.json \
-            --compact --details-dir dev-data/sample-details \
-            --details-out web/public/details -o web/public/data.json
       - name: Build syllabus-cli
-        run: cargo build --release -p syllabus-cli
+        run: cargo build --locked --release -p syllabus-cli
 
       # CJK fonts must match the CI `e2e` job exactly, or every glyph diffs.
       - name: install fonts
         run: sudo apt-get update && sudo apt-get install -y fonts-noto-cjk
 
-      - uses: oven-sh/setup-bun@v2
       - name: install web deps
         working-directory: web
         run: bun install --frozen-lockfile
       - name: install Playwright browser
         working-directory: web
-        run: bunx playwright install --with-deps chromium
+        run: bun run playwright:install --with-deps chromium
 
       - name: regenerate visual baselines
         working-directory: web
-        run: bunx playwright test visual.spec.ts --update-snapshots
+        run: bun run test:e2e -- visual.spec.ts --update-snapshots
 
       - name: commit baselines (signed, via GitHub API)
         id: commit

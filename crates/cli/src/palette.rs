@@ -12,6 +12,7 @@ use std::f64::consts::PI;
 use std::path::Path;
 
 use anyhow::{Context, Result, bail};
+use serde::Serialize;
 
 // ---------- OKLCH → sRGB ----------
 
@@ -157,7 +158,8 @@ fn tinted_ink(bg: &str, h: f64, dir: i32) -> String {
 // ---------- Palette ----------
 
 /// The five tokens of one tile.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Tint {
     pub bg: String,
     pub border: String,
@@ -167,6 +169,8 @@ pub struct Tint {
 }
 
 /// The derived palette: 10 tiles (light + dark) and the 6 eval colours.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Palette {
     pub light: Vec<Tint>,
     pub dark: Vec<Tint>,

@@ -2,8 +2,8 @@
 //! development, so the frontend can be exercised without ever touching KULAS.
 //!
 //! It writes raw KULAS-shaped courses (an envelope JSON) plus per-course detail
-//! JSON, then the normal `convert` pipeline turns them into `web/public/data.json`
-//! and `web/public/details/`. Structural coverage (every delivery mode / eval
+//! JSON; `build-dataset` later turns those inputs into a manifest-selected,
+//! content-addressed publication. Structural coverage (every delivery mode / eval
 //! type, Saturday, 通年, concentrated no-slot courses, and some courses with no
 //! detail at all) is assigned by index, so it is guaranteed regardless of the
 //! `--seed`; the seed only garnishes names and keywords.
@@ -45,7 +45,14 @@ pub fn run(args: GenSampleArgs) -> Result<()> {
         fs::create_dir_all(parent)
             .with_context(|| format!("failed to create {}", parent.display()))?;
     }
-    let envelope = json!({ "selectKogiDtoList": generated.raw });
+    let course_count = generated.raw.len();
+    let envelope = json!({
+        "pageNo": 1,
+        "maxPageNo": 1,
+        "total": course_count,
+        "pageSize": course_count,
+        "selectKogiDtoList": generated.raw,
+    });
     fs::write(&args.out_raw, serde_json::to_vec_pretty(&envelope)?)
         .with_context(|| format!("failed to write {}", args.out_raw.display()))?;
 
@@ -308,7 +315,7 @@ fn detail_for(i: usize, rng: &mut StdRng) -> SanshoDetail {
     // One course carries an unmodelled label to show it degrades into `extra`.
     let extra = if i == 5 {
         vec![Labelled {
-            label: "特記事項".to_owned(),
+            label: "履修における注意点".to_owned(),
             text: "この科目は隔年開講です。".to_owned(),
         }]
     } else {
@@ -362,8 +369,8 @@ fn generate(count: usize, seed: u64) -> Generated {
 mod tests {
     use super::generate;
     use std::collections::BTreeSet;
-    use syllabus_core::model::RawCourse;
-    use syllabus_core::{Engine, Filters, convert_v3};
+    use syllabus_core::RawCourse;
+    use syllabus_core::{Engine, Filters, convert_v4};
 
     fn raw_courses(g: &super::Generated) -> Vec<RawCourse> {
         serde_json::from_value(serde_json::Value::Array(g.raw.clone()))
@@ -436,10 +443,16 @@ mod tests {
     }
 
     #[test]
-    fn converts_to_valid_v3_with_saturday_and_tsuunen() {
+    fn converts_to_valid_v4_with_saturday_and_tsuunen() {
         let g = generate(40, 42);
         let raw = raw_courses(&g);
-        let data = convert_v3(&raw, "2026-01-01T00:00:00Z".to_owned()).data;
+        let data = convert_v4(
+            &raw,
+            "2026-01-01T00:00:00Z".to_owned(),
+            "0000000000000000000000000000000000000000000000000000000000000000".to_owned(),
+        )
+        .expect("generated sample converts")
+        .data;
 
         // Grid variety: 通年 propagation and a Saturday column both present.
         assert!(data.dicts.semesters.iter().any(|s| s == "通年"));
@@ -469,7 +482,9 @@ mod tests {
             .iter()
             .map(|d| (d.cd.clone(), d.clone()))
             .collect();
-        let rendered = crate::convert::render_data_json(&raw, "t".into(), true, &details).unwrap();
+        let rendered =
+            crate::convert::render_data_json(&raw, "t".into(), "test-source", true, &details)
+                .unwrap();
         let json = String::from_utf8(rendered.bytes).unwrap();
         assert!(json.contains(r#""dm":"#));
         assert!(json.contains(r#""ev":["#));

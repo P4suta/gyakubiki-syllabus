@@ -16,6 +16,7 @@ let { searchText = $bindable() }: Props = $props()
 		<input
 			type="text"
 			bind:value={searchText}
+			maxlength="256"
 			aria-label="科目名・教員・キーワードで検索"
 			placeholder="科目名・教員・キーワードで検索"
 			class="w-full bg-overlay-subtle rounded-xl pl-12 pr-12 py-3 text-body text-apple-text outline-none placeholder:text-apple-text-tertiary transition-all duration-200 focus:bg-surface-primary focus:ring-2 focus:ring-apple-blue/40 focus:shadow-sm"

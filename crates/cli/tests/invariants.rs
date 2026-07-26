@@ -1,4 +1,4 @@
-//! Model-based invariants over the full `convert_v3` → serialize → `Engine`
+//! Model-based invariants over the full `convert_v4` → serialize → `Engine`
 //! chain. Each invariant is checked two ways where possible — e.g. the semester
 //! filter bitset is re-derived from the courses' own slots by an independent,
 //! naive walk and compared to the precomputed index — so a divergence between
@@ -11,26 +11,53 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use proptest::prelude::*;
-use syllabus_core::bitset::BitSet;
-use syllabus_core::model::{ProcessedData, RawCourse};
-use syllabus_core::{Engine, Filters, convert_v3};
+use syllabus_core::{Engine, Filters, ProcessedData, RawCourse, convert_v4};
 
 const PINNED_GENERATED_AT: &str = "2026-01-01T00:00:00Z";
 const TSUUNEN_LABEL: &str = "通年";
 const SONOTA_LABEL: &str = "その他";
 
 fn build(raw: &[RawCourse]) -> ProcessedData {
-    convert_v3(raw, PINNED_GENERATED_AT.to_owned()).data
+    convert_v4(
+        raw,
+        PINNED_GENERATED_AT.to_owned(),
+        "0000000000000000000000000000000000000000000000000000000000000000".to_owned(),
+    )
+    .expect("valid invariant fixture converts")
+    .data
 }
 
-fn decode(encoded: &[String], i: usize) -> BitSet {
-    BitSet::from_base64(&encoded[i]).expect("valid base64 bitset")
+fn decode(encoded: &[String], i: usize) -> Vec<u64> {
+    STANDARD
+        .decode(&encoded[i])
+        .expect("valid base64 bitset")
+        .chunks(8)
+        .map(|chunk| {
+            let mut word = [0; 8];
+            word[..chunk.len()].copy_from_slice(chunk);
+            u64::from_le_bytes(word)
+        })
+        .collect()
 }
 
 /// The set of course indices a decoded bitset selects.
 fn members(encoded: &[String], i: usize) -> BTreeSet<usize> {
-    decode(encoded, i).iter_ones().collect()
+    decode(encoded, i)
+        .into_iter()
+        .enumerate()
+        .flat_map(|(word_index, mut word)| {
+            std::iter::from_fn(move || {
+                if word == 0 {
+                    return None;
+                }
+                let bit = word.trailing_zeros() as usize;
+                word &= word - 1;
+                Some(word_index * 64 + bit)
+            })
+        })
+        .collect()
 }
 
 /// All the input-agnostic invariants that must hold for any converted dataset.
@@ -84,23 +111,36 @@ fn check_invariants(data: &ProcessedData) {
         assert_eq!(dim.len(), dict.len(), "index vector length != dict length");
         for i in 0..dict.len() {
             assert!(
-                decode(dim, i).count_ones() >= 1,
+                decode(dim, i)
+                    .iter()
+                    .map(|word| word.count_ones())
+                    .sum::<u32>()
+                    >= 1,
                 "dictionary entry {i} has an empty bitset"
             );
         }
     }
 
+    assert_eq!(data.offerings.len(), n, "one offering list per course");
     // (b)/(c) Semester bitset membership, re-derived independently from each
-    // course's own slots plus the 通年 propagation rule.
+    // course's v4 offerings plus the 通年 propagation rule.
     let tsuunen_idx = data.dicts.semesters.iter().position(|s| s == TSUUNEN_LABEL);
     let tsuunen_courses: BTreeSet<usize> = (0..n)
         .filter(|&i| {
-            tsuunen_idx.is_some_and(|t| data.courses[i].slots.iter().any(|s| s.s as usize == t))
+            tsuunen_idx.is_some_and(|t| {
+                data.offerings[i]
+                    .iter()
+                    .any(|offering| offering.semester() == t)
+            })
         })
         .collect();
     for si in 0..data.dicts.semesters.len() {
         let mut expected: BTreeSet<usize> = (0..n)
-            .filter(|&i| data.courses[i].slots.iter().any(|s| s.s as usize == si))
+            .filter(|&i| {
+                data.offerings[i]
+                    .iter()
+                    .any(|offering| offering.semester() == si)
+            })
             .collect();
         if Some(si) != tsuunen_idx {
             expected.extend(&tsuunen_courses); // 通年 shows under every other semester
@@ -136,7 +176,7 @@ fn check_invariants(data: &ProcessedData) {
 
     // (l) Producer→consumer round-trip: the serialized payload always rebuilds,
     // and the default (unfiltered) query returns every course.
-    let json = serde_json::to_string(data).expect("serialize v3");
+    let json = serde_json::to_string(data).expect("serialize v4");
     let engine = Engine::from_json(&json).expect("engine rebuilds from converted data");
     assert_eq!(engine.filter(&Filters::default()).len(), n);
 }
@@ -174,8 +214,8 @@ fn label() -> impl Strategy<Value = String> {
 
 fn any_raw_course() -> impl Strategy<Value = RawCourse> {
     (
-        "[a-z0-9]{0,4}",
-        "[\\p{Han}a-z]{0,8}",
+        "[a-z0-9]{1,4}",
+        "[\\p{Han}a-z]{1,8}",
         label(),
         label(),
         label(),
@@ -204,8 +244,16 @@ fn any_raw_course() -> impl Strategy<Value = RawCourse> {
 proptest! {
     #[test]
     fn generated_datasets_satisfy_all_invariants(
-        raw in prop::collection::vec(any_raw_course(), 0..20)
+        mut raw in prop::collection::vec(any_raw_course(), 1..20)
     ) {
+        for (index, course) in raw.iter_mut().enumerate() {
+            course.kogi_cd = format!("C{index:03}");
+            if course.kogi_nm.trim().is_empty() {
+                course.kogi_nm = format!("科目{index}");
+            }
+            course.syllabus_komoku_pattern_id = Some("1".to_owned());
+            course.kaiko_nendo = Some("2026".to_owned());
+        }
         check_invariants(&build(&raw));
     }
 }
@@ -223,13 +271,16 @@ proptest! {
     ) {
         let raw = vec![RawCourse {
             kogi_cd: "001".into(),
-            kogi_nm: name,
+            kogi_nm: format!("科{name}"),
             tanto_kyoin: prof,
+            syllabus_komoku_pattern_id: Some("1".to_owned()),
+            kaiko_nendo: Some("2026".to_owned()),
             ..Default::default()
         }];
-        let bytes = syllabus_cli::convert::render_data_json(
+        let bytes = syllabus_cli::test_support::render_data_json(
             &raw,
             "t".into(),
+            "test-source",
             true,
             &std::collections::HashMap::new(),
         )

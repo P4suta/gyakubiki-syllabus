@@ -35,6 +35,7 @@ const mode = $derived(deliveryMode(course.dm))
 // Search-match runs in the course name (the only highlighted field). Plain text
 // when the active query doesn't hit this course.
 const nameSegs = $derived(segment(course.nm, highlights.get(course.cd)))
+const matchFields = $derived(highlights.fields(course.cd))
 
 // Registered in the user's plan → a small corner pin, in the tile's own accent.
 const registered = $derived(plan.has(course.cd))
@@ -90,6 +91,11 @@ const creditHalf = $derived(creditsN - Math.floor(creditsN) >= 0.5)
 	</div>
 	{#if prof}
 		<div class="text-micro sm:text-fine truncate" style="color: {color.mutedText};">{prof}</div>
+	{/if}
+	{#if matchFields.length > 0}
+		<div class="mt-0.5 text-fine truncate" style="color: {color.mutedText};">
+			一致: {matchFields.join(' / ')}
+		</div>
 	{/if}
 	{#if mode || topEval || creditsN > 0}
 		<div class="flex items-center gap-1.5 text-micro sm:text-fine mt-1" style="color: {color.mutedText};">

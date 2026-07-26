@@ -1,7 +1,8 @@
 name: Fuzz
 
-# Continuous, non-blocking fuzzing of the two parsers that face messy real-world
-# input. Weekly plus on-demand; never gates a PR.
+# Continuous fuzzing of the two parsers that face messy real-world input.
+# Weekly/on-demand runs are advisory; CI repeats both as required release-PR
+# checks before release-please may merge.
 on:
   schedule:
     - cron: "0 4 * * 1" # Mondays 04:00 UTC
@@ -23,13 +24,13 @@ jobs:
       matrix:
         target: [fuzz_parse_jikanwari, fuzz_parse_sansho_html]
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1
         with:
           toolchain: nightly
-      - uses: taiki-e/install-action@v2
+      - uses: taiki-e/install-action@7572810d7dd469b651bb7793945692cf78da5dd7 # v2
         with:
-          tool: cargo-fuzz
+          tool: cargo-fuzz@0.13.2
       - name: seed corpus
         run: |
           mkdir -p crates/cli/fuzz/corpus/fuzz_parse_sansho_html
@@ -46,7 +47,7 @@ jobs:
             --target x86_64-unknown-linux-gnu -- -max_total_time=120
       - name: upload crashes
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: fuzz-artifacts-${{ matrix.target }}
           path: crates/cli/fuzz/artifacts/

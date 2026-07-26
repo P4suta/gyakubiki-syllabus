@@ -4,7 +4,7 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use syllabus_cli::detail::parse_sansho_html;
+use syllabus_cli::test_support::parse_sansho_html;
 
 fuzz_target!(|data: &str| {
     let _ = parse_sansho_html("fuzz", data);

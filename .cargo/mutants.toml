@@ -8,6 +8,14 @@
 # node tests), and the CLI's network / scrape / IO / terminal plumbing (E2E and
 # integration tests, not unit assertions). Mutants there survive by design and
 # would only add noise.
+#
+# The 3,928-course latest_snapshot test is a release acceptance/performance
+# check. Re-running it for every mutant would dominate the mutation budget, so
+# the ordinary unit/integration suite kills mutants while CI runs that snapshot
+# independently in the Rust gate.
+test_tool = "nextest"
+additional_cargo_test_args = ["-E", "not binary(latest_snapshot)"]
+
 exclude_globs = [
     "crates/wasm/**",
     "crates/cli/src/main.rs",

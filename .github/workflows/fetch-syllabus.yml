@@ -23,8 +23,7 @@ on:
         default: ''
 
 permissions:
-  contents: write   # commit raw/ straight to main (signed, via the GitHub API)
-  actions: write    # trigger deploy.yml via gh workflow run
+  contents: read
 
 concurrency:
   group: fetch-syllabus
@@ -35,11 +34,33 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - name: Require and mint data bot token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ secrets.DATA_BOT_CLIENT_ID }}
+          private-key: ${{ secrets.DATA_BOT_PRIVATE_KEY }}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+      - uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1
+
+      - name: Check out update branch
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          UPDATE_BRANCH: data-refresh/syllabus
+        run: |
+          if git ls-remote --exit-code origin "refs/heads/$UPDATE_BRANCH" >/dev/null 2>&1; then
+            git fetch origin "$UPDATE_BRANCH"
+            git switch -C "$UPDATE_BRANCH" FETCH_HEAD
+          else
+            gh api "repos/$GITHUB_REPOSITORY/git/refs" \
+              -f ref="refs/heads/$UPDATE_BRANCH" -f sha="$GITHUB_SHA"
+            git switch -c "$UPDATE_BRANCH"
+          fi
 
       - name: Build syllabus-cli
-        run: cargo build --release -p syllabus-cli
+        run: cargo build --locked --release -p syllabus-cli
 
       - name: Fetch syllabus
         env:
@@ -55,19 +76,26 @@ jobs:
           fi
           ./target/release/syllabus-cli "${args[@]}"
 
-      - name: Commit if changed
+      - name: Commit update branch if changed
         id: commit
-        # Run only when dry-run is false. Signed commit straight to main via the
-        # GitHub API (main no longer requires status checks).
         if: ${{ !inputs.dry-run }}
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          GITHUB_REF_NAME: data-refresh/syllabus
         run: |
           ./target/release/syllabus-cli commit --path raw \
             --message "chore(raw): syllabus grid refresh ($(date -u +%Y-%m-%d))"
 
-      - name: Trigger deploy workflow
+      - name: Open or update data pull request
         if: ${{ steps.commit.outputs.changed == 'true' }}
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh workflow run deploy.yml --ref main
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          UPDATE_BRANCH: data-refresh/syllabus
+        run: |
+          if gh pr view "$UPDATE_BRANCH" --json number >/dev/null 2>&1; then
+            gh pr edit "$UPDATE_BRANCH" --title "chore(raw): refresh syllabus grid"
+          else
+            gh pr create --base main --head "$UPDATE_BRANCH" \
+              --title "chore(raw): refresh syllabus grid" \
+              --body "Automated full syllabus-grid refresh. Merge only after the required release gate validates dataset completeness and the production artifact."
+          fi

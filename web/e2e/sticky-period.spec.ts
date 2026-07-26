@@ -24,7 +24,10 @@ test.describe('sticky period label (desktop grid)', () => {
 
 		for (const frac of [0, 0.2, 0.45, 0.7, 0.9, 0.99]) {
 			await scroller.evaluate((s, f) => {
-				s.scrollTop = (s.scrollHeight - s.clientHeight) * f
+				const grid = s.querySelector<HTMLElement>('[data-timetable-grid]')
+				if (!grid) throw new Error('timetable grid is missing')
+				const gridMaxScroll = Math.max(0, grid.offsetTop + grid.offsetHeight - s.clientHeight)
+				s.scrollTop = gridMaxScroll * f
 			}, frac)
 			await page.waitForTimeout(120)
 
@@ -38,7 +41,10 @@ test.describe('sticky period label (desktop grid)', () => {
 					(c) => c.offsetTop <= center && center < c.offsetTop + c.offsetHeight,
 				)
 			})
-			expect(currentIdx, `a period owns the viewport centre at frac ${frac}`).toBeGreaterThanOrEqual(0)
+			expect(
+				currentIdx,
+				`a period owns the viewport centre at frac ${frac}`,
+			).toBeGreaterThanOrEqual(0)
 			await expectWithinBand(badges.nth(currentIdx), scroller, headerH)
 
 			// (2) Per-badge invariants across all 6 periods.
@@ -52,7 +58,10 @@ test.describe('sticky period label (desktop grid)', () => {
 				// A period whose cell is entirely off-screen must NOT show a badge (the
 				//「6限補講が列下部に見切れる」bug).
 				if (!cellOnScreen) {
-					expect(badgeOnScreen, `period #${i + 1} badge hidden when its cell is off-screen (frac ${frac})`).toBe(false)
+					expect(
+						badgeOnScreen,
+						`period #${i + 1} badge hidden when its cell is off-screen (frac ${frac})`,
+					).toBe(false)
 				}
 
 				// Any on-screen badge sits below the header and inside the scroller (the

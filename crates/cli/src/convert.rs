@@ -7,13 +7,13 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 
 use anyhow::{Context, Result};
-use syllabus_core::convert_v3;
-use syllabus_core::model::{Course, ProcessedData, RawCourse};
-use syllabus_core::{DocFields, SearchIndex};
+use sha2::{Digest, Sha256};
+use syllabus_core::convert_v4;
+use syllabus_core::{Course, DocFields, ProcessedData, RawCourse, SearchIndex};
 
 use crate::detail::SanshoDetail;
 
-/// Canonical output plus any warnings raised while converting.
+/// Canonical data and search-index output.
 pub struct Rendered {
     /// `data.json` bytes: compact-or-pretty JSON, HTML-escaped, with **no**
     /// trailing newline. The binary adds a newline only when writing to stdout.
@@ -21,20 +21,24 @@ pub struct Rendered {
     /// `search.idx` bytes: the compact binary full-text index, shipped alongside
     /// `data.json` and loaded lazily in the worker.
     pub index: Vec<u8>,
-    pub warnings: Vec<String>,
 }
 
-/// Convert raw courses into `data.json` bytes, stamping `generated_at` (RFC 3339).
+/// Convert raw courses into `data.json` bytes, stamping `generated_at` (RFC
+/// 3339) and binding the dataset identity to `source_commit`.
 ///
 /// # Errors
-/// Returns an error if serialization fails.
+/// Returns an error if the source violates the v4 publication schema, detail
+/// enrichment is inconsistent, or serialization fails.
 pub fn render_data_json(
     raw: &[RawCourse],
     generated_at: String,
+    source_commit: &str,
     compact: bool,
     details: &HashMap<String, SanshoDetail>,
 ) -> Result<Rendered> {
-    let mut result = convert_v3(raw, generated_at);
+    let dataset_id = dataset_identity(raw, details, &generated_at, source_commit)?;
+    let mut result =
+        convert_v4(raw, generated_at, dataset_id.clone()).context("source validation failed")?;
     if !details.is_empty() {
         for course in &mut result.data.courses {
             if let Some(detail) = details.get(&course.cd) {
@@ -47,59 +51,170 @@ pub fn render_data_json(
     Ok(Rendered {
         bytes: json.into_bytes(),
         index,
-        warnings: result.warnings,
     })
 }
 
-/// Build the full-text search index over the converted courses. The display
-/// fields (name/subtitle/instructor/code) carry match spans; `keywords` bundles
-/// the department, taxonomy (分野・分類), and syllabus キーワード — searchable for
-/// recall, never highlighted — mirroring the surface the old `st` haystack held.
+#[derive(Default)]
+struct OwnedSearchFields {
+    department: String,
+    summary: String,
+    aims: String,
+    goals: String,
+    plan: String,
+    textbooks: String,
+    prerequisite: String,
+    preparation: String,
+    office_hour: String,
+    keywords: String,
+    teachers: String,
+    numbering: String,
+    sdgs: String,
+    evaluation: String,
+    delivery: String,
+    extra: String,
+}
+
+/// Build the positional full-text index. Each public syllabus field has its own
+/// stable field discriminant so ranking, match labels, and offsets never collapse
+/// into an opaque "body" bucket.
 fn build_search_index(data: &ProcessedData, details: &HashMap<String, SanshoDetail>) -> Vec<u8> {
-    // Own the joined keyword text so `DocFields` can borrow it.
-    let keyword_texts: Vec<String> = data
+    let search_fields: Vec<OwnedSearchFields> = data
         .courses
         .iter()
-        .map(|c| {
+        .map(|course| {
             let dept = data
                 .dicts
                 .departments
-                .get(c.dept as usize)
+                .get(course.dept as usize)
                 .map_or("", String::as_str);
-            let detail_kw = details
-                .get(&c.cd)
-                .map(|d| d.keywords.join(" ").replace(['\n', '\r'], " "));
-            [
-                dept,
-                c.bunya.as_deref().unwrap_or_default(),
-                c.bunrui.as_deref().unwrap_or_default(),
-                detail_kw.as_deref().unwrap_or_default(),
-            ]
-            .into_iter()
-            .filter(|s| !s.is_empty())
-            .collect::<Vec<_>>()
-            .join(" ")
+            let mut fields = OwnedSearchFields {
+                department: join_search_values([
+                    dept,
+                    course.gaku.as_deref().unwrap_or_default(),
+                    course.gakka.as_deref().unwrap_or_default(),
+                    course.bunya.as_deref().unwrap_or_default(),
+                    course.bunrui.as_deref().unwrap_or_default(),
+                ]),
+                ..OwnedSearchFields::default()
+            };
+            if let Some(detail) = details.get(&course.cd) {
+                fields.summary = join_search_values(detail.summary.iter().map(String::as_str));
+                fields.aims = join_search_values(detail.aims.iter().map(String::as_str));
+                fields.goals = join_search_values(detail.goals.iter().map(String::as_str));
+                fields.plan =
+                    join_search_values(detail.plan.iter().map(|value| value.text.as_str()));
+                fields.textbooks = join_search_values(detail.textbooks.iter().map(String::as_str));
+                fields.prerequisite = join_search_values(detail.prereq.iter().map(String::as_str));
+                fields.preparation = join_search_values(detail.prep.iter().map(String::as_str));
+                fields.office_hour =
+                    join_search_values(detail.office_hour.iter().flat_map(|value| {
+                        [
+                            value.name.as_str(),
+                            value.day.as_str(),
+                            value.time.as_str(),
+                            value.place.as_str(),
+                        ]
+                    }));
+                fields.keywords = join_search_values(detail.keywords.iter().map(String::as_str));
+                fields.teachers = join_search_values(detail.teachers.iter().map(String::as_str));
+                fields.numbering = join_search_values(detail.numbering.iter().map(String::as_str));
+                fields.sdgs = join_search_values(detail.sdgs.iter().map(String::as_str));
+                fields.evaluation = join_search_values(detail.eval.iter().flat_map(|value| {
+                    value
+                        .rows
+                        .iter()
+                        .map(|row| row.item.as_str())
+                        .chain(value.note.iter().map(String::as_str))
+                }));
+                fields.delivery = join_search_values(
+                    detail
+                        .delivery
+                        .iter()
+                        .flat_map(|value| [value.mode.as_str(), value.raw.as_str()]),
+                );
+                fields.extra = join_search_values(
+                    detail
+                        .extra
+                        .iter()
+                        .flat_map(|value| [value.label.as_str(), value.text.as_str()]),
+                );
+            }
+            fields
         })
         .collect();
 
     let docs = data
         .courses
         .iter()
-        .zip(&keyword_texts)
-        .map(|(c, kw)| DocFields {
-            name: &c.nm,
-            subtitle: c.sub.as_deref(),
-            instructor: &c.prof,
-            code: &c.cd,
-            keywords: kw,
+        .zip(&search_fields)
+        .map(|(course, fields)| DocFields {
+            name: &course.nm,
+            subtitle: course.sub.as_deref(),
+            instructor: &course.prof,
+            code: &course.cd,
+            department: &fields.department,
+            summary: &fields.summary,
+            aims: &fields.aims,
+            goals: &fields.goals,
+            plan: &fields.plan,
+            textbooks: &fields.textbooks,
+            prerequisite: &fields.prerequisite,
+            preparation: &fields.preparation,
+            office_hour: &fields.office_hour,
+            keywords: &fields.keywords,
+            teachers: &fields.teachers,
+            numbering: &fields.numbering,
+            sdgs: &fields.sdgs,
+            evaluation: &fields.evaluation,
+            delivery: &fields.delivery,
+            extra: &fields.extra,
         });
-    SearchIndex::build(docs).encode()
+    SearchIndex::build_for_dataset(&data.dataset_id, docs).encode()
+}
+
+/// Stable identity for all public assets in a build. Hash-map iteration is
+/// sorted explicitly so identical inputs produce the same ID on every platform.
+fn dataset_identity(
+    raw: &[RawCourse],
+    details: &HashMap<String, SanshoDetail>,
+    generated_at: &str,
+    source_commit: &str,
+) -> Result<String> {
+    let mut hasher = Sha256::new();
+    // Bind the deterministic transform to the source truth. A wire/index codec
+    // change must never reuse an immutable directory from an older app build.
+    hasher.update(
+        b"gyakubiki-dataset-v4-search-syx4-nfkc-positional-br2-decoded-sha-source-commit\0",
+    );
+    hasher.update(source_commit.as_bytes());
+    hasher.update(b"\0");
+    // `generated_at` is embedded in data.json, so it is part of the immutable
+    // asset identity even when the source records themselves are unchanged.
+    hasher.update(generated_at.as_bytes());
+    hasher.update(b"\0");
+    hasher.update(serde_json::to_vec(raw).context("failed to fingerprint courses")?);
+    let mut keys: Vec<&String> = details.keys().collect();
+    keys.sort_unstable();
+    for key in keys {
+        hasher.update(key.as_bytes());
+        hasher.update(serde_json::to_vec(&details[key]).context("failed to fingerprint details")?);
+    }
+    Ok(format!("{:x}", hasher.finalize()))
+}
+
+fn join_search_values<'a>(values: impl IntoIterator<Item = &'a str>) -> String {
+    values
+        .into_iter()
+        .filter(|value| !value.trim().is_empty())
+        .map(|value| value.replace(['\n', '\r'], " "))
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// Fold a course's syllabus detail into its grid record: the card fields
 /// (`unit`/`dm`/`ev`). The syllabus キーワード go into the search index (see
 /// [`build_search_index`]), and the full detail (概要・到達目標 …) stays in
-/// `details/{cd}.json`.
+/// the content-addressed detail asset selected by the dataset manifest.
 fn enrich_course(course: &mut Course, detail: &SanshoDetail) {
     course.unit = detail.unit.clone();
     course.dm = detail
@@ -162,7 +277,7 @@ mod tests {
     use crate::detail::{Delivery, Eval, EvalRow, SanshoDetail};
     use std::borrow::Cow;
     use std::collections::HashMap;
-    use syllabus_core::model::RawCourse;
+    use syllabus_core::RawCourse;
 
     #[test]
     fn enriches_course_with_detail_card_fields_and_search() {
@@ -199,7 +314,7 @@ mod tests {
         let details: HashMap<String, SanshoDetail> =
             [("001".to_owned(), detail)].into_iter().collect();
 
-        let rendered = render_data_json(&raw, "t".into(), true, &details).unwrap();
+        let rendered = render_data_json(&raw, "t".into(), "test-source", true, &details).unwrap();
         let json = String::from_utf8(rendered.bytes).unwrap();
         assert!(json.contains(r#""unit":"2.0""#));
         assert!(json.contains(r#""dm":"hybrid""#));
@@ -226,7 +341,7 @@ mod tests {
         let details: HashMap<String, SanshoDetail> =
             [("001".to_owned(), detail)].into_iter().collect();
 
-        let rendered = render_data_json(&raw, "t".into(), true, &details).unwrap();
+        let rendered = render_data_json(&raw, "t".into(), "test-source", true, &details).unwrap();
         let index = SearchIndex::decode(&rendered.index).expect("index decodes");
         let candidates = [CourseIndex::new(0)];
         // Name, instructor, and the detail keyword are all reachable.
@@ -237,12 +352,10 @@ mod tests {
     }
 
     #[test]
-    fn detail_prose_is_searchable_only_via_keywords_not_the_index_or_json() {
+    fn detail_prose_is_searchable_via_the_index_but_not_data_json() {
         use syllabus_core::{CourseIndex, SearchIndex};
-        // Only キーワード become searchable; the long 概要/目的/到達目標 prose does not
-        // enter the index (it would bloat search.idx) nor data.json (it stays in
-        // details/{cd}.json). Guarding the *negative* — a regression that re-adds
-        // the prose to either artifact must fail here.
+        // Detail prose belongs in the lazy full-text index, while data.json stays
+        // compact and keeps the canonical prose in its detail asset.
         let raw = vec![RawCourse {
             kogi_cd: "001".into(),
             kogi_nm: "情報科学".into(),
@@ -259,18 +372,15 @@ mod tests {
         let details: HashMap<String, SanshoDetail> =
             [("001".to_owned(), detail)].into_iter().collect();
 
-        let rendered = render_data_json(&raw, "t".into(), true, &details).unwrap();
+        let rendered = render_data_json(&raw, "t".into(), "test-source", true, &details).unwrap();
         let json = String::from_utf8(rendered.bytes).unwrap();
         let index = SearchIndex::decode(&rendered.index).expect("index decodes");
         let one = [CourseIndex::new(0)];
 
-        // The keyword is searchable; the prose is not (in the index or data.json).
+        // Keyword and prose are searchable; prose is not duplicated into data.json.
         assert_eq!(index.search("検索可能キーワード語", one).len(), 1);
         for prose in ["除外概要", "除外目的", "除外到達目標"] {
-            assert!(
-                index.search(prose, one).is_empty(),
-                "prose {prose} must not be indexed"
-            );
+            assert_eq!(index.search(prose, one).len(), 1, "{prose} must be indexed");
             assert!(
                 !json.contains(prose),
                 "prose {prose} must not enter data.json"
@@ -307,7 +417,7 @@ mod tests {
         let details: HashMap<String, SanshoDetail> =
             [("001".to_owned(), detail)].into_iter().collect();
         let json = String::from_utf8(
-            render_data_json(&raw, "t".into(), true, &details)
+            render_data_json(&raw, "t".into(), "test-source", true, &details)
                 .unwrap()
                 .bytes,
         )
@@ -335,7 +445,7 @@ mod tests {
         let details: HashMap<String, SanshoDetail> =
             [("001".to_owned(), detail)].into_iter().collect();
         let json = String::from_utf8(
-            render_data_json(&raw, "t".into(), true, &details)
+            render_data_json(&raw, "t".into(), "test-source", true, &details)
                 .unwrap()
                 .bytes,
         )
@@ -362,5 +472,55 @@ mod tests {
             escape_html(r#"{"nm":"日本語 abc 123"}"#),
             Cow::Borrowed(_)
         ));
+    }
+
+    #[test]
+    fn generated_at_changes_the_dataset_identity() {
+        let raw = vec![RawCourse {
+            kogi_cd: "001".into(),
+            kogi_nm: "X".into(),
+            ..Default::default()
+        }];
+        let details = HashMap::new();
+        let first = render_data_json(
+            &raw,
+            "2026-01-01T00:00:00Z".into(),
+            "test-source",
+            true,
+            &details,
+        )
+        .unwrap()
+        .bytes;
+        let second = render_data_json(
+            &raw,
+            "2026-01-02T00:00:00Z".into(),
+            "test-source",
+            true,
+            &details,
+        )
+        .unwrap()
+        .bytes;
+        let first: serde_json::Value = serde_json::from_slice(&first).unwrap();
+        let second: serde_json::Value = serde_json::from_slice(&second).unwrap();
+        assert_ne!(first["datasetId"], second["datasetId"]);
+    }
+
+    #[test]
+    fn source_commit_changes_the_dataset_identity() {
+        let raw = vec![RawCourse {
+            kogi_cd: "001".into(),
+            kogi_nm: "X".into(),
+            ..Default::default()
+        }];
+        let details = HashMap::new();
+        let first = render_data_json(&raw, "t".into(), "commit-a", true, &details)
+            .unwrap()
+            .bytes;
+        let second = render_data_json(&raw, "t".into(), "commit-b", true, &details)
+            .unwrap()
+            .bytes;
+        let first: serde_json::Value = serde_json::from_slice(&first).unwrap();
+        let second: serde_json::Value = serde_json::from_slice(&second).unwrap();
+        assert_ne!(first["datasetId"], second["datasetId"]);
     }
 }

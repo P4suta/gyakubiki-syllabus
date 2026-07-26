@@ -1,8 +1,9 @@
 name: Mutation
 
 # Mutation testing: inject small bugs and check the suite kills them — measures
-# whether the tests actually catch regressions (vs merely running). Two modes,
-# both advisory (never gate a PR, like Fuzz):
+# whether the tests actually catch regressions (vs merely running). The jobs
+# here are advisory; CI repeats full Rust/Web mutation as required release-PR
+# checks:
 #   - full   — weekly + on demand, the whole scoped surface (slow).
 #   - PR diff — every PR, only the changed lines (fast feedback).
 on:
@@ -28,8 +29,8 @@ jobs:
       rust: ${{ steps.filter.outputs.rust }}
       web: ${{ steps.filter.outputs.web }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: dorny/paths-filter@v3
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: dorny/paths-filter@6852f92c20ea7fd3b0c25de3b5112db3a98da050 # v3
         id: filter
         with:
           filters: |
@@ -51,15 +52,21 @@ jobs:
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1
       # cargo-mutants (+ toolchain helpers) from .mise.toml — same version as local.
-      - uses: jdx/mise-action@v2
+      - uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # v2
+        with:
+          install_args: >-
+            aqua:cargo-bins/cargo-binstall cargo:cargo-mutants
+            cargo:cargo-nextest
+        env:
+          MISE_JOBS: '1'
       # Scope (core + tested cli logic, minus net/IO) lives in mutants.toml.
       # --timeout guards mutants that spin an infinite loop.
       - name: mutate
         run: cargo mutants --timeout 60 -j 2
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: ${{ !cancelled() }}
         with:
           name: mutants-full
@@ -75,11 +82,13 @@ jobs:
       run:
         working-directory: web
     steps:
-      - uses: actions/checkout@v7
-      - uses: oven-sh/setup-bun@v2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # v2
+        with:
+          install_args: bun
       - run: bun install --frozen-lockfile
-      - run: bunx stryker run
-      - uses: actions/upload-artifact@v4
+      - run: bun run mutation
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: ${{ !cancelled() }}
         with:
           name: stryker-report
@@ -95,11 +104,17 @@ jobs:
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-      - uses: jdx/mise-action@v2
+      - uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1
+      - uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # v2
+        with:
+          install_args: >-
+            aqua:cargo-bins/cargo-binstall cargo:cargo-mutants
+            cargo:cargo-nextest
+        env:
+          MISE_JOBS: '1'
       - name: diff vs base
         env:
           BASE_REF: ${{ github.base_ref }}
@@ -107,8 +122,9 @@ jobs:
       # --in-diff restricts mutants to lines the PR touched (still inside the
       # mutants.toml scope).
       - name: mutate changed lines
+        continue-on-error: true
         run: cargo mutants --in-diff pr.diff --timeout 60 -j 2
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: ${{ !cancelled() }}
         with:
           name: mutants-pr-diff
@@ -126,14 +142,17 @@ jobs:
       run:
         working-directory: web
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
-      - uses: oven-sh/setup-bun@v2
+      - uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # v2
+        with:
+          install_args: bun
       - run: bun install --frozen-lockfile
       # Stryker has no git-diff flag, so pass the changed lib sources (whole
       # files, minus tests) to --mutate. --relative yields web-relative paths.
       - name: mutate changed files
+        continue-on-error: true
         env:
           BASE_REF: ${{ github.base_ref }}
         run: |
@@ -141,8 +160,8 @@ jobs:
             "origin/$BASE_REF"...HEAD -- 'src/lib/**/*.ts' ':!src/lib/**/*.test.ts' ':!src/lib/**/*.spec.ts')
           if [ ${#FILES[@]} -eq 0 ]; then echo "No lib source changed; nothing to mutate."; exit 0; fi
           printf 'Mutating: %s\n' "${FILES[@]}"
-          bunx stryker run --mutate "$(IFS=,; echo "${FILES[*]}")"
-      - uses: actions/upload-artifact@v4
+          bun run mutation --mutate "$(IFS=,; echo "${FILES[*]}")"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: ${{ !cancelled() }}
         with:
           name: stryker-pr-diff

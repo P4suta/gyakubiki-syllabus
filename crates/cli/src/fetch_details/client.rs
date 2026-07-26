@@ -10,6 +10,7 @@
 use std::time::Duration;
 
 use anyhow::{Context, Result};
+use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::fetch::token::extract_entry_context;
@@ -169,18 +170,60 @@ fn classify_init_find(
             body: snippet(body),
         });
     }
-    let value: Value = serde_json::from_str(body).map_err(|e| DetailError::Fatal(e.into()))?;
-    if let Some(msg) = value.get("errorMsg").and_then(Value::as_str) {
+    let value: InitFindResponse =
+        serde_json::from_str(body).map_err(|e| DetailError::Fatal(e.into()))?;
+    if let Some(msg) = value
+        .error_msg
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+    {
+        if confirms_absence(msg) {
+            return Err(DetailError::Unavailable {
+                reason: msg.trim().to_owned(),
+            });
+        }
         return Err(DetailError::Fatal(anyhow::anyhow!(
             "initFind errorMsg: {msg}"
         )));
     }
-    match value.get("guid").and_then(Value::as_str) {
+    match value.guid.as_deref() {
         Some(guid) if !guid.is_empty() => Ok(guid.to_owned()),
         _ => Err(DetailError::Fatal(anyhow::anyhow!(
             "initFind returned no guid"
         ))),
     }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct InitFindResponse {
+    #[serde(default)]
+    error_msg: Option<String>,
+    #[serde(default)]
+    guid: Option<String>,
+    #[serde(default, rename = "kogiNm")]
+    _kogi_nm: Option<String>,
+    #[serde(default, rename = "sanshoUrl")]
+    _sansho_url: Option<String>,
+    #[serde(default, rename = "isShowPDF")]
+    _is_show_pdf: Option<bool>,
+}
+
+/// Only explicit, course-specific absence messages from a successful official
+/// response may enter the temporary unavailable cache. Everything else is a
+/// protocol failure and stops the crawl.
+fn confirms_absence(message: &str) -> bool {
+    const CONFIRMED: &[&str] = &[
+        "該当するシラバス情報が存在しません",
+        "該当するシラバスがありません",
+        "シラバスが登録されていません",
+        "該当データがありません",
+    ];
+    let normalized: String = message
+        .chars()
+        .filter(|value| !value.is_whitespace())
+        .collect();
+    CONFIRMED.iter().any(|value| normalized.contains(value))
 }
 
 /// Classify a `webmvc` response into its HTML or a [`DetailError`]. Non-2xx →
@@ -304,10 +347,10 @@ mod tests {
 
     #[test]
     fn classify_init_find_bad_body_is_fatal() {
-        // errorMsg, empty guid, missing guid, and non-JSON are all "skip this
-        // course", never a block.
+        // Unknown error messages, empty guid, missing guid, non-JSON, and new
+        // response fields are protocol failures that must stop the crawl.
         assert!(matches!(
-            classify_init_find(200, r#"{"errorMsg":"該当なし"}"#, None),
+            classify_init_find(200, r#"{"errorMsg":"内部処理に失敗しました"}"#, None),
             Err(DetailError::Fatal(_))
         ));
         assert!(matches!(
@@ -320,6 +363,30 @@ mod tests {
         ));
         assert!(matches!(
             classify_init_find(200, "not json", None),
+            Err(DetailError::Fatal(_))
+        ));
+        assert!(matches!(
+            classify_init_find(200, r#"{"guid":"G","newProtocolField":1}"#, None),
+            Err(DetailError::Fatal(_))
+        ));
+    }
+
+    #[test]
+    fn only_explicit_official_absence_is_unavailable() {
+        assert!(matches!(
+            classify_init_find(
+                200,
+                r#"{"errorMsg":"該当するシラバスがありません。","guid":null}"#,
+                None
+            ),
+            Err(DetailError::Unavailable { .. })
+        ));
+        assert!(matches!(
+            classify_init_find(404, "not found", None),
+            Err(DetailError::Http { status: 404, .. })
+        ));
+        assert!(matches!(
+            classify_init_find(200, r#"{"errorMsg":"該当なし"}"#, None),
             Err(DetailError::Fatal(_))
         ));
     }

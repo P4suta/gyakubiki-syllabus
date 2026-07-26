@@ -13,171 +13,99 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Which kind of change is this? Docs-only PRs skip the heavy build/test jobs.
-  changes:
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    outputs:
-      code: ${{ steps.filter.outputs.code }}
-    steps:
-      - uses: actions/checkout@v7
-      - uses: dorny/paths-filter@v3
-        id: filter
-        with:
-          filters: |
-            code:
-              - 'crates/**'
-              - 'web/**'
-              - 'Cargo.toml'
-              - 'Cargo.lock'
-              - 'rust-toolchain.toml'
-              - '.mise.toml'
-              - 'dev-data/**'
-              - '.github/workflows/ci.yml'
-
   rust:
-    name: Rust (test / clippy / fmt)
-    needs: changes
-    if: needs.changes.outputs.code == 'true'
+    name: Rust
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v7
-      # rust-toolchain.toml drives the version; the action caches ~/.cargo + target.
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1
         with:
           components: llvm-tools-preview
-      # cargo-llvm-cov + cargo-nextest (+ the rest) from .mise.toml — same versions
-      # as local and every other job.
-      - uses: jdx/mise-action@v2
-      - name: fmt
-        run: cargo fmt --check
-      - name: clippy
-        run: cargo clippy --locked --all-targets -- -D warnings
-      # nextest under llvm-cov instrumentation — one build for test + coverage.
-      # The workspace has no doctests, so nextest runs the complete set.
-      - name: test + coverage (nextest)
-        run: cargo llvm-cov nextest --locked --workspace --exclude syllabus-wasm --no-report
-      - name: coverage report + enforce threshold (lines >= 80%)
-        run: |
-          # Fence the plain-text table so the step summary renders it as a
-          # monospace block — otherwise its `---` rule turns the header row into a
-          # giant setext heading.
-          {
-            echo '### Coverage'
-            echo '```'
-            cargo llvm-cov report --summary-only
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-          cargo llvm-cov report --lcov --output-path lcov.info
-          cargo llvm-cov report --fail-under-lines 80
-      - uses: actions/upload-artifact@v4
+      - uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # v2
         with:
-          name: coverage-lcov
-          path: lcov.info
-      # FIELD_SPEC drives both the generated TS and docs; fail if they are stale.
-      - name: field spec generated files up to date
-        run: cargo run --locked -q -p syllabus-cli -- gen-field-docs --check
-      # The course/eval colours are derived (OKLCH); fail on a hand-edit that drifts.
-      - name: palette matches its derivation
-        run: cargo run --locked -q -p syllabus-cli -- gen-palette --check
+          install_args: >-
+            aqua:cargo-bins/cargo-binstall aqua:taiki-e/cargo-llvm-cov
+            cargo:cargo-nextest
+        env:
+          MISE_JOBS: '1'
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --locked --workspace --all-targets -- -D warnings
+      - run: cargo llvm-cov nextest --locked --workspace --exclude syllabus-wasm --no-report
+      - run: cargo llvm-cov report --fail-under-lines 80
+      - run: cargo doc --locked --workspace --no-deps
+        env:
+          RUSTDOCFLAGS: -D warnings
+      - run: cargo run --locked -q -p syllabus-cli -- gen-field-docs --check
+      - run: cargo run --locked -q -p syllabus-cli -- gen-palette --check
 
-  # Build the WASM glue once (+ its node boundary tests) and share it, so web/e2e
-  # don't each re-run the Rust/wasm-pack toolchain.
   wasm:
-    name: WASM (build / boundary tests)
-    needs: changes
-    if: needs.changes.outputs.code == 'true'
+    name: WASM boundary
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-      - uses: jdx/mise-action@v2
-      - name: build wasm glue
-        run: wasm-pack build crates/wasm --target web --out-dir ../../web/src/wasm --out-name syllabus
-      - name: wasm boundary tests (node)
-        run: wasm-pack test --node crates/wasm
-      - uses: actions/upload-artifact@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1
+      - uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # v2
+        with:
+          install_args: aqua:rustwasm/wasm-pack
+      - run: wasm-pack build crates/wasm --target web --out-dir ../../web/src/wasm --out-name syllabus
+      - run: wasm-pack test --node crates/wasm
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: wasm-glue
           path: web/src/wasm
 
   web:
-    name: Web (check / test)
-    needs: [changes, wasm]
-    if: needs.changes.outputs.code == 'true'
+    name: Web
+    needs: wasm
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: web
     steps:
-      - uses: actions/checkout@v7
-      # Bun (+ node) from .mise.toml — no Rust toolchain needed here.
-      - uses: jdx/mise-action@v2
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # v2
+        with:
+          install_args: bun
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: wasm-glue
           path: web/src/wasm
-      - name: cache bun install
-        uses: actions/cache@v4
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ~/.bun/install/cache
           key: bun-${{ runner.os }}-${{ hashFiles('web/bun.lock') }}
-          restore-keys: bun-${{ runner.os }}-
       - run: bun install --frozen-lockfile
       - run: bun run check
-      # Unit tests with the coverage gate on the pure lib/ modules (see vite.config).
+      - run: bun run lint
       - run: bun run test:cov
 
   e2e:
-    name: E2E (Playwright)
-    needs: [changes, wasm]
-    if: needs.changes.outputs.code == 'true'
+    name: E2E
+    needs: wasm
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 35
     steps:
-      - uses: actions/checkout@v7
-      # The CLI (gen-sample) needs Rust; Bun/Playwright come from mise.
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-      - uses: jdx/mise-action@v2
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1
+      - uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # v2
+        with:
+          install_args: bun
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: wasm-glue
           path: web/src/wasm
-      # Generate the KULAS-free sample dataset the specs anchor on (no network).
-      - name: generate sample data
-        run: |
-          cargo run --release -q -p syllabus-cli -- gen-sample
-          cargo run --release -q -p syllabus-cli -- convert dev-data/sample-raw.json \
-            --compact --details-dir dev-data/sample-details \
-            --details-out web/public/details -o web/public/data.json
-      # CJK fonts so the visual baselines' glyphs match (visual specs run only on CI).
-      - name: install fonts
+      - name: Install CJK fonts
         run: sudo apt-get update && sudo apt-get install -y fonts-noto-cjk
-      - name: cache bun install
-        uses: actions/cache@v4
-        with:
-          path: ~/.bun/install/cache
-          key: bun-${{ runner.os }}-${{ hashFiles('web/bun.lock') }}
-          restore-keys: bun-${{ runner.os }}-
-      - name: install web deps
+      - run: bun install --frozen-lockfile
         working-directory: web
-        run: bun install --frozen-lockfile
-      # Cache the Playwright browser, keyed on the pinned @playwright/test version.
-      - name: cache Playwright browser
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ hashFiles('web/bun.lock') }}
-      - name: install Playwright browser
+      - run: bun run playwright:install --with-deps chromium firefox webkit
         working-directory: web
-        run: bunx playwright install --with-deps chromium
-      - name: run E2E (geometry / gestures / a11y / smoke / visual)
+      - run: bun run test:e2e
         working-directory: web
-        run: bun run test:e2e
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: ${{ !cancelled() }}
         with:
           name: playwright-results
@@ -185,35 +113,296 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
-  typos:
-    name: typos (spell check)
+  dependency-review:
+    name: Dependency review
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
-    timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v7
-      - uses: crate-ci/typos@master
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48 # v4.9.0
 
-  actionlint:
-    name: actionlint (workflow lint)
+  security:
+    name: Audit, licenses, SBOM
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v7
-      - name: actionlint
-        uses: reviewdog/action-actionlint@v1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1
+      - uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # v2
+        with:
+          install_args: >-
+            aqua:cargo-bins/cargo-binstall aqua:rustsec/rustsec/cargo-audit
+            cargo:cargo-deny cargo:cargo-cyclonedx bun
+        env:
+          MISE_JOBS: '1'
+      - run: cargo audit --deny warnings
+      - run: cargo deny check
+      - run: cargo cyclonedx --format json --all
+      - run: bun install --frozen-lockfile
+        working-directory: web
+      - run: bun audit
+        working-directory: web
+      - run: bun run sbom
+        working-directory: web
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cyclonedx-sbom
+          path: '**/*.cdx.json'
+          if-no-files-found: error
+
+  codeql:
+    name: CodeQL (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      packages: read
+      actions: read
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [rust, javascript-typescript, actions]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: github/codeql-action/init@3b0bd1d116c0bde30213346b22d4f634d96a2fb0 # v3
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: none
+      - uses: github/codeql-action/analyze@3b0bd1d116c0bde30213346b22d4f634d96a2fb0 # v3
+        with:
+          category: '/language:${{ matrix.language }}'
+
+  pre-release-fuzz:
+    name: Pre-release fuzz (${{ matrix.target }})
+    if: >-
+      github.event_name == 'pull_request' &&
+      startsWith(github.head_ref, 'release-please--branches--main')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [fuzz_parse_jikanwari, fuzz_parse_sansho_html]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1
+        with:
+          toolchain: nightly
+      - uses: taiki-e/install-action@7572810d7dd469b651bb7793945692cf78da5dd7 # v2
+        with:
+          tool: cargo-fuzz@0.13.2
+      - name: Seed corpus
+        run: |
+          mkdir -p crates/cli/fuzz/corpus/fuzz_parse_sansho_html
+          cp crates/cli/tests/fixtures/sansho_sample.html \
+             crates/cli/fuzz/corpus/fuzz_parse_sansho_html/
+      - name: Fuzz for two minutes
+        working-directory: crates/cli/fuzz
+        run: >-
+          cargo +nightly fuzz run ${{ matrix.target }}
+          --target x86_64-unknown-linux-gnu -- -max_total_time=120
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: failure()
+        with:
+          name: pre-release-fuzz-${{ matrix.target }}
+          path: crates/cli/fuzz/artifacts/
+          if-no-files-found: ignore
+
+  pre-release-rust-mutation:
+    name: Pre-release mutation (Rust)
+    if: >-
+      github.event_name == 'pull_request' &&
+      startsWith(github.head_ref, 'release-please--branches--main')
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1
+      - uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # v2
+        with:
+          install_args: >-
+            aqua:cargo-bins/cargo-binstall cargo:cargo-mutants
+            cargo:cargo-nextest
+        env:
+          MISE_JOBS: '1'
+      - run: cargo mutants --timeout 60 -j 2
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: ${{ !cancelled() }}
+        with:
+          name: pre-release-mutants-rust
+          path: mutants.out/
+          retention-days: 14
+          if-no-files-found: ignore
+
+  pre-release-web-mutation:
+    name: Pre-release mutation (Web)
+    if: >-
+      github.event_name == 'pull_request' &&
+      startsWith(github.head_ref, 'release-please--branches--main')
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # v2
+        with:
+          install_args: bun
+      - run: bun install --frozen-lockfile
+      - run: bun run mutation
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: ${{ !cancelled() }}
+        with:
+          name: pre-release-mutants-web
+          path: web/reports/
+          retention-days: 14
+          if-no-files-found: ignore
+
+  hygiene:
+    name: Repository hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+      - uses: crate-ci/typos@bee27e3a4fd1ea2111cf90ab89cd076c870fce14 # v1
+      - uses: gitleaks/gitleaks-action@dcedce43c6f43de0b836d1fe38946645c9c638dc # v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - uses: reviewdog/action-actionlint@50842263c20a7c46bd0065b9e624d3c569db061e # v1
         with:
           fail_level: error
           reporter: github-check
-
-  markdownlint:
-    name: markdownlint
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v7
-      - uses: DavidAnson/markdownlint-cli2-action@v23
+      - uses: DavidAnson/markdownlint-cli2-action@ded1f9488f68a970bc66ea5619e13e9b52e601cd # v23
         with:
           globs: |
             **/*.md
             !node_modules
             !web/**
+            !target/**
+
+  production-artifact:
+    name: Production artifact
+    needs: [rust, wasm, web, e2e, hygiene, security, codeql]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1
+      - uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # v2
+        with:
+          install_args: bun
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: wasm-glue
+          path: web/src/wasm
+      - name: Build verified dataset
+        run: >-
+          cargo run --locked --release -q -p syllabus-cli -- build-dataset
+          raw/*.json --details-dir raw-details --output web/public
+          --source-commit "${GITHUB_SHA}"
+      - run: bun install --frozen-lockfile
+        working-directory: web
+      - run: bun run build
+        working-directory: web
+        env:
+          GITHUB_PAGES: 'true'
+      - run: bun scripts/check-artifact-budget.ts dist
+        working-directory: web
+      - run: bun scripts/check-search-performance.ts public
+        working-directory: web
+      - run: bun run playwright:install --with-deps chromium
+        working-directory: web
+      - run: bun run test:lighthouse
+        working-directory: web
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: ${{ always() }}
+        with:
+          name: lighthouse-results
+          path: web/.lighthouseci/
+          include-hidden-files: true
+          retention-days: 14
+          if-no-files-found: error
+      - name: Pack artifact for provenance
+        if: github.event_name == 'push'
+        run: tar -czf pages-artifact.tar.gz -C web/dist .
+      - name: Attest production artifact
+        if: github.event_name == 'push'
+        uses: actions/attest-build-provenance@43d14bc2b83dec42d39ecae14e916627a18bb661 # v3
+        with:
+          subject-path: pages-artifact.tar.gz
+      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6
+      - uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4
+        with:
+          path: web/dist
+
+  required:
+    name: Required gate
+    if: always()
+    needs:
+      [
+        rust,
+        wasm,
+        web,
+        e2e,
+        dependency-review,
+        security,
+        codeql,
+        pre-release-fuzz,
+        pre-release-rust-mutation,
+        pre-release-web-mutation,
+        hygiene,
+        production-artifact,
+      ]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every release check
+        env:
+          REQUIRED_RESULTS: >-
+            ${{ needs.rust.result }} ${{ needs.wasm.result }} ${{ needs.web.result }}
+            ${{ needs.e2e.result }} ${{ needs.security.result }} ${{ needs.codeql.result }}
+            ${{ needs.hygiene.result }} ${{ needs.production-artifact.result }}
+          DEPENDENCY_REVIEW_RESULT: ${{ needs.dependency-review.result }}
+          PRE_RELEASE_RESULTS: >-
+            ${{ needs.pre-release-fuzz.result }} ${{ needs.pre-release-rust-mutation.result }}
+            ${{ needs.pre-release-web-mutation.result }}
+          IS_RELEASE_PR: >-
+            ${{ github.event_name == 'pull_request' &&
+                startsWith(github.head_ref, 'release-please--branches--main') }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          for result in $REQUIRED_RESULTS; do
+            [[ "$result" == "success" ]] || exit 1
+          done
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            [[ "$DEPENDENCY_REVIEW_RESULT" == "success" ]] || exit 1
+          else
+            [[ "$DEPENDENCY_REVIEW_RESULT" == "skipped" ]] || exit 1
+          fi
+          for result in $PRE_RELEASE_RESULTS; do
+            if [[ "$IS_RELEASE_PR" == "true" ]]; then
+              [[ "$result" == "success" ]] || exit 1
+            else
+              [[ "$result" == "skipped" ]] || exit 1
+            fi
+          done
+
+  deploy:
+    name: Deploy verified artifact
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [required, production-artifact]
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5

@@ -18,30 +18,39 @@ describe('plan-codec', () => {
 	})
 
 	it('de-duplicates while preserving first-seen order', () => {
-		expect(decodePlan('1.a-b-a-c')).toEqual(['a', 'b', 'c'])
+		expect(decodePlan(encodePlan(['a', 'b', 'a', 'c']))).toEqual(['a', 'b', 'c'])
 	})
 
-	it('tolerates junk, missing version, and empty entries', () => {
-		expect(decodePlan('garbage')).toEqual([])
-		expect(decodePlan('.abc')).toEqual([])
-		expect(decodePlan('1.')).toEqual([])
-		expect(decodePlan('1.a--b')).toEqual(['a', 'b'])
+	it('rejects junk, old versions, and empty entries', () => {
+		expect(() => decodePlan('garbage')).toThrow()
+		expect(() => decodePlan('.abc')).toThrow()
+		expect(() => decodePlan('1.a')).toThrow(/version/)
+		expect(() => decodePlan('2.')).toThrow()
+		expect(() => decodePlan('2.a~~b')).toThrow()
 	})
 
-	it('reads the known codes from a newer, additive token', () => {
-		// A future v2 appends `;color=...`; a v1 decoder still recovers the codes.
-		expect(decodePlan('2.a-b;color=red')).toEqual(['a', 'b'])
+	it('rejects unsupported future tokens instead of silently truncating', () => {
+		expect(() => decodePlan('3.a~b')).toThrow(/version/)
 	})
 
-	it('survives codes containing the separator or reserved chars', () => {
-		const cds = ['a-b', 'c/d', 'e f', '10%']
+	it('survives reserved URL characters while rejecting path separators', () => {
+		const cds = ['a-b', 'e f', '10%']
 		expect(decodePlan(encodePlan(cds))).toEqual(cds)
+		expect(() => encodePlan(['c/d'])).toThrow(/科目コード/)
 	})
 
 	it('round-trips any list of non-empty codes (property)', () => {
 		fc.assert(
 			fc.property(
-				fc.array(fc.string({ minLength: 1, maxLength: 8 }).filter((s) => s.trim().length > 0)),
+				fc.array(
+					fc
+						.string({ minLength: 1, maxLength: 8 })
+						.filter(
+							(s) =>
+								s.trim().length > 0 &&
+								![...s].some((c) => c === '/' || c === '\\' || c.charCodeAt(0) < 0x20),
+						),
+				),
 				(raw) => {
 					// The store never holds duplicates; mirror that for the round-trip.
 					const cds = [...new Set(raw)]

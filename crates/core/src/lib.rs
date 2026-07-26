@@ -1,34 +1,84 @@
-//! Pure, platform-agnostic core for the gyakubiki-syllabus viewer: no WASM or DOM
-//! dependency, so it compiles to WASM for the browser and runs natively in the CLI.
+//! Validated, code-based API for the gyakubiki-syllabus dataset.
 //!
-//! The producer side (`convert` CLI) builds `data.json` from raw KULAS JSON; the
-//! consumer side ([`Engine`]) reads it back and answers the UI's filter/grid
-//! queries. [`model`] is the v3 wire format the two sides share.
+//! General callers use [`Dataset`], [`Query`], [`QueryResult`], and
+//! [`PlanResult`]. The numeric wire model, conversion pipeline, and WASM bridge
+//! are deliberately feature-gated so unchecked dictionary indices do not leak
+//! into the supported public API.
 //!
-//! **Error convention:** this crate exposes typed, `thiserror`-derived domain
-//! errors ([`EngineError`], [`search::IndexError`], [`bitset::DecodeError`]) so
-//! callers can match on failure kinds. The boundary crates layer their own
-//! coarser reporting on top — the CLI uses `anyhow` with context, the WASM
-//! wrapper converts to `JsError`.
+//! # Example
+//!
+//! ```no_run
+//! use syllabus_core::{Dataset, Query};
+//!
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! let data = std::fs::read_to_string("data.content-hash.json")?;
+//! let index = std::fs::read("search.content-hash.idx")?;
+//! let mut dataset = Dataset::from_json(&data)?;
+//! dataset.load_search_index(&index)?;
+//!
+//! let result = dataset.query(&Query {
+//!     semester: Some("1学期".into()),
+//!     text: "微分積分".into(),
+//!     ..Query::default()
+//! })?;
+//! println!("{} results", result.total);
+//! # Ok(())
+//! # }
+//! ```
 
 #![forbid(unsafe_code)]
 
-pub mod bitset;
-pub mod convert;
-pub mod dict;
-pub mod engine;
-pub mod grid;
-pub mod index;
-pub mod model;
-pub mod parser;
-pub mod plan;
-pub mod search;
-pub mod text;
+mod bitset;
+#[cfg(any(feature = "producer", test))]
+mod convert;
+#[cfg(any(feature = "producer", test))]
+mod dict;
+mod engine;
+mod facade;
+mod grid;
+mod index;
+mod model;
+#[cfg(any(feature = "producer", test))]
+mod parser;
+mod plan;
+mod search;
+mod text;
 
-pub use convert::{ConvertResult, convert_v3};
-pub use engine::{Engine, EngineError, Filters};
+pub use facade::{
+    CreditTally, Dataset, DatasetError, MatchField, MatchSpan, Period, PeriodError, PlanConflict,
+    PlanCredits, PlanResult, Query, QueryCell, QueryMatch, QueryResult, Weekday,
+};
+pub use model::{CourseCode, CourseCodeError};
+
+#[cfg(feature = "producer")]
+#[doc(hidden)]
+pub use convert::{ConvertError, ConvertResult, convert_v4};
+#[cfg(any(feature = "producer", feature = "wasm-internal"))]
+#[doc(hidden)]
+pub use engine::{Engine, EngineError, Filters, QueryError};
+#[cfg(any(feature = "producer", feature = "wasm-internal"))]
+#[doc(hidden)]
 pub use grid::Grid;
-pub use index::{CampusIndex, CourseIndex, Day, DepartmentIndex, Period, SemesterIndex};
+#[cfg(feature = "producer")]
+#[doc(hidden)]
+pub use index::{
+    CampusIndex, CourseIndex, Day, DepartmentIndex, Period as WirePeriod, SemesterIndex,
+};
+#[cfg(feature = "producer")]
+#[doc(hidden)]
+pub use model::{Course, Offering, ProcessedData, RawCourse};
+#[cfg(feature = "producer")]
+#[doc(hidden)]
+pub use parser::{
+    ParseResult as TimetableParseResult, ParsedSlot, ParsedUnscheduled, UnscheduledKind,
+    parse_jikanwari,
+};
+#[cfg(any(feature = "producer", feature = "wasm-internal"))]
+#[doc(hidden)]
 pub use plan::{CategoryTally, Conflict, CreditSummary, PlanSummary};
+#[cfg(feature = "producer")]
+#[doc(hidden)]
 pub use search::{DocFields, Field, IndexError, SearchHit, SearchIndex, Span};
+#[cfg(feature = "producer")]
+#[doc(hidden)]
 pub use text::{fold_char, normalize, search_text};

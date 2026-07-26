@@ -8,6 +8,8 @@ use base64::{Engine as _, engine::general_purpose::STANDARD};
 pub enum DecodeError {
     #[error("invalid base64 bitset: {0}")]
     Base64(#[from] base64::DecodeError),
+    #[error("bitset byte length {actual} does not match required length {expected}")]
+    Length { expected: usize, actual: usize },
 }
 
 /// An immutable set of bit positions, backed by little-endian `u64` words.
@@ -23,6 +25,7 @@ impl BitSet {
     ///
     /// # Errors
     /// Returns [`DecodeError`] if `encoded` is not valid standard base64.
+    #[cfg(test)]
     pub fn from_base64(encoded: &str) -> Result<Self, DecodeError> {
         let bytes = STANDARD.decode(encoded)?;
         let words = bytes
@@ -36,9 +39,28 @@ impl BitSet {
         Ok(Self { words })
     }
 
+    /// Decode a fixed-width bitset. v4 rejects short/long bitsets so corrupt
+    /// dimensions cannot silently exclude courses or introduce trailing bits.
+    pub fn from_base64_words(encoded: &str, expected_words: usize) -> Result<Self, DecodeError> {
+        let bytes = STANDARD.decode(encoded)?;
+        let expected = expected_words * 8;
+        if bytes.len() != expected {
+            return Err(DecodeError::Length {
+                expected,
+                actual: bytes.len(),
+            });
+        }
+        let words = bytes
+            .chunks_exact(8)
+            .map(|chunk| u64::from_le_bytes(chunk.try_into().expect("exact 8-byte chunk")))
+            .collect();
+        Ok(Self { words })
+    }
+
     /// Encode each `u64` word as little-endian bytes, then standard base64 — the
     /// inverse of [`from_base64`].
     #[must_use]
+    #[cfg(any(feature = "producer", test))]
     pub fn to_base64(&self) -> String {
         let mut bytes = Vec::with_capacity(self.words.len() * Self::BITS_PER_WORD / 8);
         for word in &self.words {
@@ -73,6 +95,7 @@ impl BitSet {
     /// [`to_base64`] keeps every word, so a dimension stays fixed-width
     /// regardless of which bits are set.
     #[must_use]
+    #[cfg(any(feature = "producer", test))]
     pub fn with_words(num_words: usize) -> Self {
         Self {
             words: vec![0u64; num_words],
@@ -83,12 +106,14 @@ impl BitSet {
     ///
     /// # Panics
     /// Panics if `i` is beyond the capacity reserved by [`with_words`].
+    #[cfg(any(feature = "producer", test))]
     pub fn set(&mut self, i: usize) {
         self.words[i / Self::BITS_PER_WORD] |= 1u64 << (i % Self::BITS_PER_WORD);
     }
 
     /// Test whether bit `i` is set.
     #[must_use]
+    #[cfg(test)]
     pub fn has(&self, i: usize) -> bool {
         let word = i / Self::BITS_PER_WORD;
         self.words
@@ -124,6 +149,7 @@ impl BitSet {
 
     /// Count the number of set bits.
     #[must_use]
+    #[cfg(test)]
     pub fn count_ones(&self) -> u32 {
         self.words.iter().map(|w| w.count_ones()).sum()
     }

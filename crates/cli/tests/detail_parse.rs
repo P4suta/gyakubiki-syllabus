@@ -1,11 +1,11 @@
 //! Parse a real KULAS「シラバス参照」page (captured from the browser) and pin the
 //! high-value fields. The fixture is course `00001` (大学基礎論, pattern 4).
 
-use syllabus_cli::detail::parse_sansho_html;
+use syllabus_cli::test_support::parse_sansho_html;
 
 const SAMPLE: &str = include_str!("fixtures/sansho_sample.html");
 
-fn detail() -> syllabus_cli::detail::SanshoDetail {
+fn detail() -> syllabus_cli::test_support::SanshoDetail {
     parse_sansho_html("00001", SAMPLE)
 }
 

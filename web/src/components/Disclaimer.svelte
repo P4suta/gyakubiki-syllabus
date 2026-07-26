@@ -1,88 +1,50 @@
 <script lang="ts">
-import { fade, scale } from 'svelte/transition'
+import { onMount } from 'svelte'
 
-let accepted = $state(false)
-let dialogEl = $state<HTMLDialogElement>()
+const STORAGE_KEY = 'unofficialNoticeSeenV1'
+let visible = $state(false)
 
-// Top-layer consent gate: `showModal()` lifts it above everything (no z-index)
-// and traps focus. It's a gate, so Esc must NOT dismiss it — swallow `cancel`.
-// (jsdom lacks showModal — fall back to `open` so any render test works.)
-//
-// Opened a double-rAF after mount: showModal() forces a synchronous layout,
-// which is ~free on a clean tree but was the boot's only forced reflow when
-// it ran inside the mounting flush. rAF #1 lands before that frame's layout;
-// #2 runs on the next frame, after the tree settled.
-$effect(() => {
-	const el = dialogEl
-	if (!el) return
-	const open = () => {
-		try {
-			el.showModal()
-		} catch {
-			el.open = true
-		}
-	}
-	let raf1 = 0
-	let raf2 = 0
-	if (typeof requestAnimationFrame === 'function') {
-		raf1 = requestAnimationFrame(() => {
-			raf2 = requestAnimationFrame(open)
-		})
-	} else {
-		open() // jsdom without pretendToBeVisual
-	}
-	return () => {
-		cancelAnimationFrame?.(raf1)
-		cancelAnimationFrame?.(raf2)
-		try {
-			el.close()
-		} catch {
-			el.open = false
-		}
+onMount(() => {
+	try {
+		visible = localStorage.getItem(STORAGE_KEY) !== '1'
+	} catch {
+		visible = true
 	}
 })
+
+function dismiss() {
+	visible = false
+	try {
+		localStorage.setItem(STORAGE_KEY, '1')
+	} catch {
+		// Storage is optional; the notice still dismisses for this page view.
+	}
+}
 </script>
 
-{#if !accepted}
-<dialog
-	bind:this={dialogEl}
-	class="overlay overlay-prelayout"
-	aria-label="ご利用にあたって"
-	oncancel={(e) => e.preventDefault()}
->
-	<div
-		class="fixed inset-0 flex items-center justify-center bg-overlay-backdrop backdrop-blur-md p-4"
-		transition:fade={{ duration: 200 }}
+{#if visible}
+	<aside
+		class="fixed inset-x-3 top-3 z-nav mx-auto max-w-2xl rounded-2xl bg-surface-primary p-4 shadow-modal"
+		aria-labelledby="unofficial-notice-title"
 	>
-		<div
-			class="bg-surface-primary rounded-2xl shadow-modal max-w-md w-full max-h-overlay overflow-y-auto p-5 sm:p-8"
-			transition:scale={{ start: 0.95, duration: 300 }}
-		>
-		<h2 class="text-title font-semibold text-apple-text tracking-tight mb-5">ご利用にあたって</h2>
-
-		<div class="text-body text-apple-text-secondary leading-relaxed space-y-3 mb-8 tracking-tight">
-			<p>
-				本ツールは個人が作成した非公式のものであり、高知大学とは一切の関係がなく、同大学による承認又は推奨を受けたものではありません。
-			</p>
-			<p>
-				表示されるデータは、<a href="https://www.kochi-u.ac.jp/education-support/courses/syllabus/" class="text-apple-blue underline" target="_blank" rel="noopener noreferrer">同大学が一般に公開しているシラバス情報</a>のみに基づいており、非公開情報は一切使用していません。
-			</p>
-			<p>
-				本ツールは現状有姿（AS IS）で提供され、明示又は黙示を問わず、正確性、完全性、最新性、特定目的への適合性その他一切の保証をいたしません。
-			</p>
-			<p>
-				本ツールの利用又は利用不能により生じた直接的又は間接的な損害について、作成者は一切の責任を負いません。
-				履修登録その他の判断は、必ず大学公式の情報に基づいて行ってください。
-			</p>
-		</div>
-
+		<h2 id="unofficial-notice-title" class="text-cta font-semibold text-apple-text">
+			非公式のシラバス検索ツールです
+		</h2>
+		<p class="mt-1 text-caption leading-relaxed text-apple-text-secondary">
+			高知大学による承認・推奨を受けたものではありません。履修登録などの判断は、必ず
+			<a
+				href="https://www.kochi-u.ac.jp/education-support/courses/syllabus/"
+				class="text-apple-blue underline"
+				target="_blank"
+				rel="noopener noreferrer"
+			>大学公式シラバス</a>
+			で確認してください。
+		</p>
 		<button
-			onclick={() => { accepted = true }}
-			class="w-full py-3 px-8 bg-apple-blue text-on-accent text-cta font-normal rounded-full hover:bg-apple-blue-hover transition-colors duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-apple-blue/40 focus:ring-offset-2"
+			onclick={dismiss}
+			class="mt-3 rounded-full bg-apple-blue px-4 py-2 text-caption text-on-accent cursor-pointer"
 		>
-			上記を確認の上、利用する
+			確認しました
 		</button>
-	</div>
-</div>
-</dialog>
+	</aside>
 {/if}

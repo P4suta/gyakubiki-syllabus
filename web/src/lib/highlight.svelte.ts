@@ -46,6 +46,7 @@ export function segment(text: string, spans: readonly Span[] | undefined): Seg[]
  */
 class Highlights {
 	#byCd = $state(new Map<string, Span[]>())
+	#fieldsByCd = $state(new Map<string, string[]>())
 
 	get(cd: string): Span[] | undefined {
 		return this.#byCd.get(cd)
@@ -53,6 +54,14 @@ class Highlights {
 
 	set(byCd: Map<string, Span[]>): void {
 		this.#byCd = byCd
+	}
+
+	fields(cd: string): string[] {
+		return this.#fieldsByCd.get(cd) ?? []
+	}
+
+	setFields(byCd: Map<string, string[]>): void {
+		this.#fieldsByCd = byCd
 	}
 }
 

@@ -1,5 +1,5 @@
 <script lang="ts">
-import type { Component } from 'svelte'
+import { type Component, onDestroy } from 'svelte'
 import { quadOut } from 'svelte/easing'
 import { slide } from 'svelte/transition'
 import IconAdd from '~icons/ic/round-add'
@@ -7,8 +7,8 @@ import IconCheck from '~icons/ic/round-check'
 import IconCheckCircle from '~icons/ic/round-check-circle'
 import IconClose from '~icons/ic/round-close'
 import IconContentCopy from '~icons/ic/round-content-copy'
-import IconExam from '~icons/ic/round-history-edu'
 import IconExpandMore from '~icons/ic/round-expand-more'
+import IconExam from '~icons/ic/round-history-edu'
 import IconLanguage from '~icons/ic/round-language'
 import IconLink from '~icons/ic/round-link'
 import IconOpenInNew from '~icons/ic/round-open-in-new'
@@ -28,13 +28,20 @@ import {
 	parseTeachers,
 	splitRelated,
 } from '../lib/detail-format'
-import { loadDetail } from '../lib/details'
+import { DetailUnavailableError, loadDetail } from '../lib/details'
 import { plan } from '../lib/plan.svelte'
 import { sdgGoal } from '../lib/sdgs'
 import { FIELD_SPEC } from '../lib/syllabus-fields.generated'
 import { deliveryMode, FIELD_ICONS } from '../lib/syllabus-icons'
 import { useTheme } from '../lib/theme.svelte'
-import type { Course, CourseDetail, Dictionaries, Eval, OfficeHour, PlanItem } from '../types/course'
+import type {
+	Course,
+	CourseDetail,
+	Dictionaries,
+	Eval,
+	OfficeHour,
+	PlanItem,
+} from '../types/course'
 import BottomSheet from './BottomSheet.svelte'
 import EvalChart from './EvalChart.svelte'
 
@@ -74,7 +81,9 @@ const officialUrl = $derived(
 
 // Lazily loaded rich syllabus detail.
 let detail = $state<CourseDetail | null>(null)
-let loading = $state(true)
+let detailState = $state<'loading' | 'ready' | 'unavailable' | 'error'>('loading')
+let detailError = $state('')
+let detailRetry = $state(0)
 
 // Base grid fields (always available, no fetch) — shown as one more accordion.
 // 時間割 moved to the header; 担当教員 only when the syllabus has no teacher list
@@ -99,15 +108,28 @@ const language = $derived(courseLanguage(detail?.numbering))
 
 $effect(() => {
 	const cd = course.cd
-	loading = true
+	const retry = detailRetry
+	const controller = new AbortController()
+	detailState = 'loading'
+	detailError = ''
 	detail = null
-	loadDetail(cd).then((d) => {
-		// Guard against a race if the user opened another course meanwhile.
-		if (cd === course.cd) {
-			detail = d
-			loading = false
-		}
-	})
+	loadDetail(cd, controller.signal)
+		.then((value) => {
+			if (cd === course.cd && retry === detailRetry) {
+				detail = value
+				detailState = 'ready'
+			}
+		})
+		.catch((reason) => {
+			if (controller.signal.aborted || cd !== course.cd || retry !== detailRetry) return
+			if (reason instanceof DetailUnavailableError) {
+				detailState = 'unavailable'
+			} else {
+				detailState = 'error'
+				detailError = reason instanceof Error ? reason.message : '詳細情報を取得できません'
+			}
+		})
+	return () => controller.abort()
 })
 
 const delivery = $derived(detail?.delivery ? deliveryMode(detail.delivery.mode) : null)
@@ -215,6 +237,8 @@ function planBadge(kind: string | undefined): string | null {
 // holds the label of the row that just copied, for a brief ✓.
 let copiedField = $state<string | null>(null)
 let copyTimer: ReturnType<typeof setTimeout> | undefined
+onDestroy(() => clearTimeout(copyTimer))
+
 async function copyField(label: string, value: string) {
 	try {
 		await navigator.clipboard.writeText(value)
@@ -304,8 +328,22 @@ async function copyField(label: string, value: string) {
 	{/snippet}
 
 	<div class="px-4 pb-6 sm:px-7 sm:pb-7">
-		{#if loading}
+		{#if detailState === 'loading'}
 			{@render skeleton()}
+		{:else if detailState === 'unavailable'}
+			<div class="my-4 rounded-xl bg-overlay-light p-4 text-body text-apple-text-secondary" role="status">
+				この科目の詳細情報は取得元で公開されていません。基本情報と公式シラバスへのリンクは利用できます。
+			</div>
+		{:else if detailState === 'error'}
+			<div class="my-4 rounded-xl bg-overlay-light p-4" role="alert">
+				<p class="text-body text-apple-red">{detailError}</p>
+				<button
+					onclick={() => { detailRetry += 1 }}
+					class="mt-3 rounded-full bg-apple-blue px-3 py-1.5 text-caption text-on-accent cursor-pointer"
+				>
+					再試行
+				</button>
+			</div>
 		{:else}
 			<!-- Hero: 成績評価 + 概要 — always open (decision-critical), no chevron. -->
 			{#each heroSections as s (s.key)}

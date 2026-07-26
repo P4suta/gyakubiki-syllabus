@@ -1,6 +1,6 @@
 // View-model types that cross the WASM boundary into the UI.
 //
-// The full v3 wire envelope (top-level `ProcessedData`, positional bitset
+// The full v4 wire envelope (top-level `ProcessedData`, offerings, positional bitset
 // `IndicesMap`) lives solely in the Rust core: it is parsed inside WASM and
 // never materializes in TS. Only the view-models here — resolved from the
 // engine's `allCourseViews()` and `dicts()` — cross the boundary.
@@ -17,7 +17,8 @@ export interface Course {
 	sub?: string
 	prof: string
 	raw: string
-	slots: Slot[]
+	/** Legacy test/dev helper; v4 scheduling stays inside WASM and query results. */
+	slots?: Slot[]
 	ki: number // kaikojiki index
 	kbn: number // kubun index
 	dept: number // department index
@@ -33,7 +34,7 @@ export interface Course {
 	ev?: string[] // assessment summary for the card, e.g. ["attendance:40","exam:60"]
 }
 
-// --- Full syllabus detail (lazy-loaded from details/{cd}.json) ---
+// --- Full syllabus detail (lazy-loaded from a manifest-addressed asset) ---
 // Mirrors the Rust `SanshoDetail` emitted by `syllabus-cli`.
 
 export interface Delivery {

@@ -5,7 +5,7 @@ pub mod conflict;
 pub mod credits;
 
 pub use conflict::{Conflict, conflicts_in_grid};
-pub use credits::{CategoryTally, CreditSummary, parse_unit, summarize_credits};
+pub use credits::{CategoryTally, CreditSummary, summarize_credits};
 
 /// The full summary of a plan: every timetable collision and the credit tallies.
 #[derive(Debug, Clone, PartialEq)]

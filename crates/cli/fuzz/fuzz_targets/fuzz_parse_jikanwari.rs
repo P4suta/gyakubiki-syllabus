@@ -4,7 +4,7 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use syllabus_core::parser::parse_jikanwari;
+use syllabus_core::parse_jikanwari;
 
 fuzz_target!(|data: &str| {
     let result = parse_jikanwari(data);

@@ -1,11 +1,12 @@
 <script lang="ts">
+import { onDestroy } from 'svelte'
 import IconWarning from '~icons/ic/round-warning'
 import { useDesktop } from '../lib/breakpoint.svelte'
-import { type GridKey, PERIODS } from '../lib/engine'
+import type { GridKey } from '../lib/engine'
 import { haptic, type SwipeDir, swipeNavigate } from '../lib/gestures'
 import { PERIOD_TIMES } from '../lib/schedule'
 import type { Course } from '../types/course'
-import CourseCard from './CourseCard.svelte'
+import ProgressiveCourseList from './ProgressiveCourseList.svelte'
 import TimetableCell from './TimetableCell.svelte'
 
 interface Props {
@@ -14,12 +15,22 @@ interface Props {
 	 *  place of the search candidates (the grid doubles as the plan). */
 	planGrid?: Map<GridKey, Course[]>
 	days: readonly string[]
+	periods?: readonly number[]
 	onselect: (course: Course) => void
+	unscheduled?: Course[]
 	/** Grid keys whose locked cell holds two+ registered courses (a clash). */
 	conflictKeys?: Set<GridKey>
 }
 
-let { grid, planGrid, days, onselect, conflictKeys }: Props = $props()
+let {
+	grid,
+	planGrid,
+	days,
+	periods = [1, 2, 3, 4, 5, 6],
+	onselect,
+	unscheduled = [],
+	conflictKeys,
+}: Props = $props()
 
 /** What a cell shows: the registered course(s) when the slot is locked, else the
  *  search candidates. `locked` drives the "confirmed" styling. */
@@ -33,7 +44,7 @@ let activeDay = $state(0)
 
 // Roving focus for the day tablist (WAI-ARIA tabs): arrows move + wrap,
 // Home/End jump, only the active tab sits in the tab order.
-let tabEls: HTMLButtonElement[] = []
+let tabEls = $state<HTMLButtonElement[]>([])
 
 function onTablistKeydown(e: KeyboardEvent) {
 	let next: number
@@ -53,6 +64,31 @@ function onTablistKeydown(e: KeyboardEvent) {
 let dayEl = $state<HTMLElement>()
 let dragX = $state(0)
 let sliding = $state(false)
+const animationTimers = new Set<ReturnType<typeof setTimeout>>()
+const animationFrames = new Set<number>()
+
+function later(callback: () => void, delay: number) {
+	const timer = window.setTimeout(() => {
+		animationTimers.delete(timer)
+		callback()
+	}, delay)
+	animationTimers.add(timer)
+}
+
+function nextFrame(callback: () => void) {
+	const frame = requestAnimationFrame(() => {
+		animationFrames.delete(frame)
+		callback()
+	})
+	animationFrames.add(frame)
+}
+
+onDestroy(() => {
+	for (const timer of animationTimers) clearTimeout(timer)
+	for (const frame of animationFrames) cancelAnimationFrame(frame)
+	animationTimers.clear()
+	animationFrames.clear()
+})
 
 const canPrev = () => activeDay > 0
 const canNext = () => activeDay < days.length - 1
@@ -66,15 +102,15 @@ function commit(dir: 1 | -1) {
 	haptic('select')
 	sliding = true
 	dragX = -dir * w // slide the current day out
-	window.setTimeout(() => {
+	later(() => {
 		activeDay += dir
 		sliding = false
 		dragX = dir * w // park the new day just off the incoming edge (no transition)
-		requestAnimationFrame(() =>
-			requestAnimationFrame(() => {
+		nextFrame(() =>
+			nextFrame(() => {
 				sliding = true
 				dragX = 0 // slide it into place
-				window.setTimeout(() => {
+				later(() => {
 					sliding = false
 				}, 240)
 			}),
@@ -86,7 +122,7 @@ function onSettle(dir: SwipeDir) {
 	if (dir === 0) {
 		sliding = true
 		dragX = 0
-		window.setTimeout(() => {
+		later(() => {
 			sliding = false
 		}, 240)
 		return
@@ -148,7 +184,7 @@ let headerH = $state(0)
 		style="translate: {dragX}px 0; transition: {sliding ? 'translate 0.22s var(--ease-spring)' : 'none'};"
 		use:swipeNavigate={{ onDrag, onSettle, canPrev, canNext }}
 	>
-		{#each PERIODS as period}
+		{#each periods as period}
 			{@const key = `${days[activeDay]}-${period}` as GridKey}
 			{@const { courses, locked } = cell(key)}
 			{#if courses.length === 0}
@@ -178,12 +214,31 @@ let headerH = $state(0)
 							</span>
 						{/if}
 					</div>
-					{#each courses as course (course.cd)}
-						<CourseCard {course} onclick={() => onselect(course)} />
-					{/each}
+					<ProgressiveCourseList
+						{courses}
+						{onselect}
+						initialSize={3}
+						pageSize={24}
+						label="{days[activeDay]}曜{period}限の科目"
+					/>
 				</div>
 			{/if}
 		{/each}
+		{#if unscheduled.length > 0}
+			<section class="mt-4 border-t border-overlay-subtle pt-4" aria-labelledby="unscheduled-mobile">
+				<h2 id="unscheduled-mobile" class="text-cta font-semibold text-apple-text mb-1">
+					集中講義・時間未定
+				</h2>
+				<p class="text-caption text-apple-text-secondary mb-3">{unscheduled.length}件</p>
+				<ProgressiveCourseList
+					courses={unscheduled}
+					{onselect}
+					initialSize={8}
+					pageSize={48}
+					label="集中講義・時間未定"
+				/>
+			</section>
+		{/if}
 	</div>
 </div>
 {/if}
@@ -191,7 +246,7 @@ let headerH = $state(0)
 <!-- Desktop: full grid -->
 {#if isDesktop}
 <div class="overflow-auto flex-1 bg-surface-page hidden sm:block">
-	<div class="grid gap-0.5 bg-surface-page" style="grid-template-columns: {gridCols}; min-width: {minWidth};">
+	<div data-timetable-grid class="grid gap-0.5 bg-surface-page" style="grid-template-columns: {gridCols}; min-width: {minWidth};">
 		<div bind:clientHeight={headerH} class="sticky top-0 left-0 z-sticky-corner bg-surface-page"></div>
 
 		{#each days as day}
@@ -202,7 +257,7 @@ let headerH = $state(0)
 			</div>
 		{/each}
 
-		{#each PERIODS as period}
+		{#each periods as period}
 			<div data-period-label class="sticky left-0 z-sticky bg-surface-page relative flex flex-col items-center px-1 py-2">
 				<!-- Times pinned to the row edges (they scroll away); the「N限」badge
 				     rides a continuous rail and is JS-clamped to stay on screen. -->
@@ -236,5 +291,23 @@ let headerH = $state(0)
 			{/each}
 		{/each}
 	</div>
+	{#if unscheduled.length > 0}
+		<section class="mx-auto max-w-6xl px-4 py-8" aria-labelledby="unscheduled-desktop">
+			<div class="flex items-baseline gap-2 mb-3">
+				<h2 id="unscheduled-desktop" class="text-title font-semibold text-apple-text">
+					集中講義・時間未定
+				</h2>
+				<span class="text-caption text-apple-text-secondary">{unscheduled.length}件</span>
+			</div>
+			<ProgressiveCourseList
+				courses={unscheduled}
+				{onselect}
+				initialSize={24}
+				pageSize={96}
+				className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2"
+				label="集中講義・時間未定"
+			/>
+		</section>
+	{/if}
 </div>
 {/if}
