@@ -56,6 +56,10 @@ jobs:
       - uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1
       # cargo-mutants (+ toolchain helpers) from .mise.toml — same version as local.
       - uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # v2
+        with:
+          install_args: aqua:cargo-bins/cargo-binstall cargo:cargo-mutants
+        env:
+          MISE_JOBS: '1'
       # Scope (core + tested cli logic, minus net/IO) lives in mutants.toml.
       # --timeout guards mutants that spin an infinite loop.
       - name: mutate
@@ -78,6 +82,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # v2
+        with:
+          install_args: bun
       - run: bun install --frozen-lockfile
       - run: bun run mutation
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -101,6 +107,10 @@ jobs:
           fetch-depth: 0
       - uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1
       - uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # v2
+        with:
+          install_args: aqua:cargo-bins/cargo-binstall cargo:cargo-mutants
+        env:
+          MISE_JOBS: '1'
       - name: diff vs base
         env:
           BASE_REF: ${{ github.base_ref }}
@@ -131,6 +141,8 @@ jobs:
         with:
           fetch-depth: 0
       - uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # v2
+        with:
+          install_args: bun
       - run: bun install --frozen-lockfile
       # Stryker has no git-diff flag, so pass the changed lib sources (whole
       # files, minus tests) to --mutate. --relative yields web-relative paths.
