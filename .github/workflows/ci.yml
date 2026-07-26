@@ -325,6 +325,7 @@ jobs:
         with:
           name: lighthouse-results
           path: web/.lighthouseci/
+          include-hidden-files: true
           retention-days: 14
           if-no-files-found: error
       - name: Pack artifact for provenance
