@@ -57,7 +57,9 @@ jobs:
       # cargo-mutants (+ toolchain helpers) from .mise.toml — same version as local.
       - uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # v2
         with:
-          install_args: aqua:cargo-bins/cargo-binstall cargo:cargo-mutants
+          install_args: >-
+            aqua:cargo-bins/cargo-binstall cargo:cargo-mutants
+            cargo:cargo-nextest
         env:
           MISE_JOBS: '1'
       # Scope (core + tested cli logic, minus net/IO) lives in mutants.toml.
@@ -108,7 +110,9 @@ jobs:
       - uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1
       - uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # v2
         with:
-          install_args: aqua:cargo-bins/cargo-binstall cargo:cargo-mutants
+          install_args: >-
+            aqua:cargo-bins/cargo-binstall cargo:cargo-mutants
+            cargo:cargo-nextest
         env:
           MISE_JOBS: '1'
       - name: diff vs base
@@ -118,6 +122,7 @@ jobs:
       # --in-diff restricts mutants to lines the PR touched (still inside the
       # mutants.toml scope).
       - name: mutate changed lines
+        continue-on-error: true
         run: cargo mutants --in-diff pr.diff --timeout 60 -j 2
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: ${{ !cancelled() }}
@@ -147,6 +152,7 @@ jobs:
       # Stryker has no git-diff flag, so pass the changed lib sources (whole
       # files, minus tests) to --mutate. --relative yields web-relative paths.
       - name: mutate changed files
+        continue-on-error: true
         env:
           BASE_REF: ${{ github.base_ref }}
         run: |

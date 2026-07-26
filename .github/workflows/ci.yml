@@ -220,7 +220,9 @@ jobs:
       - uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1
       - uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # v2
         with:
-          install_args: aqua:cargo-bins/cargo-binstall cargo:cargo-mutants
+          install_args: >-
+            aqua:cargo-bins/cargo-binstall cargo:cargo-mutants
+            cargo:cargo-nextest
         env:
           MISE_JOBS: '1'
       - run: cargo mutants --timeout 60 -j 2
