@@ -6,37 +6,101 @@
 //! [`Engine::from_json`], so the WASM layer only ever marshals **indices**
 //! across the boundary.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 use crate::bitset::BitSet;
 use crate::grid::{Grid, GridSlot, build_grid};
 use crate::index::{CourseIndex, SemesterIndex};
-use crate::model::{Dictionaries, IndicesMap, ProcessedData};
+use crate::model::{CourseCode, Dictionaries, IndicesMap, Offering, ProcessedData};
 use crate::plan::{PlanSummary, conflicts_in_grid, summarize_credits};
 use crate::search::{IndexError, SearchHit, SearchIndex};
 use crate::text::{normalize, search_text};
 
 /// The semester label whose courses appear under every *other* semester filter.
 const TSUUNEN_LABEL: &str = "通年";
+const MAX_DATA_JSON_BYTES: usize = 128 * 1024 * 1024;
+const MAX_COURSES: usize = 100_000;
+const MAX_DICTIONARY_ENTRIES: usize = 20_000;
+const MAX_DICTIONARY_VALUE_UTF16: usize = 1_024;
+const MAX_COURSE_FIELD_UTF16: usize = 4_096;
+const MAX_PATTERN_UTF16: usize = 128;
+const MAX_EVALUATION_ITEMS: usize = 32;
+const MAX_EVALUATION_ITEM_UTF16: usize = 256;
+const MAX_OFFERINGS_PER_COURSE: usize = 128;
+const MAX_TOTAL_OFFERINGS: usize = 1_000_000;
 
 /// Errors that can arise while constructing an [`Engine`] from JSON.
 #[derive(Debug, thiserror::Error)]
 pub enum EngineError {
-    /// The input is a raw KULAS API response, not a converted v3 dataset.
-    #[error("This is a raw KULAS response; run `syllabus-cli convert` on it first.")]
+    /// The input is a raw KULAS API response, not a converted v4 dataset.
+    #[error("This is a raw KULAS response; run `syllabus-cli build-dataset` on it first.")]
     RawKulasResponse,
-    /// No usable `version` field — not a syllabus-cli v3 output.
-    #[error("Not a v3 dataset: no `version` field found.")]
-    NotV3Format,
+    /// No usable v4 envelope.
+    #[error("Not a v4 dataset.")]
+    NotV4Format,
     /// A `version` was present but unsupported.
-    #[error("Unsupported version {0}; version 3 is required.")]
-    UnsupportedVersion(u64),
-    /// The JSON itself could not be parsed / did not match the v3 schema.
+    #[error("Unsupported version {0}; version 4 is required.")]
+    UnsupportedVersion(u32),
+    /// The JSON itself could not be parsed / did not match the v4 schema.
     #[error("Failed to parse JSON: {0}")]
     Parse(#[from] serde_json::Error),
     /// A base64 bitset could not be decoded.
     #[error("Failed to decode bitset: {0}")]
     Bitset(#[from] crate::bitset::DecodeError),
+    #[error("dataset ID is empty")]
+    EmptyDatasetId,
+    #[error("dataset identity field {field} is invalid")]
+    InvalidIdentity { field: &'static str },
+    #[error("declared course count {declared} does not match actual count {actual}")]
+    DeclaredCourseCount { declared: u32, actual: usize },
+    #[error("{field} count/length {actual} exceeds the limit {max}")]
+    LimitExceeded {
+        field: &'static str,
+        actual: usize,
+        max: usize,
+    },
+    #[error("{field} dictionary contains an invalid value at index {index}")]
+    InvalidDictionaryValue { field: &'static str, index: usize },
+    #[error("{field} dictionary contains duplicate value {value:?}")]
+    DuplicateDictionaryValue { field: &'static str, value: String },
+    #[error("offerings length {actual} does not match course count {expected}")]
+    OfferingCount { expected: usize, actual: usize },
+    #[error("duplicate course code {0:?}")]
+    DuplicateCourseCode(String),
+    #[error("invalid course code {course:?}: {reason}")]
+    InvalidCourseCode { course: String, reason: String },
+    #[error("course {0:?} has an empty name")]
+    EmptyCourseName(String),
+    #[error("course {0:?} has no syllabus pattern ID")]
+    MissingPatternId(String),
+    #[error("course {course:?} has an invalid {field} field")]
+    InvalidCourseField { course: String, field: &'static str },
+    #[error("dataset academic year is invalid")]
+    InvalidYear,
+    #[error("course {course:?} references an invalid {field} dictionary index {index}")]
+    DictionaryIndex {
+        course: String,
+        field: &'static str,
+        index: u32,
+    },
+    #[error("course {course:?} has an invalid offering: {reason}")]
+    Offering {
+        course: String,
+        reason: &'static str,
+    },
+    #[error("{field} index count {actual} does not match dictionary count {expected}")]
+    DimensionCount {
+        field: &'static str,
+        expected: usize,
+        actual: usize,
+    },
+}
+
+/// Query-time failures after a dataset itself has been validated.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum QueryError {
+    #[error("full-text search index is not ready")]
+    SearchIndexNotReady,
 }
 
 /// The query parameters for [`Engine::filter`].
@@ -57,11 +121,13 @@ pub struct Filters<'a> {
 pub struct Engine {
     /// The wire/view-model courses, handed to the UI as-is.
     courses: Vec<crate::model::Course>,
+    offerings: Vec<Vec<Offering>>,
     /// Each course's validated timetable (parallel to `courses`) — the domain
     /// form the grid consumes, range-checked once here instead of per `grid` call.
     timetables: Vec<Vec<GridSlot>>,
     dicts: Dictionaries,
     generated_at: String,
+    dataset_id: String,
     /// Academic year shared by the dataset (for the official syllabus deep link).
     year: String,
     semester_bitsets: Vec<BitSet>,
@@ -71,16 +137,16 @@ pub struct Engine {
     all_bits: BitSet,
     /// The 通年 semester, if the dataset has it.
     tsuunen_index: Option<SemesterIndex>,
-    /// Whether any course meets on Saturday (drives the extra grid column).
-    has_saturday: bool,
+    day_count: u8,
+    max_period: u8,
     /// A normalized per-course search haystack (name/subtitle/instructor/code/
     /// department/taxonomy), built here at load — the wire format no longer
     /// carries it. Used by [`Engine::filter`] and as [`Engine::search`]'s
-    /// pre-index fallback, so search works even if `search.idx` never arrives.
+    /// pre-index text used only for non-query internal filtering.
     haystack: Vec<String>,
     /// The full-text index, loaded from the companion `search.idx` after the
     /// engine is built (it ships separately from `data.json`). `None` until then;
-    /// text queries fall back to `haystack` meanwhile.
+    /// text queries fail explicitly meanwhile.
     search_index: Option<SearchIndex>,
     /// `cd` → course index, for resolving a shared plan (a list of stable course
     /// codes) back to indices. Built once here so `resolve_cds` is O(n).
@@ -88,25 +154,32 @@ pub struct Engine {
 }
 
 impl Engine {
-    /// Parse a v3 `data.json` payload and build the queryable engine.
+    /// Parse a v4 `data.json` payload and build the queryable engine.
     ///
     /// # Errors
     /// Returns an [`EngineError`] if the text is a raw KULAS response, is not a
-    /// supported v3 document, or fails schema/bitset decoding.
+    /// supported v4 document, or fails schema/bitset decoding.
     pub fn from_json(json: &str) -> Result<Self, EngineError> {
-        // Cheap structural pre-check: friendly errors for the two common "wrong
-        // file" cases before full schema deserialization.
-        let value: serde_json::Value = serde_json::from_str(json)?;
-        if value.get("selectKogiDtoList").is_some() {
+        if json.len() > MAX_DATA_JSON_BYTES {
+            return Err(EngineError::LimitExceeded {
+                field: "data JSON bytes",
+                actual: json.len(),
+                max: MAX_DATA_JSON_BYTES,
+            });
+        }
+        if json.contains("\"selectKogiDtoList\"") {
             return Err(EngineError::RawKulasResponse);
         }
-        match value.get("version").and_then(serde_json::Value::as_u64) {
-            Some(3) => {}
-            Some(other) => return Err(EngineError::UnsupportedVersion(other)),
-            None => return Err(EngineError::NotV3Format),
+        let data: ProcessedData = serde_json::from_str(json).map_err(|error| {
+            if !json.contains("\"version\"") {
+                EngineError::NotV4Format
+            } else {
+                EngineError::Parse(error)
+            }
+        })?;
+        if data.version != 4 {
+            return Err(EngineError::UnsupportedVersion(data.version));
         }
-
-        let data: ProcessedData = serde_json::from_value(value)?;
         Self::build(data)
     }
 
@@ -117,10 +190,64 @@ impl Engine {
             dicts,
             indices,
             courses,
+            offerings,
             generated_at,
+            dataset_id,
             year,
-            ..
+            total_raw,
+            version: _,
         } = data;
+        if dataset_id.trim().is_empty() {
+            return Err(EngineError::EmptyDatasetId);
+        }
+        if dataset_id.len() != 64
+            || !dataset_id
+                .bytes()
+                .all(|value| value.is_ascii_digit() || (b'a'..=b'f').contains(&value))
+        {
+            return Err(EngineError::InvalidIdentity { field: "datasetId" });
+        }
+        if generated_at.encode_utf16().count() > 128 || !is_rfc3339(&generated_at) {
+            return Err(EngineError::InvalidIdentity {
+                field: "generatedAt",
+            });
+        }
+        if year.len() != 4 || !year.chars().all(|value| value.is_ascii_digit()) {
+            return Err(EngineError::InvalidYear);
+        }
+        validate_limit("courses", courses.len(), MAX_COURSES)?;
+        if total_raw as usize != courses.len() {
+            return Err(EngineError::DeclaredCourseCount {
+                declared: total_raw,
+                actual: courses.len(),
+            });
+        }
+        if offerings.len() != courses.len() {
+            return Err(EngineError::OfferingCount {
+                expected: courses.len(),
+                actual: offerings.len(),
+            });
+        }
+        let total_offerings = offerings.iter().try_fold(0usize, |total, values| {
+            validate_limit(
+                "offerings for one course",
+                values.len(),
+                MAX_OFFERINGS_PER_COURSE,
+            )?;
+            total
+                .checked_add(values.len())
+                .ok_or(EngineError::LimitExceeded {
+                    field: "total offerings",
+                    actual: usize::MAX,
+                    max: MAX_TOTAL_OFFERINGS,
+                })
+        })?;
+        validate_limit("total offerings", total_offerings, MAX_TOTAL_OFFERINGS)?;
+        validate_dictionary("semester", &dicts.semesters)?;
+        validate_dictionary("department", &dicts.departments)?;
+        validate_dictionary("campus", &dicts.campuses)?;
+        validate_dictionary("kubun", &dicts.kubun)?;
+        validate_dictionary("kaikojiki", &dicts.kaikojiki)?;
 
         let IndicesMap {
             semester,
@@ -135,12 +262,138 @@ impl Engine {
             .position(|s| s == TSUUNEN_LABEL)
             .map(SemesterIndex::from);
 
-        // Validate each course's wire slots into grid slots once, here.
+        let mut seen_codes = HashSet::new();
+        for (course, course_offerings) in courses.iter().zip(&offerings) {
+            CourseCode::parse(&course.cd).map_err(|error| EngineError::InvalidCourseCode {
+                course: course.cd.clone(),
+                reason: error.to_string(),
+            })?;
+            if !seen_codes.insert(course.cd.as_str()) {
+                return Err(EngineError::DuplicateCourseCode(course.cd.clone()));
+            }
+            if course.nm.trim().is_empty() {
+                return Err(EngineError::EmptyCourseName(course.cd.clone()));
+            }
+            for (field, value) in [
+                ("name", Some(course.nm.as_str())),
+                ("subtitle", course.sub.as_deref()),
+                ("instructor", Some(course.prof.as_str())),
+                ("raw timetable", Some(course.raw.as_str())),
+                ("faculty", course.gaku.as_deref()),
+                ("department label", course.gakka.as_deref()),
+                ("year label", course.nen.as_deref()),
+                ("classification", course.bunrui.as_deref()),
+                ("field", course.bunya.as_deref()),
+                ("credits", course.unit.as_deref()),
+            ] {
+                if value.is_some_and(|value| value.encode_utf16().count() > MAX_COURSE_FIELD_UTF16)
+                {
+                    return Err(EngineError::InvalidCourseField {
+                        course: course.cd.clone(),
+                        field,
+                    });
+                }
+            }
+            if course
+                .pat
+                .as_deref()
+                .is_none_or(|value| value.trim().is_empty())
+            {
+                return Err(EngineError::MissingPatternId(course.cd.clone()));
+            }
+            if course
+                .pat
+                .as_deref()
+                .is_some_and(|value| value.encode_utf16().count() > MAX_PATTERN_UTF16)
+            {
+                return Err(EngineError::InvalidCourseField {
+                    course: course.cd.clone(),
+                    field: "pattern ID",
+                });
+            }
+            if course
+                .dm
+                .as_deref()
+                .is_some_and(|value| !matches!(value, "onsite" | "online" | "ondemand" | "hybrid"))
+            {
+                return Err(EngineError::InvalidCourseField {
+                    course: course.cd.clone(),
+                    field: "delivery mode",
+                });
+            }
+            if course.ev.as_ref().is_some_and(|values| {
+                values.len() > MAX_EVALUATION_ITEMS
+                    || values
+                        .iter()
+                        .any(|value| value.encode_utf16().count() > MAX_EVALUATION_ITEM_UTF16)
+            }) {
+                return Err(EngineError::InvalidCourseField {
+                    course: course.cd.clone(),
+                    field: "evaluation summary",
+                });
+            }
+            validate_dictionary_index(course, "department", course.dept, dicts.departments.len())?;
+            validate_dictionary_index(course, "campus", course.campus, dicts.campuses.len())?;
+            validate_dictionary_index(course, "kubun", course.kbn, dicts.kubun.len())?;
+            validate_dictionary_index(course, "kaikojiki", course.ki, dicts.kaikojiki.len())?;
+            if course_offerings.is_empty() {
+                return Err(EngineError::Offering {
+                    course: course.cd.clone(),
+                    reason: "no offering",
+                });
+            }
+            for offering in course_offerings {
+                if offering.semester() >= dicts.semesters.len() {
+                    return Err(EngineError::Offering {
+                        course: course.cd.clone(),
+                        reason: "semester index is out of range",
+                    });
+                }
+                if let Offering::Scheduled { d, p, .. } = offering
+                    && (*d > 6 || !(1..=8).contains(p))
+                {
+                    return Err(EngineError::Offering {
+                        course: course.cd.clone(),
+                        reason: "scheduled day/period is out of range",
+                    });
+                }
+                if let Offering::Tba { label, .. } = offering
+                    && (label.trim().is_empty()
+                        || label.encode_utf16().count() > MAX_DICTIONARY_VALUE_UTF16)
+                {
+                    return Err(EngineError::Offering {
+                        course: course.cd.clone(),
+                        reason: "TBA label is empty or too long",
+                    });
+                }
+            }
+        }
+
+        // Validate each course's v4 offerings into grid slots once, here.
         let timetables: Vec<Vec<GridSlot>> = courses
             .iter()
-            .map(|c| c.slots.iter().filter_map(GridSlot::from_wire).collect())
+            .zip(&offerings)
+            .map(|(_, values)| values.iter().filter_map(GridSlot::from_offering).collect())
             .collect();
-        let has_saturday = timetables.iter().flatten().any(|s| s.is_saturday());
+        let max_day = offerings
+            .iter()
+            .flatten()
+            .filter_map(|offering| match offering {
+                Offering::Scheduled { d, .. } => Some(*d),
+                _ => None,
+            })
+            .max()
+            .unwrap_or(4);
+        let day_count = max_day.saturating_add(1).max(5);
+        let max_period = offerings
+            .iter()
+            .flatten()
+            .filter_map(|offering| match offering {
+                Offering::Scheduled { p, .. } => Some(*p),
+                _ => None,
+            })
+            .max()
+            .unwrap_or(1);
         let cd_to_index = courses
             .iter()
             .enumerate()
@@ -166,19 +419,33 @@ impl Engine {
                 )
             })
             .collect();
+        let bitset_words = all_bits_word_len(courses.len());
+        let semester_bitsets =
+            decode_dimension("semester", &semester, dicts.semesters.len(), bitset_words)?;
+        let department_bitsets = decode_dimension(
+            "department",
+            &department,
+            dicts.departments.len(),
+            bitset_words,
+        )?;
+        let campus_bitsets =
+            decode_dimension("campus", &campus, dicts.campuses.len(), bitset_words)?;
 
         Ok(Self {
             courses,
+            offerings,
             timetables,
             dicts,
             generated_at,
+            dataset_id,
             year,
-            semester_bitsets: decode_dimension(&semester)?,
-            department_bitsets: decode_dimension(&department)?,
-            campus_bitsets: decode_dimension(&campus)?,
+            semester_bitsets,
+            department_bitsets,
+            campus_bitsets,
             all_bits,
             tsuunen_index,
-            has_saturday,
+            day_count,
+            max_period,
             haystack,
             search_index: None,
             cd_to_index,
@@ -231,13 +498,23 @@ impl Engine {
     }
 
     /// Load the companion `search.idx` (fetched separately from `data.json`),
-    /// enabling ranked search with match spans. Until this is called, text
-    /// queries fall back to an unranked `st` substring scan.
+    /// enabling ranked search with match spans. Text queries return
+    /// [`QueryError::SearchIndexNotReady`] until this succeeds.
     ///
     /// # Errors
     /// Returns an [`IndexError`] if the blob is not a valid `search.idx`.
     pub fn load_search_index(&mut self, bytes: &[u8]) -> Result<(), IndexError> {
-        self.search_index = Some(SearchIndex::decode(bytes)?);
+        let index = SearchIndex::decode(bytes)?;
+        if index.dataset_id() != self.dataset_id {
+            return Err(IndexError::DatasetMismatch);
+        }
+        if index.document_count() != self.courses.len() {
+            return Err(IndexError::DocumentCountMismatch {
+                expected: self.courses.len(),
+                actual: index.document_count(),
+            });
+        }
+        self.search_index = Some(index);
         Ok(())
     }
 
@@ -291,28 +568,21 @@ impl Engine {
     ///
     /// An empty query returns every candidate unranked (score 0, no spans), in
     /// ascending index order — the browse view. With a query, ranking uses the
-    /// loaded `search.idx`; before it loads, it falls back to an unranked `st`
-    /// substring scan so search still works during the brief index fetch.
-    #[must_use]
-    pub fn search(&self, filters: &Filters) -> Vec<SearchHit> {
+    /// loaded `search.idx`. An incomplete fallback is never presented as a
+    /// finished result.
+    pub fn search(&self, filters: &Filters) -> Result<Vec<SearchHit>, QueryError> {
         if self.courses.is_empty() {
-            return Vec::new();
+            return Ok(Vec::new());
         }
         let bits = self.candidate_bits(filters);
         let candidates = bits.iter_ones().map(CourseIndex::new);
 
         if filters.query.is_empty() {
-            return candidates.map(SearchHit::unranked).collect();
+            return Ok(candidates.map(SearchHit::unranked).collect());
         }
         match &self.search_index {
-            Some(index) => index.search(filters.query, candidates),
-            None => {
-                let needle = normalize(filters.query);
-                candidates
-                    .filter(|&i| self.haystack[i.get()].contains(&needle))
-                    .map(SearchHit::unranked)
-                    .collect()
-            }
+            Some(index) => Ok(index.search(filters.query, candidates)),
+            None => Err(QueryError::SearchIndexNotReady),
         }
     }
 
@@ -329,7 +599,7 @@ impl Engine {
                 .map(|h| (h.course, self.timetables[h.course.get()].as_slice())),
             semester_index,
             self.tsuunen_index,
-            self.has_saturday,
+            self.day_count,
         )
     }
 
@@ -342,11 +612,50 @@ impl Engine {
         build_grid(
             course_indices
                 .iter()
-                .map(|&i| (i, self.timetables[i.get()].as_slice())),
+                .filter_map(|&i| self.timetables.get(i.get()).map(|t| (i, t.as_slice()))),
             semester_index,
             self.tsuunen_index,
-            self.has_saturday,
+            self.day_count,
         )
+    }
+
+    /// Courses in a query result that have an intensive/TBA offering in the
+    /// selected semester. A course with both kinds remains visible in both the
+    /// grid and this list; `total` remains the distinct hit count.
+    #[must_use]
+    pub fn unscheduled(&self, hits: &[SearchHit], semester: Option<&str>) -> Vec<CourseIndex> {
+        let indices: Vec<CourseIndex> = hits.iter().map(|hit| hit.course).collect();
+        self.unscheduled_indices(&indices, semester)
+    }
+
+    /// Return the selected plan courses that have an intensive/TBA offering in
+    /// the requested semester. Invalid indices are ignored at this defensive
+    /// boundary rather than indexing the course arrays.
+    #[must_use]
+    pub fn unscheduled_indices(
+        &self,
+        indices: &[CourseIndex],
+        semester: Option<&str>,
+    ) -> Vec<CourseIndex> {
+        let selected =
+            semester.and_then(|value| self.dicts.semesters.iter().position(|s| s == value));
+        indices
+            .iter()
+            .filter(|index| {
+                self.offerings.get(index.get()).is_some_and(|offerings| {
+                    offerings.iter().any(|offering| {
+                        !offering.is_scheduled()
+                            && selected.is_none_or(|s| {
+                                offering.semester() == s
+                                    || self
+                                        .tsuunen_index
+                                        .is_some_and(|t| offering.semester() == t.get())
+                            })
+                    })
+                })
+            })
+            .copied()
+            .collect()
     }
 
     /// The full course list, in index order (the WASM layer hands this to the UI
@@ -374,10 +683,27 @@ impl Engine {
         &self.year
     }
 
-    /// Whether the timetable needs a Saturday column.
+    #[must_use]
+    pub fn dataset_id(&self) -> &str {
+        &self.dataset_id
+    }
+
+    /// Number of weekday columns derived from the dataset (5…7).
+    #[must_use]
+    pub fn day_count(&self) -> u8 {
+        self.day_count
+    }
+
+    /// Highest period derived from the dataset (1…8).
+    #[must_use]
+    pub fn max_period(&self) -> u8 {
+        self.max_period
+    }
+
+    /// Whether the timetable needs a Saturday or Sunday column.
     #[must_use]
     pub fn has_saturday(&self) -> bool {
-        self.has_saturday
+        self.day_count >= 6
     }
 }
 
@@ -401,11 +727,146 @@ fn narrow(bits: BitSet, dict: &[String], bitsets: &[BitSet], selector: Option<&s
 
 /// Decode a dimension's positional base64 bitsets (vector index = dictionary
 /// index).
-fn decode_dimension(encoded: &[String]) -> Result<Vec<BitSet>, EngineError> {
+fn decode_dimension(
+    field: &'static str,
+    encoded: &[String],
+    expected_count: usize,
+    expected_words: usize,
+) -> Result<Vec<BitSet>, EngineError> {
+    if encoded.len() != expected_count {
+        return Err(EngineError::DimensionCount {
+            field,
+            expected: expected_count,
+            actual: encoded.len(),
+        });
+    }
     encoded
         .iter()
-        .map(|value| BitSet::from_base64(value).map_err(EngineError::from))
+        .map(|value| BitSet::from_base64_words(value, expected_words).map_err(EngineError::from))
         .collect()
+}
+
+fn validate_limit(field: &'static str, actual: usize, max: usize) -> Result<(), EngineError> {
+    if actual > max {
+        return Err(EngineError::LimitExceeded { field, actual, max });
+    }
+    Ok(())
+}
+
+fn validate_dictionary(field: &'static str, values: &[String]) -> Result<(), EngineError> {
+    validate_limit(field, values.len(), MAX_DICTIONARY_ENTRIES)?;
+    let mut seen = HashSet::with_capacity(values.len());
+    for (index, value) in values.iter().enumerate() {
+        if value.trim().is_empty()
+            || value.encode_utf16().count() > MAX_DICTIONARY_VALUE_UTF16
+            || value.chars().any(char::is_control)
+        {
+            return Err(EngineError::InvalidDictionaryValue { field, index });
+        }
+        if !seen.insert(value.as_str()) {
+            return Err(EngineError::DuplicateDictionaryValue {
+                field,
+                value: value.clone(),
+            });
+        }
+    }
+    Ok(())
+}
+
+fn is_rfc3339(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    if !value.is_ascii()
+        || bytes.len() < 20
+        || bytes.get(4) != Some(&b'-')
+        || bytes.get(7) != Some(&b'-')
+        || bytes.get(10) != Some(&b'T')
+        || bytes.get(13) != Some(&b':')
+        || bytes.get(16) != Some(&b':')
+    {
+        return false;
+    }
+    let Some(year) = decimal(bytes, 0, 4) else {
+        return false;
+    };
+    let Some(month) = decimal(bytes, 5, 7) else {
+        return false;
+    };
+    let Some(day) = decimal(bytes, 8, 10) else {
+        return false;
+    };
+    let Some(hour) = decimal(bytes, 11, 13) else {
+        return false;
+    };
+    let Some(minute) = decimal(bytes, 14, 16) else {
+        return false;
+    };
+    let Some(second) = decimal(bytes, 17, 19) else {
+        return false;
+    };
+    let leap = year.is_multiple_of(4) && (!year.is_multiple_of(100) || year.is_multiple_of(400));
+    let max_day = match month {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 if leap => 29,
+        2 => 28,
+        _ => return false,
+    };
+    if !(1..=max_day).contains(&day) || hour > 23 || minute > 59 || second > 59 {
+        return false;
+    }
+
+    let mut cursor = 19;
+    if bytes.get(cursor) == Some(&b'.') {
+        cursor += 1;
+        let start = cursor;
+        while bytes.get(cursor).is_some_and(u8::is_ascii_digit) {
+            cursor += 1;
+        }
+        if cursor == start {
+            return false;
+        }
+    }
+    if bytes.get(cursor) == Some(&b'Z') {
+        return cursor + 1 == bytes.len();
+    }
+    if !matches!(bytes.get(cursor), Some(b'+' | b'-'))
+        || cursor + 6 != bytes.len()
+        || bytes.get(cursor + 3) != Some(&b':')
+    {
+        return false;
+    }
+    decimal(bytes, cursor + 1, cursor + 3).is_some_and(|offset_hour| offset_hour <= 23)
+        && decimal(bytes, cursor + 4, cursor + 6).is_some_and(|offset_minute| offset_minute <= 59)
+}
+
+fn decimal(bytes: &[u8], start: usize, end: usize) -> Option<u32> {
+    let digits = bytes.get(start..end)?;
+    if !digits.iter().all(u8::is_ascii_digit) {
+        return None;
+    }
+    digits.iter().try_fold(0u32, |value, digit| {
+        value.checked_mul(10)?.checked_add(u32::from(digit - b'0'))
+    })
+}
+
+const fn all_bits_word_len(course_count: usize) -> usize {
+    course_count.div_ceil(64)
+}
+
+fn validate_dictionary_index(
+    course: &crate::model::Course,
+    field: &'static str,
+    index: u32,
+    len: usize,
+) -> Result<(), EngineError> {
+    if index as usize >= len {
+        return Err(EngineError::DictionaryIndex {
+            course: course.cd.clone(),
+            field,
+            index,
+        });
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -415,7 +876,7 @@ mod tests {
 
     use super::{Engine, Filters};
     use crate::index::CourseIndex;
-    use crate::model::{Course, Dictionaries, IndicesMap, ProcessedData, Slot};
+    use crate::model::{Course, Dictionaries, IndicesMap, Offering, ProcessedData, Slot};
     use base64::{Engine as _, engine::general_purpose::STANDARD};
 
     fn dicts() -> Dictionaries {
@@ -448,7 +909,7 @@ mod tests {
             nen: None,
             bunrui: None,
             bunya: None,
-            pat: None,
+            pat: Some("4".into()),
             unit: None,
             dm: None,
             ev: None,
@@ -467,7 +928,7 @@ mod tests {
     /// courses propagated into every other semester bitset.
     fn build_test_indices(courses: &[Course], dicts: &Dictionaries) -> IndicesMap {
         let n = courses.len();
-        let num_words = n.div_ceil(64).max(1);
+        let num_words = n.div_ceil(64);
         let set = |words: &mut [u64], ci: usize| words[ci / 64] |= 1u64 << (ci % 64);
         let tsuunen = dicts.semesters.iter().position(|s| s == "通年");
 
@@ -515,19 +976,46 @@ mod tests {
         }
     }
 
-    fn engine_of(courses: Vec<Course>) -> Engine {
+    fn processed(courses: Vec<Course>) -> ProcessedData {
         let d = dicts();
         let indices = build_test_indices(&courses, &d);
-        Engine::build(ProcessedData {
-            version: 3,
+        let offerings = courses
+            .iter()
+            .map(|course| {
+                let scheduled: Vec<Offering> = course
+                    .slots
+                    .iter()
+                    .map(|slot| Offering::Scheduled {
+                        s: slot.s,
+                        d: slot.d as u8,
+                        p: slot.p as u8,
+                    })
+                    .collect();
+                if scheduled.is_empty() {
+                    vec![Offering::Tba {
+                        s: 0,
+                        label: "時間未定".into(),
+                    }]
+                } else {
+                    scheduled
+                }
+            })
+            .collect();
+        ProcessedData {
+            version: 4,
+            dataset_id: "0000000000000000000000000000000000000000000000000000000000000000".into(),
             generated_at: "2026-05-31T00:00:00Z".into(),
             year: "2026".into(),
             total_raw: courses.len() as u32,
             dicts: d,
             indices,
             courses,
-        })
-        .expect("engine builds")
+            offerings,
+        }
+    }
+
+    fn engine_of(courses: Vec<Course>) -> Engine {
+        Engine::build(processed(courses)).expect("engine builds")
     }
 
     /// The three-course fixture used by most filter cases.
@@ -910,16 +1398,19 @@ mod tests {
     // === search (ranked) ===
 
     /// Build + load an index over the engine's courses (name/instructor/code),
-    /// so `search` takes the ranked path rather than the `st` fallback.
+    /// so `search` takes the ranked path rather than reporting index-not-ready.
     fn load_index(engine: &mut Engine) {
         use crate::search::{DocFields, SearchIndex};
-        let bytes = SearchIndex::build(engine.courses.iter().map(|c| DocFields {
-            name: &c.nm,
-            subtitle: c.sub.as_deref(),
-            instructor: &c.prof,
-            code: &c.cd,
-            keywords: "",
-        }))
+        let bytes = SearchIndex::build_for_dataset(
+            engine.dataset_id(),
+            engine.courses.iter().map(|c| DocFields {
+                name: &c.nm,
+                subtitle: c.sub.as_deref(),
+                instructor: &c.prof,
+                code: &c.cd,
+                ..DocFields::default()
+            }),
+        )
         .encode();
         engine.load_search_index(&bytes).expect("index loads");
     }
@@ -950,10 +1441,12 @@ mod tests {
     fn search_ranks_and_carries_spans() {
         let mut e = engine_of(named());
         load_index(&mut e);
-        let hits = e.search(&Filters {
-            query: "田",
-            ..Default::default()
-        });
+        let hits = e
+            .search(&Filters {
+                query: "田",
+                ..Default::default()
+            })
+            .unwrap();
         // 田 appears in course 0's instructor (山田) and course 1's instructor
         // (田中): both hit, and every hit carries at least one span.
         assert_eq!(hits.len(), 2);
@@ -961,23 +1454,23 @@ mod tests {
     }
 
     #[test]
-    fn search_falls_back_to_st_before_the_index_loads() {
+    fn search_reports_not_ready_before_the_index_loads() {
         let e = engine_of(sample());
-        // No index loaded: still finds the course, unranked (no spans).
-        let hits = e.search(&Filters {
-            query: "微分",
-            ..Default::default()
-        });
-        assert_eq!(hits.len(), 1);
-        assert_eq!(hits[0].course, CourseIndex::new(0));
-        assert!(hits[0].spans.is_empty());
+        assert_eq!(
+            e.search(&Filters {
+                query: "微分",
+                ..Default::default()
+            })
+            .unwrap_err(),
+            super::QueryError::SearchIndexNotReady
+        );
     }
 
     #[test]
     fn empty_query_search_is_every_candidate_unranked() {
         let mut e = engine_of(sample());
         load_index(&mut e);
-        let hits = e.search(&Filters::default());
+        let hits = e.search(&Filters::default()).unwrap();
         assert_eq!(hits.len(), 3);
         assert!(hits.iter().all(|h| h.spans.is_empty() && h.score == 0.0));
         // Ascending index order (browse view).
@@ -1001,10 +1494,12 @@ mod tests {
         let mut e = engine_of(vec![c0, c1]);
         load_index(&mut e);
 
-        let hits = e.search(&Filters {
-            query: "田中",
-            ..Default::default()
-        });
+        let hits = e
+            .search(&Filters {
+                query: "田中",
+                ..Default::default()
+            })
+            .unwrap();
         assert_eq!(hits.len(), 2);
         assert_eq!(hits[0].course, CourseIndex::new(1), "name hit ranks first");
 
@@ -1086,13 +1581,155 @@ mod tests {
 
     #[test]
     fn rejects_unsupported_version() {
-        let err = Engine::from_json(r#"{"version": 1}"#).unwrap_err();
+        let mut data = serde_json::to_value(
+            crate::convert::convert_v4(&[], "2026-01-01T00:00:00Z".into(), "test".into())
+                .unwrap()
+                .data,
+        )
+        .unwrap();
+        data["version"] = serde_json::json!(1);
+        let err = Engine::from_json(&serde_json::to_string(&data).unwrap()).unwrap_err();
         assert!(matches!(err, super::EngineError::UnsupportedVersion(1)));
     }
 
     #[test]
     fn rejects_missing_version() {
         let err = Engine::from_json(r#"{"courses": []}"#).unwrap_err();
-        assert!(matches!(err, super::EngineError::NotV3Format));
+        assert!(matches!(err, super::EngineError::NotV4Format));
+    }
+
+    #[test]
+    fn rejects_dictionary_reference_outside_the_dictionary() {
+        let mut data = processed(sample());
+        data.courses[0].dept = 99;
+        assert!(matches!(
+            Engine::build(data).unwrap_err(),
+            super::EngineError::DictionaryIndex {
+                field: "department",
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn rejects_declared_course_count_mismatch() {
+        let mut data = processed(sample());
+        data.total_raw += 1;
+        assert!(matches!(
+            Engine::build(data).unwrap_err(),
+            super::EngineError::DeclaredCourseCount {
+                declared: 4,
+                actual: 3
+            }
+        ));
+    }
+
+    #[test]
+    fn rejects_duplicate_and_unsafe_dictionary_values() {
+        let mut duplicate = processed(sample());
+        duplicate
+            .dicts
+            .semesters
+            .push(duplicate.dicts.semesters[0].clone());
+        assert!(matches!(
+            Engine::build(duplicate).unwrap_err(),
+            super::EngineError::DuplicateDictionaryValue {
+                field: "semester",
+                ..
+            }
+        ));
+
+        let mut unsafe_value = processed(sample());
+        unsafe_value.dicts.departments[0] = "unsafe\nvalue".into();
+        assert!(matches!(
+            Engine::build(unsafe_value).unwrap_err(),
+            super::EngineError::InvalidDictionaryValue {
+                field: "department",
+                index: 0
+            }
+        ));
+    }
+
+    #[test]
+    fn rejects_invalid_identity_fields() {
+        let mut bad_id = processed(sample());
+        bad_id.dataset_id = "not-a-content-hash".into();
+        assert!(matches!(
+            Engine::build(bad_id).unwrap_err(),
+            super::EngineError::InvalidIdentity { field: "datasetId" }
+        ));
+
+        let mut bad_timestamp = processed(sample());
+        bad_timestamp.generated_at = "2026-02-30T00:00:00Z".into();
+        assert!(matches!(
+            Engine::build(bad_timestamp).unwrap_err(),
+            super::EngineError::InvalidIdentity {
+                field: "generatedAt"
+            }
+        ));
+    }
+
+    #[test]
+    fn rejects_excessive_offerings_and_course_fields() {
+        let mut excessive = processed(sample());
+        excessive.offerings[0] =
+            vec![Offering::Intensive { s: 0 }; super::MAX_OFFERINGS_PER_COURSE + 1];
+        assert!(matches!(
+            Engine::build(excessive).unwrap_err(),
+            super::EngineError::LimitExceeded {
+                field: "offerings for one course",
+                ..
+            }
+        ));
+
+        let mut invalid_mode = processed(sample());
+        invalid_mode.courses[0].dm = Some("telepathy".into());
+        assert!(matches!(
+            Engine::build(invalid_mode).unwrap_err(),
+            super::EngineError::InvalidCourseField {
+                field: "delivery mode",
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn rejects_short_bitsets_for_multiword_datasets() {
+        let courses = (0..65)
+            .map(|index| course(&format!("C{index:03}"), &[(0, 0, 1)], 0, 0, "bitset"))
+            .collect();
+        let mut data = processed(courses);
+        data.indices.semester[0] = encode(&[1]);
+        assert!(matches!(
+            Engine::build(data).unwrap_err(),
+            super::EngineError::Bitset(_)
+        ));
+    }
+
+    #[test]
+    fn rejects_index_from_another_dataset_or_document_count() {
+        let mut engine = engine_of(sample());
+        let wrong_generation = crate::search::SearchIndex::build_for_dataset(
+            "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+            [crate::search::DocFields::default(); 3],
+        )
+        .encode();
+        assert_eq!(
+            engine.load_search_index(&wrong_generation).unwrap_err(),
+            crate::search::IndexError::DatasetMismatch
+        );
+
+        let wrong_count = crate::search::SearchIndex::build_for_dataset(
+            engine.dataset_id(),
+            [crate::search::DocFields::default()],
+        )
+        .encode();
+        assert!(matches!(
+            engine.load_search_index(&wrong_count).unwrap_err(),
+            crate::search::IndexError::DocumentCountMismatch {
+                expected: 3,
+                actual: 1
+            }
+        ));
     }
 }

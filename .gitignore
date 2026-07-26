@@ -9,6 +9,7 @@ bin/
 *.exe
 
 # Frontend
+/node_modules/
 web/node_modules/
 web/dist/
 web/.svelte-kit/
@@ -18,6 +19,7 @@ web/test-results/
 web/playwright-report/
 web/blob-report/
 web/.playwright/
+web/.lighthouseci/
 
 # Data files (CIで生成)
 data.json
@@ -25,6 +27,8 @@ web/public/data.json
 web/public/search.idx
 web/public/test-data.json
 web/public/details/
+web/public/datasets/
+web/public/manifest.json
 
 # Local dummy dataset (gen-sample output; regenerate with `just dev-sample`)
 dev-data/
@@ -42,6 +46,9 @@ Thumbs.db
 
 # Coverage
 *.out
+
+# Generated CycloneDX reports (CI uploads these as build artifacts).
+*.cdx.json
 
 # cargo-mutants output (mutants.out/ and the rotated mutants.out.old/)
 mutants.out*/

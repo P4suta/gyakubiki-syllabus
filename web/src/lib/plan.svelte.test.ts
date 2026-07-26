@@ -1,7 +1,7 @@
 import { flushSync } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { encodePlan } from './plan-codec'
 import { initPlanSync, plan, shareUrl } from './plan.svelte'
+import { encodePlan } from './plan-codec'
 
 describe('plan store', () => {
 	beforeEach(() => plan.clear())

@@ -1,6 +1,6 @@
 [package]
 name = "syllabus-core"
-version = "0.1.0"
+version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -9,11 +9,21 @@ description = "Pure, platform-agnostic core for the gyakubiki-syllabus viewer (m
 [lib]
 name = "syllabus_core"
 
+[features]
+default = ["unicode-search"]
+# Full NFKC tables for native callers and the dataset producer.
+unicode-search = ["dep:unicode-normalization"]
+# Dataset generation and validation internals used only by syllabus-cli.
+producer = ["unicode-search"]
+# Numeric wire bridge used only by the wasm-bindgen boundary crate.
+wasm-internal = []
+
 [dependencies]
 base64 = "0.22"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
+unicode-normalization = { version = "0.1", optional = true }
 
 # Dev-only. Property-based tests for the pure parsers/transforms. Never compiled
 # into the shipped WASM/native binary, so this does not affect artifact size.

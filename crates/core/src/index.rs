@@ -42,6 +42,7 @@ macro_rules! dict_index {
         impl $name {
             /// Wrap a raw dictionary position.
             #[must_use]
+            #[cfg(test)]
             pub const fn new(raw: usize) -> Self {
                 Self(raw)
             }
@@ -62,19 +63,21 @@ macro_rules! dict_index {
 }
 
 dict_index! {
-    /// Position into [`Dictionaries::semesters`](crate::model::Dictionaries::semesters).
+    /// Position in the dataset's semester dictionary.
     SemesterIndex
 }
+#[cfg(any(feature = "producer", test))]
 dict_index! {
-    /// Position into [`Dictionaries::departments`](crate::model::Dictionaries::departments).
+    /// Position in the dataset's department dictionary.
     DepartmentIndex
 }
+#[cfg(any(feature = "producer", test))]
 dict_index! {
-    /// Position into [`Dictionaries::campuses`](crate::model::Dictionaries::campuses).
+    /// Position in the dataset's campus dictionary.
     CampusIndex
 }
 
-/// A weekday column on the timetable (0 = 月 … 5 = 土). The label lives in the
+/// A weekday column on the timetable (0 = 月 … 6 = 日). The label lives in the
 /// presentation layer; the grid only ever speaks this numeric column.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Day(u8);
@@ -94,22 +97,22 @@ impl Day {
     }
 }
 
-/// A teaching period (1限 … 6限). Construction enforces the range invariant, so
+/// A teaching period (1限 … 8限). Construction enforces the range invariant, so
 /// a `Period` value is always one the grid can display.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Period(u8);
 
 impl Period {
-    /// The periods the grid lays out (1限‥6限).
-    pub const RANGE: std::ops::RangeInclusive<u8> = 1..=6;
+    /// The periods the grid lays out (1限‥8限).
+    pub const RANGE: std::ops::RangeInclusive<u8> = 1..=8;
 
-    /// Build a period, returning `None` for anything outside 1限‥6限.
+    /// Build a period, returning `None` for anything outside 1限‥8限.
     #[must_use]
     pub fn new(period: u8) -> Option<Self> {
         Self::RANGE.contains(&period).then_some(Self(period))
     }
 
-    /// The underlying period number (1‥6).
+    /// The underlying period number (1‥8).
     #[must_use]
     pub const fn get(self) -> u8 {
         self.0
@@ -123,13 +126,13 @@ mod tests {
     #[test]
     fn period_accepts_the_visible_range() {
         assert!(Period::new(1).is_some());
-        assert!(Period::new(6).is_some());
+        assert!(Period::new(8).is_some());
     }
 
     #[test]
     fn period_rejects_out_of_range() {
         assert!(Period::new(0).is_none());
-        assert!(Period::new(7).is_none());
+        assert!(Period::new(9).is_none());
     }
 
     #[test]

@@ -1,62 +1,98 @@
-//! Full-text course search: an index over each course's searchable fields that
-//! answers a query with **ranked hits and per-field match spans**.
+//! Position-aware Japanese full-text search.
 //!
-//! The index is built from the *original* display strings, and folding is
-//! position-preserving (see [`crate::text::fold_char`]) — so a match found in
-//! the folded text carries back to the exact character range in the text the UI
-//! renders, and highlighting needs no re-derivation. Spans are reported in
-//! UTF-16 code units (what JS string slicing uses).
-//!
-//! This module is intentionally decoupled from [`crate::Engine`]: it takes the
-//! searchable text explicitly ([`DocFields`]), so the data-generation step can
-//! feed fields — such as the syllabus keywords — that never live on the wire
-//! `Course` on their own.
+//! SYX4 is a hybrid n-gram inverted index. It stores every normalized field in
+//! display order (the compact source of exact UTF-16 positions) plus a sparse
+//! unigram → document posting table. A query chooses its rarest character,
+//! visits only those documents, and verifies the complete substring in each
+//! field. Sparse normalization runs map NFKC matches back to original UTF-16
+//! clusters. Keeping the positional corpus in text order makes Brotli effective,
+//! while the inverted table avoids scanning every syllabus.
+
+use std::cell::RefCell;
 
 use crate::index::CourseIndex;
-use crate::text::fold_char;
+#[cfg(feature = "unicode-search")]
+use crate::text::normalize_with_mapping;
+use crate::text::{NormalizationRun, normalize};
 
-/// A searchable field of a course. The discriminant is stable (it will be
-/// persisted in the on-disk index) and orders fields by descending display
-/// priority, so spans come out name-first.
+/// Searchable fields in stable wire order.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 #[repr(u8)]
 pub enum Field {
-    /// Course name — highest signal, and the only field highlighted on the card.
     Name = 0,
     Subtitle = 1,
     Instructor = 2,
     Code = 3,
-    /// Department + taxonomy + syllabus keywords: searchable for recall, never
-    /// highlighted.
-    Keywords = 4,
+    Department = 4,
+    Summary = 5,
+    Aims = 6,
+    Goals = 7,
+    Plan = 8,
+    Textbooks = 9,
+    Prerequisite = 10,
+    Preparation = 11,
+    OfficeHour = 12,
+    Keywords = 13,
+    Teachers = 14,
+    Numbering = 15,
+    Sdgs = 16,
+    Evaluation = 17,
+    Delivery = 18,
+    Extra = 19,
 }
 
 impl Field {
-    /// Every field, in stable (discriminant) order.
-    pub const ALL: [Field; 5] = [
-        Field::Name,
-        Field::Subtitle,
-        Field::Instructor,
-        Field::Code,
-        Field::Keywords,
+    pub const ALL: [Self; 20] = [
+        Self::Name,
+        Self::Subtitle,
+        Self::Instructor,
+        Self::Code,
+        Self::Department,
+        Self::Summary,
+        Self::Aims,
+        Self::Goals,
+        Self::Plan,
+        Self::Textbooks,
+        Self::Prerequisite,
+        Self::Preparation,
+        Self::OfficeHour,
+        Self::Keywords,
+        Self::Teachers,
+        Self::Numbering,
+        Self::Sdgs,
+        Self::Evaluation,
+        Self::Delivery,
+        Self::Extra,
     ];
 
-    /// Relevance weight: a name hit outranks an instructor hit, which outranks a
-    /// code or keyword hit.
-    #[must_use]
-    fn weight(self) -> f32 {
+    const fn weight(self) -> f32 {
         match self {
-            Field::Name => 3.0,
-            Field::Instructor => 2.0,
-            Field::Subtitle => 1.5,
-            Field::Code => 1.2,
-            Field::Keywords => 1.0,
+            Self::Name => 5.0,
+            Self::Code => 4.5,
+            Self::Instructor => 4.0,
+            Self::Teachers => 3.5,
+            Self::Subtitle => 3.0,
+            Self::Keywords => 2.8,
+            Self::Department => 2.5,
+            Self::Aims | Self::Goals => 2.2,
+            Self::Summary => 2.0,
+            Self::Prerequisite | Self::Numbering => 1.5,
+            Self::Plan => 1.3,
+            Self::Extra => 1.1,
+            Self::Textbooks
+            | Self::Preparation
+            | Self::OfficeHour
+            | Self::Sdgs
+            | Self::Evaluation => 1.0,
+            Self::Delivery => 0.8,
         }
     }
 }
 
-/// A matched character range within one field, as **UTF-16 code-unit** offsets
-/// into the *original* display text.
+const FIELD_COUNT: usize = Field::ALL.len();
+const MAX_SPANS_PER_HIT: usize = 64;
+
+/// A matched range in UTF-16 code units within one field.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Span {
     pub field: Field,
@@ -64,8 +100,7 @@ pub struct Span {
     pub len: u32,
 }
 
-/// One course that matched a query: its index, relevance score, and match spans
-/// (name-first field order, then left to right within a field).
+/// One ranked course match.
 #[derive(Clone, Debug, PartialEq)]
 pub struct SearchHit {
     pub course: CourseIndex,
@@ -74,8 +109,6 @@ pub struct SearchHit {
 }
 
 impl SearchHit {
-    /// A candidate carried through with no ranking — score 0, no spans. Used for
-    /// the browse view (empty query) and the pre-index fallback.
     #[must_use]
     pub fn unranked(course: CourseIndex) -> Self {
         Self {
@@ -86,144 +119,256 @@ impl SearchHit {
     }
 }
 
-/// The searchable text of one course, borrowed at build time. `keywords` is the
-/// pre-joined department + taxonomy + syllabus-keyword text.
+/// Borrowed fields supplied by the dataset producer.
+#[cfg(any(feature = "producer", test))]
 #[derive(Debug, Default, Clone, Copy)]
 pub struct DocFields<'a> {
     pub name: &'a str,
     pub subtitle: Option<&'a str>,
     pub instructor: &'a str,
     pub code: &'a str,
+    pub department: &'a str,
+    pub summary: &'a str,
+    pub aims: &'a str,
+    pub goals: &'a str,
+    pub plan: &'a str,
+    pub textbooks: &'a str,
+    pub prerequisite: &'a str,
+    pub preparation: &'a str,
+    pub office_hour: &'a str,
     pub keywords: &'a str,
+    pub teachers: &'a str,
+    pub numbering: &'a str,
+    pub sdgs: &'a str,
+    pub evaluation: &'a str,
+    pub delivery: &'a str,
+    pub extra: &'a str,
 }
 
-/// One field's folded text plus, for every character, the UTF-16 offset of that
-/// character in the *original* string. `char_utf16` has `char_count + 1` entries
-/// — the final one is the field's total UTF-16 length — so a match spanning
-/// chars `a..b` maps to `char_utf16[a]..char_utf16[b]`.
+#[cfg(any(feature = "producer", test))]
+impl<'a> DocFields<'a> {
+    fn values(self) -> [&'a str; FIELD_COUNT] {
+        [
+            self.name,
+            self.subtitle.unwrap_or(""),
+            self.instructor,
+            self.code,
+            self.department,
+            self.summary,
+            self.aims,
+            self.goals,
+            self.plan,
+            self.textbooks,
+            self.prerequisite,
+            self.preparation,
+            self.office_hour,
+            self.keywords,
+            self.teachers,
+            self.numbering,
+            self.sdgs,
+            self.evaluation,
+            self.delivery,
+            self.extra,
+        ]
+    }
+}
+
 #[derive(Debug)]
 struct FieldText {
     folded: String,
-    char_utf16: Vec<u32>,
+    mappings: Vec<NormalizationRun>,
 }
 
 impl FieldText {
+    #[cfg(any(feature = "producer", test))]
     fn build(original: &str) -> Self {
-        Self::from_folded(original.chars().map(fold_char).collect())
+        let (folded, mappings) = normalize_with_mapping(original);
+        Self { folded, mappings }
     }
 
-    /// Build from an already-folded string. Every fold rule preserves a
-    /// character's UTF-16 length (all are BMP↔BMP, one code unit), so the offset
-    /// of char `i` in the folded text equals its offset in the original — which
-    /// is why the on-disk index need only store the folded text, and a span
-    /// computed here indexes straight into the original display string.
-    fn from_folded(folded: String) -> Self {
-        let mut char_utf16 = Vec::with_capacity(folded.len() + 1);
-        let mut utf16 = 0u32;
-        for c in folded.chars() {
-            char_utf16.push(utf16);
-            utf16 += c.len_utf16() as u32;
-        }
-        char_utf16.push(utf16);
-        Self { folded, char_utf16 }
-    }
-
-    /// Push a [`Span`] for every non-overlapping occurrence of the folded query,
-    /// returning the number of matches.
-    fn find(
-        &self,
-        field: Field,
-        folded_query: &str,
-        query_chars: usize,
-        out: &mut Vec<Span>,
-    ) -> u32 {
-        if folded_query.is_empty() {
+    fn find(&self, field: Field, query: &str, spans: &mut Vec<Span>) -> u32 {
+        let Some(byte_offset) = self.folded.find(query) else {
             return 0;
-        }
-        let mut count = 0;
-        for (byte, matched) in self.folded.match_indices(folded_query) {
-            // Folding is 1:1, so the folded char index equals the original char
-            // index — the key into `char_utf16`.
-            let char_start = self.folded[..byte].chars().count();
-            let start = self.char_utf16[char_start];
-            let end = self.char_utf16[char_start + query_chars];
-            debug_assert_eq!(matched.chars().count(), query_chars);
-            out.push(Span {
+        };
+        if spans.len() < MAX_SPANS_PER_HIT {
+            let normalized_start = self.folded[..byte_offset].encode_utf16().count() as u32;
+            let normalized_end = normalized_start + query.encode_utf16().count() as u32;
+            let (start, end) = self.original_range(normalized_start, normalized_end);
+            spans.push(Span {
                 field,
                 start,
-                len: end - start,
+                len: end.saturating_sub(start),
             });
-            count += 1;
         }
-        count
+        1
+    }
+
+    fn original_range(&self, start: u32, end: u32) -> (u32, u32) {
+        (
+            map_start_boundary(start, &self.mappings),
+            map_end_boundary(end, &self.mappings),
+        )
     }
 }
 
-/// A searchable index over every course, in ascending course-index order.
+fn map_start_boundary(offset: u32, mappings: &[NormalizationRun]) -> u32 {
+    let mut delta = 0i64;
+    for mapping in mappings {
+        if offset < mapping.normalized_start {
+            break;
+        }
+        if offset < mapping.normalized_end {
+            return mapping.original_start;
+        }
+        delta = i64::from(mapping.original_end) - i64::from(mapping.normalized_end);
+    }
+    (i64::from(offset) + delta).max(0) as u32
+}
+
+fn map_end_boundary(offset: u32, mappings: &[NormalizationRun]) -> u32 {
+    let mut delta = 0i64;
+    for mapping in mappings {
+        if offset <= mapping.normalized_start {
+            break;
+        }
+        if offset <= mapping.normalized_end {
+            return mapping.original_end;
+        }
+        delta = i64::from(mapping.original_end) - i64::from(mapping.normalized_end);
+    }
+    (i64::from(offset) + delta).max(0) as u32
+}
+
+/// Validated, dataset-bound positional n-gram index.
 #[derive(Debug)]
 pub struct SearchIndex {
-    docs: Vec<[FieldText; 5]>,
+    dataset_id: String,
+    docs: Vec<[FieldText; FIELD_COUNT]>,
+    postings: Vec<(char, Vec<CourseIndex>)>,
+    single_character_cache: RefCell<Option<(char, Vec<SearchHit>)>>,
 }
 
 impl SearchIndex {
-    /// Build the index from each course's fields, in ascending course-index
-    /// order (element `i` is course `i`).
     #[must_use]
+    #[cfg(any(feature = "producer", test))]
     pub fn build<'a>(docs: impl IntoIterator<Item = DocFields<'a>>) -> Self {
-        let docs = docs
-            .into_iter()
-            .map(|d| {
-                [
-                    FieldText::build(d.name),
-                    FieldText::build(d.subtitle.unwrap_or("")),
-                    FieldText::build(d.instructor),
-                    FieldText::build(d.code),
-                    FieldText::build(d.keywords),
-                ]
-            })
-            .collect();
-        Self { docs }
+        Self::build_for_dataset("0".repeat(64), docs)
     }
 
-    /// Number of indexed courses.
     #[must_use]
-    pub fn len(&self) -> usize {
+    #[cfg(any(feature = "producer", test))]
+    pub fn build_for_dataset<'a>(
+        dataset_id: impl Into<String>,
+        docs: impl IntoIterator<Item = DocFields<'a>>,
+    ) -> Self {
+        let docs: Vec<[FieldText; FIELD_COUNT]> = docs
+            .into_iter()
+            .map(|document| document.values().map(FieldText::build))
+            .collect();
+        let postings = build_postings(&docs);
+        Self {
+            dataset_id: dataset_id.into(),
+            docs,
+            postings,
+            single_character_cache: RefCell::new(None),
+        }
+    }
+
+    #[must_use]
+    pub fn document_count(&self) -> usize {
         self.docs.len()
     }
 
-    /// Whether the index holds no courses.
     #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.docs.is_empty()
+    pub fn dataset_id(&self) -> &str {
+        &self.dataset_id
     }
 
-    /// Search `query` over `candidates` (the dimension-filtered course set),
-    /// returning the matches ranked by score descending, ties broken by
-    /// ascending course index. An empty query yields no hits — the caller treats
-    /// "no query" as "every candidate", where ranking does not apply.
+    /// Exact normalized substring search over dimension-filtered candidates.
     #[must_use]
     pub fn search(
         &self,
         query: &str,
         candidates: impl IntoIterator<Item = CourseIndex>,
     ) -> Vec<SearchHit> {
-        let folded_query: String = query.chars().map(fold_char).collect();
-        let query_chars = folded_query.chars().count();
-        let mut hits = Vec::new();
-        if query_chars == 0 {
+        let folded_query = normalize(query);
+        let character_count = folded_query.chars().count();
+        if character_count == 0 || character_count > 256 {
+            return Vec::new();
+        }
+        let candidates: Vec<CourseIndex> = candidates.into_iter().collect();
+        if character_count == 1 {
+            let character = folded_query.chars().next().unwrap_or_default();
+            let cached = self
+                .single_character_cache
+                .borrow()
+                .as_ref()
+                .filter(|(cached, _)| *cached == character)
+                .map(|(_, hits)| hits.clone());
+            let mut hits = if let Some(hits) = cached {
+                hits
+            } else {
+                let hits = self.search_folded(
+                    &folded_query,
+                    (0..self.docs.len()).map(CourseIndex::new).collect(),
+                );
+                *self.single_character_cache.borrow_mut() = Some((character, hits.clone()));
+                hits
+            };
+            if !is_all_candidates(&candidates, self.docs.len()) {
+                let mut allowed = vec![false; self.docs.len()];
+                for candidate in candidates {
+                    if let Some(value) = allowed.get_mut(candidate.get()) {
+                        *value = true;
+                    }
+                }
+                hits.retain(|hit| allowed.get(hit.course.get()).copied().unwrap_or(false));
+            }
             return hits;
         }
-        for course in candidates {
-            let Some(doc) = self.docs.get(course.get()) else {
+        self.search_folded(&folded_query, candidates)
+    }
+
+    fn search_folded(&self, folded_query: &str, candidates: Vec<CourseIndex>) -> Vec<SearchHit> {
+        let Some(seed) = folded_query
+            .chars()
+            .filter_map(|character| {
+                self.postings
+                    .binary_search_by_key(&character, |(key, _)| *key)
+                    .ok()
+                    .map(|index| &self.postings[index].1)
+            })
+            .min_by_key(|posting| posting.len())
+        else {
+            return Vec::new();
+        };
+
+        let all_candidates = is_all_candidates(&candidates, self.docs.len());
+        let allowed = if all_candidates {
+            Vec::new()
+        } else {
+            let mut allowed = vec![false; self.docs.len()];
+            for course in candidates {
+                if let Some(value) = allowed.get_mut(course.get()) {
+                    *value = true;
+                }
+            }
+            allowed
+        };
+
+        let mut hits = Vec::new();
+        for &course in seed {
+            if !all_candidates && !allowed.get(course.get()).copied().unwrap_or(false) {
+                continue;
+            }
+            let Some(document) = self.docs.get(course.get()) else {
                 continue;
             };
             let mut spans = Vec::new();
             let mut score = 0.0f32;
             for field in Field::ALL {
-                let count = doc[field as usize].find(field, &folded_query, query_chars, &mut spans);
-                if count > 0 {
-                    score += field.weight() * count as f32;
-                }
+                let count = document[field as usize].find(field, folded_query, &mut spans);
+                score += count as f32 * field.weight();
             }
             if !spans.is_empty() {
                 hits.push(SearchHit {
@@ -233,101 +378,72 @@ impl SearchIndex {
                 });
             }
         }
-        // total_cmp gives a stable order on the (non-NaN) scores; the index
-        // tie-break keeps results deterministic across builds.
-        hits.sort_by(|a, b| {
-            b.score
-                .total_cmp(&a.score)
-                .then_with(|| a.course.get().cmp(&b.course.get()))
+        hits.sort_by(|left, right| {
+            right
+                .score
+                .total_cmp(&left.score)
+                .then_with(|| left.course.get().cmp(&right.course.get()))
         });
         hits
     }
-}
 
-// === Binary format ===
-//
-// The index is serialized once at data-generation time and shipped as its own
-// `search.idx`, so it stays off the payload that gates first paint and is loaded
-// lazily in the worker. Layout (all integers little-endian):
-//
-//   magic "SYX1" | version:u16 | n_docs:u32
-//   per doc, per field (5, in `Field` order): folded_len:u32, folded:UTF-8 bytes
-//
-// Only the folded text is stored — the UTF-16 offset table is recomputed on load
-// (see `FieldText::from_folded`), since folding preserves each char's UTF-16
-// length. Decoding parses once into the owned structure the query uses.
-
-const MAGIC: &[u8; 4] = b"SYX1";
-const FORMAT_VERSION: u16 = 1;
-
-/// Errors from decoding a `search.idx` blob.
-#[derive(Debug, thiserror::Error, PartialEq, Eq)]
-pub enum IndexError {
-    /// The blob does not start with the `search.idx` magic.
-    #[error("not a search index (bad magic)")]
-    BadMagic,
-    /// The format version is newer/older than this build understands.
-    #[error("unsupported search-index version {0}")]
-    UnsupportedVersion(u16),
-    /// The blob ended mid-record.
-    #[error("search index is truncated")]
-    Truncated,
-    /// A field's bytes were not valid UTF-8.
-    #[error("search index holds invalid UTF-8")]
-    BadUtf8,
-}
-
-/// A bounds-checked little-endian cursor over the index blob.
-struct Reader<'a> {
-    bytes: &'a [u8],
-    pos: usize,
-}
-
-impl<'a> Reader<'a> {
-    fn new(bytes: &'a [u8]) -> Self {
-        Self { bytes, pos: 0 }
-    }
-
-    fn take(&mut self, n: usize) -> Result<&'a [u8], IndexError> {
-        let end = self.pos.checked_add(n).ok_or(IndexError::Truncated)?;
-        let slice = self.bytes.get(self.pos..end).ok_or(IndexError::Truncated)?;
-        self.pos = end;
-        Ok(slice)
-    }
-
-    fn u16(&mut self) -> Result<u16, IndexError> {
-        Ok(u16::from_le_bytes(self.take(2)?.try_into().unwrap()))
-    }
-
-    fn u32(&mut self) -> Result<u32, IndexError> {
-        Ok(u32::from_le_bytes(self.take(4)?.try_into().unwrap()))
-    }
-}
-
-impl SearchIndex {
-    /// Serialize the index to its compact binary form (`search.idx`).
+    /// Serialize the strictly validated SYX4 transport.
     #[must_use]
+    #[cfg(any(feature = "producer", test))]
     pub fn encode(&self) -> Vec<u8> {
         let mut out = Vec::new();
         out.extend_from_slice(MAGIC);
         out.extend_from_slice(&FORMAT_VERSION.to_le_bytes());
+        out.extend_from_slice(&(self.dataset_id.len() as u16).to_le_bytes());
+        out.extend_from_slice(self.dataset_id.as_bytes());
         out.extend_from_slice(&(self.docs.len() as u32).to_le_bytes());
-        for doc in &self.docs {
-            for field in doc {
-                let bytes = field.folded.as_bytes();
-                out.extend_from_slice(&(bytes.len() as u32).to_le_bytes());
-                out.extend_from_slice(bytes);
+        out.extend_from_slice(&(FIELD_COUNT as u16).to_le_bytes());
+        for document in &self.docs {
+            for field in document {
+                out.extend_from_slice(&(field.folded.len() as u32).to_le_bytes());
+                out.extend_from_slice(field.folded.as_bytes());
+                out.extend_from_slice(&(field.mappings.len() as u32).to_le_bytes());
+                for mapping in &field.mappings {
+                    out.extend_from_slice(&mapping.normalized_start.to_le_bytes());
+                    out.extend_from_slice(&mapping.normalized_end.to_le_bytes());
+                    out.extend_from_slice(&mapping.original_start.to_le_bytes());
+                    out.extend_from_slice(&mapping.original_end.to_le_bytes());
+                }
             }
+        }
+        out.extend_from_slice(&(self.postings.len() as u32).to_le_bytes());
+        let total: u64 = self
+            .postings
+            .iter()
+            .map(|(_, documents)| documents.len() as u64)
+            .sum();
+        out.extend_from_slice(&total.to_le_bytes());
+        for (character, documents) in &self.postings {
+            let mut payload = Vec::new();
+            let mut previous = 0usize;
+            for (position, document) in documents.iter().enumerate() {
+                let value = document.get();
+                let delta = if position == 0 {
+                    value
+                } else {
+                    value - previous
+                };
+                put_varint(delta as u64, &mut payload);
+                previous = value;
+            }
+            out.extend_from_slice(&(*character as u32).to_le_bytes());
+            out.extend_from_slice(&(documents.len() as u32).to_le_bytes());
+            out.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+            out.extend_from_slice(&payload);
         }
         out
     }
 
-    /// Parse an index from its binary form.
-    ///
-    /// # Errors
-    /// Returns an [`IndexError`] if the blob is not a `search.idx`, is a version
-    /// this build does not understand, is truncated, or holds invalid UTF-8.
+    /// Decode and fully validate untrusted index bytes.
     pub fn decode(bytes: &[u8]) -> Result<Self, IndexError> {
+        if bytes.len() > MAX_INDEX_BYTES {
+            return Err(IndexError::IndexTooLarge(bytes.len()));
+        }
         let mut reader = Reader::new(bytes);
         if reader.take(4)? != MAGIC {
             return Err(IndexError::BadMagic);
@@ -336,258 +452,617 @@ impl SearchIndex {
         if version != FORMAT_VERSION {
             return Err(IndexError::UnsupportedVersion(version));
         }
-        let n_docs = reader.u32()? as usize;
-        let mut docs = Vec::with_capacity(n_docs);
-        for _ in 0..n_docs {
-            let mut fields: Vec<FieldText> = Vec::with_capacity(5);
-            for _ in 0..5 {
+        let dataset_len = reader.u16()? as usize;
+        if dataset_len != DATASET_ID_BYTES {
+            return Err(IndexError::BadDatasetId);
+        }
+        let dataset_id = std::str::from_utf8(reader.take(dataset_len)?)
+            .map_err(|_| IndexError::BadDatasetId)?
+            .to_owned();
+        if !dataset_id
+            .bytes()
+            .all(|value| value.is_ascii_digit() || (b'a'..=b'f').contains(&value))
+        {
+            return Err(IndexError::BadDatasetId);
+        }
+        let document_count = reader.u32()? as usize;
+        if document_count > MAX_DOCS {
+            return Err(IndexError::TooManyDocuments(document_count));
+        }
+        let field_count = reader.u16()? as usize;
+        if field_count != FIELD_COUNT {
+            return Err(IndexError::BadFieldCount(field_count));
+        }
+        let mut docs = Vec::with_capacity(document_count);
+        let mut total_text = 0usize;
+        let mut total_mappings = 0usize;
+        for _ in 0..document_count {
+            let mut fields = Vec::with_capacity(FIELD_COUNT);
+            for _ in 0..FIELD_COUNT {
                 let len = reader.u32()? as usize;
+                if len > MAX_FIELD_BYTES {
+                    return Err(IndexError::FieldTooLarge(len));
+                }
+                total_text = total_text
+                    .checked_add(len)
+                    .ok_or(IndexError::IndexTooLarge(usize::MAX))?;
+                if total_text > MAX_TEXT_BYTES {
+                    return Err(IndexError::IndexTooLarge(total_text));
+                }
                 let folded = std::str::from_utf8(reader.take(len)?)
                     .map_err(|_| IndexError::BadUtf8)?
                     .to_owned();
-                fields.push(FieldText::from_folded(folded));
+                let mapping_count = reader.u32()? as usize;
+                total_mappings = total_mappings
+                    .checked_add(mapping_count)
+                    .ok_or(IndexError::TooManyMappings(usize::MAX))?;
+                if mapping_count > MAX_MAPPINGS_PER_FIELD || total_mappings > MAX_TOTAL_MAPPINGS {
+                    return Err(IndexError::TooManyMappings(total_mappings));
+                }
+                let normalized_utf16 = folded.encode_utf16().count() as u32;
+                let mut mappings = Vec::with_capacity(mapping_count);
+                let mut previous_normalized_end = 0;
+                let mut previous_original_end = 0;
+                for _ in 0..mapping_count {
+                    let mapping = NormalizationRun {
+                        normalized_start: reader.u32()?,
+                        normalized_end: reader.u32()?,
+                        original_start: reader.u32()?,
+                        original_end: reader.u32()?,
+                    };
+                    if mapping.normalized_start < previous_normalized_end
+                        || mapping.normalized_end < mapping.normalized_start
+                        || mapping.normalized_end > normalized_utf16
+                        || mapping.original_start < previous_original_end
+                        || mapping.original_end <= mapping.original_start
+                        || mapping.original_end > MAX_ORIGINAL_FIELD_UTF16
+                    {
+                        return Err(IndexError::InvalidMapping);
+                    }
+                    previous_normalized_end = mapping.normalized_end;
+                    previous_original_end = mapping.original_end;
+                    mappings.push(mapping);
+                }
+                fields.push(FieldText { folded, mappings });
             }
-            // Exactly five fields were pushed, so the conversion cannot fail.
-            let doc: [FieldText; 5] = fields.try_into().map_err(|_| IndexError::Truncated)?;
-            docs.push(doc);
+            docs.push(
+                fields
+                    .try_into()
+                    .map_err(|_| IndexError::BadFieldCount(FIELD_COUNT))?,
+            );
         }
-        Ok(Self { docs })
+
+        let gram_count = reader.u32()? as usize;
+        if gram_count > MAX_GRAMS {
+            return Err(IndexError::TooManyGrams(gram_count));
+        }
+        let declared_total = reader.u64()?;
+        if declared_total > MAX_TOTAL_POSTINGS {
+            return Err(IndexError::TooManyPostings(declared_total));
+        }
+        let mut postings = Vec::with_capacity(gram_count);
+        let mut previous_character = None;
+        let mut actual_total = 0u64;
+        for _ in 0..gram_count {
+            let character = char::from_u32(reader.u32()?).ok_or(IndexError::InvalidScalar)?;
+            if previous_character.is_some_and(|previous| character <= previous) {
+                return Err(IndexError::GramOrder);
+            }
+            previous_character = Some(character);
+            let count = reader.u32()? as usize;
+            if count > document_count {
+                return Err(IndexError::InvalidPosting);
+            }
+            let payload_len = reader.u32()? as usize;
+            let payload = reader.take(payload_len)?;
+            let documents = decode_postings(payload, count, document_count)?;
+            actual_total = actual_total
+                .checked_add(count as u64)
+                .ok_or(IndexError::TooManyPostings(u64::MAX))?;
+            postings.push((character, documents));
+        }
+        if actual_total != declared_total {
+            return Err(IndexError::InvalidPosting);
+        }
+        if !reader.is_eof() {
+            return Err(IndexError::TrailingBytes);
+        }
+        let rebuilt = build_postings(&docs);
+        if rebuilt != postings {
+            return Err(IndexError::PostingCorpusMismatch);
+        }
+        Ok(Self {
+            dataset_id,
+            docs,
+            postings,
+            single_character_cache: RefCell::new(None),
+        })
+    }
+
+    /// Bind the decoded index to the manifest-selected dataset.
+    #[cfg(any(feature = "producer", test))]
+    pub fn validate_identity(
+        &self,
+        expected_dataset_id: &str,
+        expected_documents: usize,
+    ) -> Result<(), IndexError> {
+        if self.dataset_id != expected_dataset_id {
+            return Err(IndexError::DatasetMismatch);
+        }
+        if self.docs.len() != expected_documents {
+            return Err(IndexError::DocumentCountMismatch {
+                expected: expected_documents,
+                actual: self.docs.len(),
+            });
+        }
+        Ok(())
+    }
+}
+
+fn is_all_candidates(candidates: &[CourseIndex], document_count: usize) -> bool {
+    candidates.len() == document_count
+        && candidates
+            .iter()
+            .enumerate()
+            .all(|(expected, course)| course.get() == expected)
+}
+
+fn build_postings(docs: &[[FieldText; FIELD_COUNT]]) -> Vec<(char, Vec<CourseIndex>)> {
+    let mut postings: Vec<(char, Vec<CourseIndex>)> = Vec::new();
+    let mut seen = Vec::new();
+    for (document, fields) in docs.iter().enumerate() {
+        seen.clear();
+        for field in fields {
+            seen.extend(field.folded.chars());
+        }
+        seen.sort_unstable();
+        seen.dedup();
+        let course = CourseIndex::new(document);
+        for &character in &seen {
+            match postings.binary_search_by_key(&character, |(key, _)| *key) {
+                Ok(index) => postings[index].1.push(course),
+                Err(index) => postings.insert(index, (character, vec![course])),
+            }
+        }
+    }
+    postings
+}
+
+fn decode_postings(
+    payload: &[u8],
+    count: usize,
+    document_count: usize,
+) -> Result<Vec<CourseIndex>, IndexError> {
+    let mut reader = VarReader::new(payload);
+    let mut documents = Vec::with_capacity(count);
+    let mut previous = 0usize;
+    for position in 0..count {
+        let delta = usize::try_from(reader.varint()?).map_err(|_| IndexError::InvalidPosting)?;
+        if position > 0 && delta == 0 {
+            return Err(IndexError::InvalidPosting);
+        }
+        let document = if position == 0 {
+            delta
+        } else {
+            previous
+                .checked_add(delta)
+                .ok_or(IndexError::InvalidPosting)?
+        };
+        if document >= document_count {
+            return Err(IndexError::InvalidPosting);
+        }
+        documents.push(CourseIndex::new(document));
+        previous = document;
+    }
+    if !reader.is_eof() {
+        return Err(IndexError::InvalidPosting);
+    }
+    Ok(documents)
+}
+
+#[cfg(any(feature = "producer", test))]
+fn put_varint(mut value: u64, out: &mut Vec<u8>) {
+    loop {
+        let mut byte = (value & 0x7f) as u8;
+        value >>= 7;
+        if value != 0 {
+            byte |= 0x80;
+        }
+        out.push(byte);
+        if value == 0 {
+            break;
+        }
+    }
+}
+
+// === Strict binary reader ===
+
+const MAGIC: &[u8; 4] = b"SYX4";
+const FORMAT_VERSION: u16 = 4;
+const MAX_DOCS: usize = 100_000;
+const DATASET_ID_BYTES: usize = 64;
+const MAX_FIELD_BYTES: usize = 16 * 1024 * 1024;
+const MAX_TEXT_BYTES: usize = 96 * 1024 * 1024;
+const MAX_MAPPINGS_PER_FIELD: usize = 1_000_000;
+const MAX_TOTAL_MAPPINGS: usize = 4_000_000;
+const MAX_ORIGINAL_FIELD_UTF16: u32 = 16 * 1024 * 1024;
+const MAX_GRAMS: usize = 65_536;
+const MAX_TOTAL_POSTINGS: u64 = 100_000_000;
+const MAX_INDEX_BYTES: usize = 128 * 1024 * 1024;
+
+#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+pub enum IndexError {
+    #[error("not a search index (bad magic)")]
+    BadMagic,
+    #[error("unsupported search-index version {0}")]
+    UnsupportedVersion(u16),
+    #[error("search index is truncated")]
+    Truncated,
+    #[error("search index holds invalid UTF-8")]
+    BadUtf8,
+    #[error("search index declares too many documents ({0})")]
+    TooManyDocuments(usize),
+    #[error("search index field is too large ({0} bytes)")]
+    FieldTooLarge(usize),
+    #[error("search index dataset ID is invalid")]
+    BadDatasetId,
+    #[error("search index contains trailing bytes")]
+    TrailingBytes,
+    #[error("search index belongs to a different dataset")]
+    DatasetMismatch,
+    #[error("search index document count mismatch (expected {expected}, got {actual})")]
+    DocumentCountMismatch { expected: usize, actual: usize },
+    #[error("search index field count is invalid ({0})")]
+    BadFieldCount(usize),
+    #[error("search index declares too many Unicode position mappings ({0})")]
+    TooManyMappings(usize),
+    #[error("search index contains an invalid Unicode position mapping")]
+    InvalidMapping,
+    #[error("search index declares too many n-grams ({0})")]
+    TooManyGrams(usize),
+    #[error("search index declares too many postings ({0})")]
+    TooManyPostings(u64),
+    #[error("search index contains an invalid Unicode scalar")]
+    InvalidScalar,
+    #[error("search index n-grams are not strictly ordered")]
+    GramOrder,
+    #[error("search index contains an invalid posting")]
+    InvalidPosting,
+    #[error("search index contains an overflowing varint")]
+    VarintOverflow,
+    #[error("search index posting table does not match its positional corpus")]
+    PostingCorpusMismatch,
+    #[error("search index is too large ({0} bytes)")]
+    IndexTooLarge(usize),
+}
+
+struct Reader<'a> {
+    bytes: &'a [u8],
+    position: usize,
+}
+
+impl<'a> Reader<'a> {
+    fn new(bytes: &'a [u8]) -> Self {
+        Self { bytes, position: 0 }
+    }
+
+    fn take(&mut self, count: usize) -> Result<&'a [u8], IndexError> {
+        let end = self
+            .position
+            .checked_add(count)
+            .ok_or(IndexError::Truncated)?;
+        let value = self
+            .bytes
+            .get(self.position..end)
+            .ok_or(IndexError::Truncated)?;
+        self.position = end;
+        Ok(value)
+    }
+
+    fn u16(&mut self) -> Result<u16, IndexError> {
+        Ok(u16::from_le_bytes(
+            self.take(2)?
+                .try_into()
+                .map_err(|_| IndexError::Truncated)?,
+        ))
+    }
+
+    fn u32(&mut self) -> Result<u32, IndexError> {
+        Ok(u32::from_le_bytes(
+            self.take(4)?
+                .try_into()
+                .map_err(|_| IndexError::Truncated)?,
+        ))
+    }
+
+    fn u64(&mut self) -> Result<u64, IndexError> {
+        Ok(u64::from_le_bytes(
+            self.take(8)?
+                .try_into()
+                .map_err(|_| IndexError::Truncated)?,
+        ))
+    }
+
+    fn is_eof(&self) -> bool {
+        self.position == self.bytes.len()
+    }
+}
+
+struct VarReader<'a> {
+    bytes: &'a [u8],
+    position: usize,
+}
+
+impl<'a> VarReader<'a> {
+    fn new(bytes: &'a [u8]) -> Self {
+        Self { bytes, position: 0 }
+    }
+
+    fn varint(&mut self) -> Result<u64, IndexError> {
+        let mut value = 0u64;
+        for shift in (0..=63).step_by(7) {
+            let byte = *self.bytes.get(self.position).ok_or(IndexError::Truncated)?;
+            self.position += 1;
+            let bits = u64::from(byte & 0x7f);
+            if shift == 63 && bits > 1 {
+                return Err(IndexError::VarintOverflow);
+            }
+            value |= bits << shift;
+            if byte & 0x80 == 0 {
+                return Ok(value);
+            }
+        }
+        Err(IndexError::VarintOverflow)
+    }
+
+    fn is_eof(&self) -> bool {
+        self.position == self.bytes.len()
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{DocFields, Field, IndexError, SearchIndex, Span};
-    use crate::index::CourseIndex;
+    use super::*;
 
     fn doc(name: &str, instructor: &str, code: &str) -> DocFields<'static> {
-        // Leak is fine in tests; keeps the fixtures terse.
         DocFields {
             name: Box::leak(name.to_owned().into_boxed_str()),
-            subtitle: None,
             instructor: Box::leak(instructor.to_owned().into_boxed_str()),
             code: Box::leak(code.to_owned().into_boxed_str()),
-            keywords: "",
+            ..DocFields::default()
         }
     }
 
-    fn all(n: usize) -> Vec<CourseIndex> {
-        (0..n).map(CourseIndex::new).collect()
+    fn all(count: usize) -> Vec<CourseIndex> {
+        (0..count).map(CourseIndex::new).collect()
     }
 
     #[test]
-    fn len_and_is_empty_track_the_doc_count() {
-        let idx = SearchIndex::build([doc("a", "b", "001"), doc("c", "d", "002")]);
-        assert_eq!(idx.len(), 2);
-        assert!(!idx.is_empty());
-        let empty = SearchIndex::build(Vec::<DocFields<'static>>::new());
-        assert_eq!(empty.len(), 0);
-        assert!(empty.is_empty());
-    }
-
-    #[test]
-    fn score_is_field_weight_times_occurrence_count() {
-        // 学 appears twice in the name; Name weight is 3.0, so the score is 6.0 —
-        // pins the multiply (a `+` would give 3.0 + 2 = 5.0).
-        let idx = SearchIndex::build([doc("学学", "x", "001")]);
-        assert_eq!(idx.search("学", all(1))[0].score, 6.0);
-    }
-
-    #[test]
-    fn finds_a_name_match_and_reports_its_span() {
-        let idx = SearchIndex::build([doc("微分積分学", "山田 太郎", "001")]);
-        let hits = idx.search("積分", all(1));
-        assert_eq!(hits.len(), 1);
-        assert_eq!(hits[0].course, CourseIndex::new(0));
-        // 微(0) 分(1) 積(2) 分(3) 学(4) — all BMP, 1 UTF-16 unit each.
+    fn exact_japanese_substring_and_utf16_span() {
+        let index = SearchIndex::build([doc("AI😀微分積分学", "", "001")]);
+        let hits = index.search("微分", all(1));
         assert_eq!(
             hits[0].spans,
             [Span {
                 field: Field::Name,
-                start: 2,
-                len: 2
+                start: 4,
+                len: 2,
+            }]
+        );
+        assert!(index.search("微積", all(1)).is_empty());
+    }
+
+    #[test]
+    fn normalizes_width_and_ascii_case() {
+        let index = SearchIndex::build([doc("English", "", "A123")]);
+        assert_eq!(index.search("ＥＮＧ", all(1)).len(), 1);
+        assert_eq!(
+            index.search("ａ１２３", all(1))[0].spans[0].field,
+            Field::Code
+        );
+    }
+
+    #[test]
+    fn nfkc_search_maps_matches_back_to_original_utf16_clusters_after_roundtrip() {
+        let index = SearchIndex::build([doc("先ﾃﾞ㍑後", "", "001")]);
+        let decoded = SearchIndex::decode(&index.encode()).unwrap();
+
+        assert_eq!(
+            decoded.search("デ", all(1))[0].spans,
+            [Span {
+                field: Field::Name,
+                start: 1,
+                len: 2,
+            }]
+        );
+        assert_eq!(
+            decoded.search("ット", all(1))[0].spans,
+            [Span {
+                field: Field::Name,
+                start: 3,
+                len: 1,
             }]
         );
     }
 
     #[test]
-    fn maps_utf16_offsets_across_ascii_and_cjk() {
-        // "AI と 数学" — A,I,space,と,space,数,学. Query 数学 starts at char 5.
-        let idx = SearchIndex::build([doc("AI と 数学", "", "")]);
-        let hits = idx.search("数学", all(1));
+    fn decoder_rejects_invalid_unicode_position_mapping() {
+        let mut encoded = SearchIndex::build([doc("ﾃﾞ", "", "001")]).encode();
+        let field_length_offset = 4 + 2 + 2 + DATASET_ID_BYTES + 4 + 2;
+        let field_length = u32::from_le_bytes(
+            encoded[field_length_offset..field_length_offset + 4]
+                .try_into()
+                .unwrap(),
+        ) as usize;
+        let mapping_record = field_length_offset + 4 + field_length + 4;
+        encoded[mapping_record + 12..mapping_record + 16].copy_from_slice(&0u32.to_le_bytes());
         assert_eq!(
-            hits[0].spans,
-            [Span {
-                field: Field::Name,
-                start: 5,
-                len: 2
-            }]
+            SearchIndex::decode(&encoded).unwrap_err(),
+            IndexError::InvalidMapping
         );
     }
 
     #[test]
-    fn ranks_name_hits_above_instructor_hits() {
-        // Both courses contain 田; course 0 in the name, course 1 in the
-        // instructor — the name hit must rank first.
-        let idx =
-            SearchIndex::build([doc("田中の講義", "佐藤", "001"), doc("英語", "山田", "002")]);
-        let hits = idx.search("田", all(2));
-        assert_eq!(hits.len(), 2);
+    fn every_syllabus_field_is_independently_searchable() {
+        let values = [
+            "name",
+            "subtitle",
+            "instructor",
+            "code",
+            "department",
+            "summary",
+            "aims",
+            "goals",
+            "plan",
+            "textbooks",
+            "prerequisite",
+            "preparation",
+            "officehour",
+            "keywords",
+            "teachers",
+            "numbering",
+            "sdgs",
+            "evaluation",
+            "delivery",
+            "extra",
+        ];
+        let fields = DocFields {
+            name: values[0],
+            subtitle: Some(values[1]),
+            instructor: values[2],
+            code: values[3],
+            department: values[4],
+            summary: values[5],
+            aims: values[6],
+            goals: values[7],
+            plan: values[8],
+            textbooks: values[9],
+            prerequisite: values[10],
+            preparation: values[11],
+            office_hour: values[12],
+            keywords: values[13],
+            teachers: values[14],
+            numbering: values[15],
+            sdgs: values[16],
+            evaluation: values[17],
+            delivery: values[18],
+            extra: values[19],
+        };
+        let index = SearchIndex::build([fields]);
+        for (expected, query) in Field::ALL.into_iter().zip(values) {
+            let hits = index.search(query, all(1));
+            assert_eq!(hits.len(), 1, "{query}");
+            assert_eq!(hits[0].spans[0].field, expected, "{query}");
+        }
+    }
+
+    #[test]
+    fn ranking_prefers_course_name_over_summary() {
+        let index = SearchIndex::build([
+            DocFields {
+                name: "量子力学",
+                ..DocFields::default()
+            },
+            DocFields {
+                name: "物理",
+                summary: "量子力学を学ぶ",
+                ..DocFields::default()
+            },
+        ]);
+        let hits = index.search("量子力学", all(2));
         assert_eq!(hits[0].course, CourseIndex::new(0));
         assert!(hits[0].score > hits[1].score);
     }
 
     #[test]
-    fn folds_full_width_query_to_match_half_width_code() {
-        let idx = SearchIndex::build([doc("経済学", "", "AB12")]);
-        let hits = idx.search("ＡＢ１２", all(1)); // full-width query
-        assert_eq!(hits.len(), 1);
-        assert_eq!(hits[0].spans[0].field, Field::Code);
-    }
-
-    #[test]
-    fn is_case_insensitive() {
-        let idx = SearchIndex::build([doc("English Communication", "Smith", "004")]);
-        assert_eq!(idx.search("english", all(1)).len(), 1);
-        assert_eq!(idx.search("SMITH", all(1)).len(), 1);
-    }
-
-    #[test]
-    fn counts_repeated_occurrences_in_the_score() {
-        let one = SearchIndex::build([doc("学", "", "")]);
-        let two = SearchIndex::build([doc("学学", "", "")]);
-        let s1 = one.search("学", all(1))[0].score;
-        let s2 = two.search("学", all(1))[0].score;
-        assert!(s2 > s1, "two occurrences should outscore one: {s2} vs {s1}");
-        assert_eq!(two.search("学", all(1))[0].spans.len(), 2);
-    }
-
-    #[test]
-    fn empty_query_yields_no_hits() {
-        let idx = SearchIndex::build([doc("微分積分学", "", "")]);
-        assert!(idx.search("", all(1)).is_empty());
-    }
-
-    #[test]
-    fn only_searches_the_given_candidates() {
-        let idx = SearchIndex::build([doc("微分積分学", "", "001"), doc("微分方程式", "", "002")]);
-        // Restrict to course 1 only.
-        let hits = idx.search("微分", [CourseIndex::new(1)]);
+    fn candidate_filter_is_respected() {
+        let index = SearchIndex::build([doc("数学", "", "001"), doc("数学", "", "002")]);
+        let hits = index.search("数学", [CourseIndex::new(1)]);
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].course, CourseIndex::new(1));
     }
 
     #[test]
-    fn no_match_yields_no_hit() {
-        let idx = SearchIndex::build([doc("微分積分学", "山田", "001")]);
-        assert!(idx.search("物理", all(1)).is_empty());
-    }
-
-    #[test]
-    fn a_typo_does_not_match_search_is_exact() {
-        // Search is exact substring only (no typo tolerance) — 微文積分 is not a
-        // substring of 微分積分学, so it finds nothing.
-        let idx = SearchIndex::build([doc("微分積分学", "山田", "001")]);
-        assert!(idx.search("微文積分", all(1)).is_empty());
-    }
-
-    #[test]
-    fn a_short_query_matches_only_the_exact_substring() {
-        // 哲学 must find only the real 哲学 course, never 微分積分学 (which merely
-        // shares 学) — the flooding a fuzzy fallback caused.
-        let idx = SearchIndex::build([
-            doc("微分積分学", "山田", "001"),
-            doc("哲学概論", "佐藤", "002"),
-        ]);
-        let hits = idx.search("哲学", all(2));
-        assert_eq!(hits.len(), 1);
-        assert_eq!(hits[0].course, CourseIndex::new(1));
-    }
-
-    #[test]
-    fn binary_round_trips_and_preserves_search() {
-        let idx = SearchIndex::build([
-            doc("微分積分学", "山田 太郎", "001"),
-            doc("English Communication", "Smith", "E12"),
-        ]);
-        let bytes = idx.encode();
-        let back = SearchIndex::decode(&bytes).expect("decodes");
-        assert_eq!(back.len(), idx.len());
-        // Same query, same ranked hits (course + score + spans).
-        for q in ["積分", "english", "E12", "山田"] {
-            assert_eq!(idx.search(q, all(2)), back.search(q, all(2)), "query {q:?}");
-        }
-    }
-
-    #[test]
-    fn decode_rejects_bad_magic_and_version() {
-        assert_eq!(
-            SearchIndex::decode(b"nope").unwrap_err(),
-            IndexError::BadMagic
+    fn roundtrip_preserves_identity_and_results() {
+        let dataset = "a".repeat(64);
+        let source = SearchIndex::build_for_dataset(
+            &dataset,
+            [
+                doc("微分積分", "山田", "001"),
+                doc("線形代数", "田中", "002"),
+            ],
         );
-        let mut bytes = SearchIndex::build([doc("学", "", "")]).encode();
-        bytes[4] = 9; // bump the version's low byte
+        let decoded = SearchIndex::decode(&source.encode()).unwrap();
+        assert_eq!(decoded.dataset_id(), dataset);
+        assert_eq!(decoded.search("分", all(2)), source.search("分", all(2)));
+    }
+
+    #[test]
+    fn rejects_wrong_generation_or_document_count() {
+        let dataset_a = "a".repeat(64);
+        let dataset_b = "b".repeat(64);
+        let index = SearchIndex::build_for_dataset(&dataset_a, [doc("a", "", "1")]);
+        assert_eq!(
+            index.validate_identity(&dataset_b, 1).unwrap_err(),
+            IndexError::DatasetMismatch
+        );
+        assert_eq!(
+            index.validate_identity(&dataset_a, 2).unwrap_err(),
+            IndexError::DocumentCountMismatch {
+                expected: 2,
+                actual: 1
+            }
+        );
+    }
+
+    #[test]
+    fn adversarial_headers_truncation_and_trailing_bytes_are_rejected() {
+        assert_eq!(
+            SearchIndex::decode(b"bad").unwrap_err(),
+            IndexError::Truncated
+        );
+        let mut encoded = SearchIndex::build([doc("a", "", "1")]).encode();
+        encoded.push(0);
+        assert_eq!(
+            SearchIndex::decode(&encoded).unwrap_err(),
+            IndexError::TrailingBytes
+        );
+        let mut version = SearchIndex::build([] as [DocFields<'static>; 0]).encode();
+        version[4..6].copy_from_slice(&99u16.to_le_bytes());
+        assert_eq!(
+            SearchIndex::decode(&version).unwrap_err(),
+            IndexError::UnsupportedVersion(99)
+        );
+        version[4..6].copy_from_slice(&FORMAT_VERSION.to_le_bytes());
+        let field_offset = 4 + 2 + 2 + DATASET_ID_BYTES + 4;
+        version[field_offset..field_offset + 2].copy_from_slice(&1u16.to_le_bytes());
+        assert_eq!(
+            SearchIndex::decode(&version).unwrap_err(),
+            IndexError::BadFieldCount(1)
+        );
+
+        let invalid_identity =
+            SearchIndex::build_for_dataset("not-a-sha256", [doc("a", "", "1")]).encode();
+        assert_eq!(
+            SearchIndex::decode(&invalid_identity).unwrap_err(),
+            IndexError::BadDatasetId
+        );
+    }
+
+    #[test]
+    fn posting_tampering_is_rejected_against_the_corpus() {
+        let mut encoded = SearchIndex::build([doc("a", "", "1")]).encode();
+        *encoded.last_mut().unwrap() = 1;
         assert!(matches!(
-            SearchIndex::decode(&bytes).unwrap_err(),
-            IndexError::UnsupportedVersion(_)
+            SearchIndex::decode(&encoded),
+            Err(IndexError::InvalidPosting | IndexError::PostingCorpusMismatch)
         ));
     }
 
     #[test]
-    fn decode_rejects_truncation() {
-        let bytes = SearchIndex::build([doc("微分積分学", "山田", "001")]).encode();
-        assert_eq!(
-            SearchIndex::decode(&bytes[..bytes.len() - 3]).unwrap_err(),
-            IndexError::Truncated
-        );
-    }
-
-    #[test]
-    fn empty_index_round_trips() {
-        let idx = SearchIndex::build([] as [DocFields; 0]);
-        let back = SearchIndex::decode(&idx.encode()).expect("decodes");
-        assert!(back.is_empty());
-    }
-
-    use proptest::prelude::*;
-
-    proptest! {
-        /// Encoding then decoding yields an index that answers identically.
-        #[test]
-        fn binary_round_trip_is_query_stable(
-            names in proptest::collection::vec("[\\p{Han}a-zA-Z0-9 ]{0,12}", 0..6),
-            query in "[\\p{Han}a-z0-9]{1,5}",
-        ) {
-            let docs: Vec<DocFields> = names.iter().map(|n| DocFields { name: n, ..Default::default() }).collect();
-            let idx = SearchIndex::build(docs);
-            let back = SearchIndex::decode(&idx.encode()).expect("decodes");
-            let candidates = all(names.len());
-            prop_assert_eq!(idx.search(&query, candidates.clone()), back.search(&query, candidates));
-        }
-
-        /// Every reported span lies within its field's UTF-16 length, and slicing
-        /// the original name at the span recovers exactly the (folded) query — the
-        /// contract the highlighter relies on.
-        #[test]
-        fn spans_are_in_bounds_and_recover_the_query(
-            prefix in "[\\p{Han}a-zA-Z0-9]{0,6}",
-            needle in "[\\p{Han}a-z0-9]{1,6}",
-            suffix in "[\\p{Han}a-zA-Z0-9]{0,6}",
-        ) {
-            let name = format!("{prefix}{needle}{suffix}");
-            let idx = SearchIndex::build([DocFields { name: &name, ..Default::default() }]);
-            let hits = idx.search(&needle, [CourseIndex::new(0)]);
-            prop_assert!(!hits.is_empty(), "needle {needle:?} must be found in {name:?}");
-
-            let name_utf16: Vec<u16> = name.encode_utf16().collect();
-            let folded_needle: String = crate::normalize(&needle);
-            for span in &hits[0].spans {
-                let end = span.start + span.len;
-                prop_assert!(end as usize <= name_utf16.len());
-                let slice = &name_utf16[span.start as usize..end as usize];
-                let recovered = String::from_utf16(slice).unwrap();
-                prop_assert_eq!(crate::normalize(&recovered), folded_needle.clone());
-            }
-        }
+    fn empty_and_oversized_queries_are_bounded() {
+        let index = SearchIndex::build([doc("a", "", "1")]);
+        assert!(index.search("", all(1)).is_empty());
+        assert!(index.search(&"a".repeat(257), all(1)).is_empty());
     }
 }

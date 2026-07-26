@@ -1,4 +1,4 @@
-//! Dictionary ordering for the v3 output.
+//! Dictionary ordering for the v4 output.
 //!
 //! Semesters and campuses use a fixed domain order with unknown values sorted
 //! last; departments and kubun are lexical with the `その他` catch-all pushed to

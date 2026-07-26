@@ -3,7 +3,7 @@
     "kogiCd": "001",
     "kogiNm": "微分積分学",
     "tantoKyoin": "山田 太郎",
-    "jikanwari": "1学期: 月曜日１時限",
+    "jikanwari": "1学期: 月曜日１時限, 1学期: 水曜日３時限",
     "kogiKaikojikiNm": "1学期",
     "kogiKubunNm": "講義",
     "sekininBushoNm": "理工学部",
@@ -15,16 +15,6 @@
     "kamokuBunya": "数学",
     "syllabusKomokuPatternId": "4",
     "kaikoNendo": "2026"
-  },
-  {
-    "kogiCd": "001",
-    "kogiNm": "微分積分学",
-    "tantoKyoin": "山田 太郎",
-    "jikanwari": "1学期: 水曜日３時限",
-    "kogiKaikojikiNm": "1学期",
-    "kogiKubunNm": "講義",
-    "sekininBushoNm": "理工学部",
-    "kochiNm": "朝倉キャンパス"
   },
   {
     "kogiCd": "002",
@@ -48,7 +38,9 @@
     "kogiKaikojikiNm": "通年",
     "kogiKubunNm": "実習",
     "sekininBushoNm": "農林海洋科学部",
-    "kochiNm": "物部キャンパス"
+    "kochiNm": "物部キャンパス",
+    "syllabusKomokuPatternId": "1",
+    "kaikoNendo": "2026"
   },
   {
     "kogiCd": "004",
@@ -58,7 +50,9 @@
     "kogiKaikojikiNm": "通年",
     "kogiKubunNm": "演習",
     "sekininBushoNm": "共通教育",
-    "kochiNm": "朝倉キャンパス"
+    "kochiNm": "朝倉キャンパス",
+    "syllabusKomokuPatternId": "1",
+    "kaikoNendo": "2026"
   },
   {
     "kogiCd": "005",
@@ -68,7 +62,9 @@
     "kogiKaikojikiNm": "1学期",
     "kogiKubunNm": "実習",
     "sekininBushoNm": "農林海洋科学部",
-    "kochiNm": "物部キャンパス"
+    "kochiNm": "物部キャンパス",
+    "syllabusKomokuPatternId": "1",
+    "kaikoNendo": "2026"
   },
   {
     "kogiCd": "006",
@@ -78,7 +74,9 @@
     "kogiKaikojikiNm": "1学期",
     "kogiKubunNm": "実技",
     "sekininBushoNm": "共通教育",
-    "kochiNm": "朝倉キャンパス"
+    "kochiNm": "朝倉キャンパス",
+    "syllabusKomokuPatternId": "1",
+    "kaikoNendo": "2026"
   },
   {
     "kogiCd": "007",
@@ -88,7 +86,9 @@
     "kogiKaikojikiNm": "2学期前半",
     "kogiKubunNm": "講義",
     "sekininBushoNm": "医学部 医学科",
-    "kochiNm": "岡豊キャンパス"
+    "kochiNm": "岡豊キャンパス",
+    "syllabusKomokuPatternId": "1",
+    "kaikoNendo": "2026"
   },
   {
     "kogiCd": "008",
@@ -98,7 +98,9 @@
     "kogiKaikojikiNm": "1学期前半",
     "kogiKubunNm": "演習",
     "sekininBushoNm": "理工学部",
-    "kochiNm": "朝倉キャンパス"
+    "kochiNm": "朝倉キャンパス",
+    "syllabusKomokuPatternId": "1",
+    "kaikoNendo": "2026"
   },
   {
     "kogiCd": "009",
@@ -108,6 +110,8 @@
     "kogiKaikojikiNm": "1学期",
     "kogiKubunNm": "講義",
     "sekininBushoNm": "",
-    "kochiNm": ""
+    "kochiNm": "",
+    "syllabusKomokuPatternId": "1",
+    "kaikoNendo": "2026"
   }
 ]

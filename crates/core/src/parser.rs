@@ -11,11 +11,26 @@ pub struct ParsedSlot {
     pub period: i32,
 }
 
+/// A non-grid offering parsed from a real KULAS timetable value.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ParsedUnscheduled {
+    pub semester: String,
+    pub kind: UnscheduledKind,
+    pub label: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UnscheduledKind {
+    Intensive,
+    Tba,
+}
+
 /// The slots parsed from one `jikanwari`, with warnings for any part that could
 /// not be parsed (collected rather than silently dropped).
 #[derive(Debug, Default)]
 pub struct ParseResult {
     pub slots: Vec<ParsedSlot>,
+    pub unscheduled: Vec<ParsedUnscheduled>,
     pub warnings: Vec<String>,
 }
 
@@ -43,6 +58,24 @@ pub fn parse_jikanwari(jikanwari: &str) -> ParseResult {
                 day: day.to_string(),
                 period,
             }),
+            (None, None) if rest.contains("集中講義") || rest == "集中" => {
+                result.unscheduled.push(ParsedUnscheduled {
+                    semester: semester.to_owned(),
+                    kind: UnscheduledKind::Intensive,
+                    label: rest.trim().to_owned(),
+                });
+            }
+            (None, None)
+                if ["未定", "調整中", "オンデマンド"]
+                    .iter()
+                    .any(|marker| rest.contains(marker)) =>
+            {
+                result.unscheduled.push(ParsedUnscheduled {
+                    semester: semester.to_owned(),
+                    kind: UnscheduledKind::Tba,
+                    label: rest.trim().to_owned(),
+                });
+            }
             (None, None) => result
                 .warnings
                 .push(format!("day and period not found: {part:?}")),
@@ -92,7 +125,7 @@ fn full_width_digit(c: char) -> Option<i32> {
 
 #[cfg(test)]
 mod tests {
-    use super::{ParsedSlot, parse_jikanwari};
+    use super::{ParsedSlot, UnscheduledKind, parse_jikanwari};
 
     fn slot(semester: &str, day: &str, period: i32) -> ParsedSlot {
         ParsedSlot {
@@ -163,12 +196,12 @@ mod tests {
             ("commas only", ", , ,", vec![], 0),
             ("no day match", "1学期: ３時限", vec![], 1),
             ("no period match", "1学期: 月曜日", vec![], 1),
-            ("no day and no period", "1学期: 集中講義", vec![], 1),
+            ("intensive", "1学期: 集中講義", vec![], 0),
             (
                 "partial parse - one good one bad",
                 "1学期: 月曜日１時限, 1学期: 集中講義",
                 vec![slot("1学期", "月", 1)],
-                1,
+                0,
             ),
             ("day without 曜日 suffix", "1学期: 月１時限", vec![], 1),
             (
@@ -207,6 +240,16 @@ mod tests {
         assert!(result.warnings[0].contains("1学期: ３時限"));
     }
 
+    #[test]
+    fn classifies_intensive_and_tba_without_warnings() {
+        let result = parse_jikanwari("1学期: 集中講義, 2学期: 時間未定");
+        assert!(result.slots.is_empty());
+        assert!(result.warnings.is_empty());
+        assert_eq!(result.unscheduled.len(), 2);
+        assert_eq!(result.unscheduled[0].kind, UnscheduledKind::Intensive);
+        assert_eq!(result.unscheduled[1].kind, UnscheduledKind::Tba);
+    }
+
     use proptest::prelude::*;
 
     /// Render `(semester, day, period)` back into KULAS `jikanwari` syntax.
@@ -228,7 +271,7 @@ mod tests {
         fn every_nonempty_part_is_accounted_for(s in "[^,]{0,40}(,[^,]{0,40}){0,5}") {
             let expected = s.split(',').filter(|p| !p.trim().is_empty()).count();
             let r = parse_jikanwari(&s);
-            prop_assert_eq!(r.slots.len() + r.warnings.len(), expected);
+            prop_assert_eq!(r.slots.len() + r.unscheduled.len() + r.warnings.len(), expected);
         }
 
         /// A well-formed list of `sem: 曜日N時限` parts parses to exactly those

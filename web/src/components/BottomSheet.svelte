@@ -28,6 +28,23 @@ const isDesktop = $derived(desktop.current)
 let dialogEl = $state<HTMLDialogElement>()
 let sheetEl = $state<HTMLElement>()
 let bodyEl = $state<HTMLElement>()
+let closeTimer: ReturnType<typeof setTimeout> | undefined
+let settleTimer: ReturnType<typeof setTimeout> | undefined
+let returnFocus: HTMLElement | null = null
+let reducedMotion = $state(
+	typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+)
+
+$effect(() => {
+	if (typeof window === 'undefined') return
+	const media = window.matchMedia('(prefers-reduced-motion: reduce)')
+	const update = () => {
+		reducedMotion = media.matches
+	}
+	update()
+	media.addEventListener('change', update)
+	return () => media.removeEventListener('change', update)
+})
 
 // Render in the top layer: `showModal()` lifts the dialog above every stacking
 // context (no z-index) and traps focus. Native Esc fires `cancel`; we route it
@@ -36,6 +53,8 @@ let bodyEl = $state<HTMLElement>()
 $effect(() => {
 	const el = dialogEl
 	if (!el) return
+	const active = document.activeElement
+	if (active instanceof HTMLElement && !el.contains(active)) returnFocus = active
 	try {
 		el.showModal()
 	} catch {
@@ -47,6 +66,7 @@ $effect(() => {
 		} catch {
 			el.open = false
 		}
+		queueMicrotask(() => returnFocus?.focus())
 	}
 })
 
@@ -97,7 +117,8 @@ function dismiss() {
 	settling = true
 	sheetHeight = sheetEl?.offsetHeight || window.innerHeight
 	dragY = sheetHeight
-	window.setTimeout(requestClose, 240)
+	if (closeTimer) clearTimeout(closeTimer)
+	closeTimer = window.setTimeout(requestClose, reducedMotion ? 0 : 240)
 }
 
 // Slide up once, on mount (mobile only).
@@ -188,11 +209,19 @@ function onEnd(e: TouchEvent) {
 	} else {
 		settling = true
 		dragY = 0
-		window.setTimeout(() => {
+		if (settleTimer) clearTimeout(settleTimer)
+		settleTimer = window.setTimeout(() => {
 			settling = false
 		}, 240)
 	}
 }
+
+$effect(() => {
+	return () => {
+		if (closeTimer) clearTimeout(closeTimer)
+		if (settleTimer) clearTimeout(settleTimer)
+	}
+})
 
 $effect(() => {
 	const el = sheetEl
@@ -215,20 +244,20 @@ $effect(() => {
      geometry via `data-sheet`. -->
 <dialog bind:this={dialogEl} class="overlay" aria-label={ariaLabel} oncancel={onCancel}>
 	<div class="fixed inset-0 flex items-end justify-center sm:items-center sm:p-5">
-		<!-- svelte-ignore a11y_click_events_have_key_events -->
-		<!-- svelte-ignore a11y_no_static_element_interactions -->
-		<div
-			class="absolute inset-0 bg-overlay-backdrop backdrop-blur-md animate-fade-in"
+		<button
+			type="button"
+			tabindex="-1"
+			class="absolute inset-0 border-0 p-0 bg-overlay-backdrop backdrop-blur-md {reducedMotion ? '' : 'animate-fade-in'}"
 			style="opacity: {backdropOpacity};"
-			aria-hidden="true"
+			aria-label="背景から時間割へ戻る"
 			onclick={dismiss}
-		></div>
+		></button>
 
 		<div
 			bind:this={sheetEl}
 			data-sheet
-			class="relative flex flex-col w-full max-h-overlay overflow-hidden bg-surface-primary rounded-t-2xl shadow-modal safe-bottom sm:max-w-lg sm:max-h-overlay-sm sm:rounded-2xl {isDesktop ? 'animate-dialog-in' : ''}"
-			style="translate: 0 {isDesktop ? 0 : dragY}px; transition: {settling ? 'translate 0.26s var(--ease-spring)' : 'none'};"
+			class="relative flex flex-col w-full max-h-overlay overflow-hidden bg-surface-primary rounded-t-2xl shadow-modal safe-bottom sm:max-w-lg sm:max-h-overlay-sm sm:rounded-2xl {isDesktop && !reducedMotion ? 'animate-dialog-in' : ''}"
+			style="translate: 0 {isDesktop ? 0 : dragY}px; transition: {settling && !reducedMotion ? 'translate 0.26s var(--ease-spring)' : 'none'};"
 		>
 			<div class="flex justify-center pt-2 shrink-0 sm:hidden touch-none" style={accent ? `background: ${accent};` : undefined}>
 				<div class="w-9 h-1 rounded-full bg-overlay-strong"></div>

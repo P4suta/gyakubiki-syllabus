@@ -6,31 +6,31 @@
 // the generated `syllabus-fields.generated.ts`.
 
 import type { Component } from 'svelte'
-import IconAttendance from '~icons/ic/round-front-hand'
-import IconExam from '~icons/ic/round-history-edu'
-import IconOther from '~icons/ic/round-label'
-import IconMiniReport from '~icons/ic/round-edit-note'
-import IconQuiz from '~icons/ic/round-quiz'
+import IconGoals from '~icons/ic/round-check-circle'
 import IconReport from '~icons/ic/round-description'
-import IconHybrid from '~icons/ic/round-shuffle'
-import IconOndemand from '~icons/ic/round-ondemand-video'
-import IconOnline from '~icons/ic/round-videocam'
-import IconOnsite from '~icons/ic/round-groups'
+import IconEval from '~icons/ic/round-donut-large'
+import IconMiniReport from '~icons/ic/round-edit-note'
+import IconPlan from '~icons/ic/round-event'
 // Field / group icons.
 import IconAims from '~icons/ic/round-flag'
+import IconAttendance from '~icons/ic/round-front-hand'
+import IconOnsite from '~icons/ic/round-groups'
+import IconExam from '~icons/ic/round-history-edu'
 import IconBase from '~icons/ic/round-info'
-import IconEval from '~icons/ic/round-donut-large'
-import IconGoals from '~icons/ic/round-check-circle'
+import IconOther from '~icons/ic/round-label'
+import IconOfficeHour from '~icons/ic/round-meeting-room'
+import IconTextbooks from '~icons/ic/round-menu-book'
 import IconGroupOther from '~icons/ic/round-more-horiz'
+import IconOndemand from '~icons/ic/round-ondemand-video'
+import IconTeachers from '~icons/ic/round-person'
+import IconQuiz from '~icons/ic/round-quiz'
+import IconPrereq from '~icons/ic/round-rule'
+import IconPrep from '~icons/ic/round-schedule'
+import IconHybrid from '~icons/ic/round-shuffle'
+import IconSummary from '~icons/ic/round-subject'
 import IconKeywords from '~icons/ic/round-tag'
 import IconNumbering from '~icons/ic/round-tag'
-import IconOfficeHour from '~icons/ic/round-meeting-room'
-import IconPlan from '~icons/ic/round-event'
-import IconPrep from '~icons/ic/round-schedule'
-import IconPrereq from '~icons/ic/round-rule'
-import IconSummary from '~icons/ic/round-subject'
-import IconTeachers from '~icons/ic/round-person'
-import IconTextbooks from '~icons/ic/round-menu-book'
+import IconOnline from '~icons/ic/round-videocam'
 
 export interface KindColor {
 	light: string
@@ -46,8 +46,16 @@ export interface KindStyle {
 export const EVAL_KIND: Record<string, KindStyle> = {
 	exam: { icon: IconExam, label: '試験', color: { light: '#fa285c', dark: '#fb7e8c' } },
 	report: { icon: IconReport, label: 'レポート', color: { light: '#1a8fef', dark: '#65b0fb' } },
-	minireport: { icon: IconMiniReport, label: '小レポート', color: { light: '#1da09a', dark: '#26c3bc' } },
-	attendance: { icon: IconAttendance, label: '意欲・参加', color: { light: '#1da751', dark: '#26cb64' } },
+	minireport: {
+		icon: IconMiniReport,
+		label: '小レポート',
+		color: { light: '#1da09a', dark: '#26c3bc' },
+	},
+	attendance: {
+		icon: IconAttendance,
+		label: '意欲・参加',
+		color: { light: '#1da751', dark: '#26cb64' },
+	},
 	quiz: { icon: IconQuiz, label: '小テスト', color: { light: '#a362f9', dark: '#ba93fb' } },
 	other: { icon: IconOther, label: 'その他', color: { light: '#788fa7', dark: '#9badc1' } },
 }

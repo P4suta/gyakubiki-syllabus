@@ -1,14 +1,16 @@
 //! Byte-exact golden over a committed fixture: runs the built binary on
-//! `fixtures/sample_raw.json` and asserts byte-identical output to
-//! `fixtures/sample_data.golden.json` — compact JSON, HTML escaping, key order,
-//! and the no-trailing-newline `-o <file>` write. A synthetic fixture is used
-//! because the real `data.json` is a gitignored, monthly-changing artifact.
+//! `fixtures/sample_raw.json` through the sole public `build-dataset` command
+//! and asserts that its content-addressed data asset is byte-identical to
+//! `fixtures/sample_data.golden.json`. A synthetic fixture is used because the
+//! real dataset is a gitignored, monthly-changing artifact.
 //!
 //! Regenerate: UPDATE_GOLDEN=1 cargo test -p syllabus-cli --test golden_convert
 
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+
+use syllabus_cli::test_support::DatasetManifest;
 
 /// A fixed timestamp so the output is deterministic and the golden stable.
 const PINNED_GENERATED_AT: &str = "2026-01-01T00:00:00Z";
@@ -22,22 +24,38 @@ fn convert_reproduces_golden() {
     let fixtures = fixtures_dir();
     let raw = fixtures.join("sample_raw.json");
     let golden = fixtures.join("sample_data.golden.json");
-    let out = Path::new(env!("CARGO_TARGET_TMPDIR")).join("sample_out.json");
+    let out = Path::new(env!("CARGO_TARGET_TMPDIR"))
+        .join(format!("golden-dataset-{}", std::process::id()));
+    if out.exists() {
+        fs::remove_dir_all(&out).expect("remove stale golden dataset");
+    }
 
     let status = Command::new(env!("CARGO_BIN_EXE_syllabus-cli"))
-        .arg("convert")
+        .arg("build-dataset")
         .arg(&raw)
-        .arg("--compact")
+        .arg("--output")
+        .arg(&out)
         .arg("--generated-at")
         .arg(PINNED_GENERATED_AT)
-        .arg("-o")
-        .arg(&out)
+        .arg("--source-commit")
+        .arg("0000000000000000000000000000000000000000")
+        .arg("--allow-incomplete-details")
         .status()
-        .expect("run syllabus-cli convert");
-    assert!(status.success(), "syllabus-cli convert exited with failure");
+        .expect("run syllabus-cli build-dataset");
+    assert!(
+        status.success(),
+        "syllabus-cli build-dataset exited with failure"
+    );
 
-    let produced = fs::read(&out).expect("read produced output");
-    let _ = fs::remove_file(&out);
+    let manifest: DatasetManifest =
+        serde_json::from_slice(&fs::read(out.join("manifest.json")).expect("read manifest"))
+            .expect("parse manifest");
+    let produced = fs::read(
+        out.join(&manifest.base_path)
+            .join(&manifest.assets.data.path),
+    )
+    .expect("read content-addressed data asset");
+    fs::remove_dir_all(&out).expect("remove golden dataset");
 
     if std::env::var_os("UPDATE_GOLDEN").is_some() {
         fs::write(&golden, &produced).expect("write golden fixture");

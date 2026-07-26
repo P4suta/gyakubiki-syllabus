@@ -1,15 +1,15 @@
 //! wasm-bindgen wrapper around [`syllabus_core::Engine`].
 //!
 //! The boundary is deliberately **indices-out**: the dataset lives once in WASM
-//! linear memory, `filter`/`grid` return only course *indices*, and the rich
-//! view-models cross the boundary once via [`SyllabusEngine::all_course_views`].
+//! linear memory, queries return only course *indices*, and the rich
+//! view-models cross the boundary once via [`SyllabusEngine::init_snapshot`].
 //! The JS side caches those and resolves indices against them, so no per-query
 //! data marshaling happens.
 
 #![forbid(unsafe_code)]
 
 use serde::Serialize;
-use syllabus_core::{CourseIndex, Engine, Filters};
+use syllabus_core::{Engine, Filters};
 use wasm_bindgen::prelude::*;
 
 /// Treat the UI's `"all"` sentinel as "no filter".
@@ -18,26 +18,19 @@ fn selector(value: &str) -> Option<&str> {
 }
 
 fn to_js<T: Serialize + ?Sized>(value: &T) -> Result<JsValue, JsError> {
-    serde_wasm_bindgen::to_value(value).map_err(|e| JsError::new(&e.to_string()))
+    serde_wasm_bindgen::to_value(value)
+        .map_err(|_| JsError::new("WASM result serialization failed"))
 }
 
 /// One populated timetable cell: course indices at a (day, period) coordinate.
 #[derive(Serialize)]
 struct GridCell {
-    /// Day column index (0=月 … 5=土).
+    /// Day column index (0=月 … 6=日).
     day: u8,
-    /// Period (1限‥6限).
+    /// Period (1限‥8限).
     period: u8,
     /// Course indices in this cell, ascending.
     courses: Vec<u32>,
-}
-
-/// The grid plus its distinct-course count, handed back in one object.
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct GridResult {
-    cells: Vec<GridCell>,
-    count_unique: u32,
 }
 
 /// One match span: field discriminant, and UTF-16 offset/length into that
@@ -56,14 +49,17 @@ struct Highlight {
     spans: Vec<HlSpan>,
 }
 
-/// A full-text query result: the score-ordered grid, its distinct-course count,
-/// and per-course highlight spans (empty when the query is empty).
+/// A complete query result. Every match is represented in the grid,
+/// `unscheduled`, or both; `total` is the distinct hit count.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct QueryResult {
+    total: u32,
+    scheduled_count: u32,
+    unscheduled_count: u32,
     cells: Vec<GridCell>,
-    count_unique: u32,
-    highlights: Vec<Highlight>,
+    unscheduled: Vec<u32>,
+    matches: Vec<Highlight>,
 }
 
 /// A timetable collision: the cell coordinate and the colliding course indices.
@@ -94,11 +90,32 @@ struct CreditsView {
     by_nen: Vec<TallyView>,
 }
 
-/// A plan's summary: every conflict and the credit tallies.
+/// Atomic, course-code based plan result. Raw numeric indices are output-only;
+/// callers cannot feed unchecked indices back into the WASM API.
 #[derive(Serialize)]
-struct PlanSummaryView {
+#[serde(rename_all = "camelCase")]
+struct PlanResultView {
+    valid_codes: Vec<String>,
+    unknown_codes: Vec<String>,
+    cells: Vec<GridCell>,
+    unscheduled: Vec<u32>,
     conflicts: Vec<ConflictView>,
     credits: CreditsView,
+}
+
+/// One atomic initialization snapshot. Keeping this as a single boundary call
+/// prevents consumers from combining metadata, dictionaries, and courses from
+/// different engine instances.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct InitSnapshot<'a, C, D> {
+    courses: C,
+    dicts: D,
+    generated_at: &'a str,
+    year: &'a str,
+    dataset_id: &'a str,
+    day_count: u8,
+    max_period: u8,
 }
 
 /// The browser-facing handle to a loaded dataset.
@@ -109,10 +126,10 @@ pub struct SyllabusEngine {
 
 #[wasm_bindgen]
 impl SyllabusEngine {
-    /// Parse a v3 `data.json` payload (parsing happens here, in WASM).
+    /// Parse a v4 `data.json` payload (parsing happens here, in WASM).
     ///
     /// # Errors
-    /// Rejects raw KULAS responses, non-v3 documents, and malformed bitsets.
+    /// Rejects raw KULAS responses, non-v4 documents, and malformed bitsets.
     #[wasm_bindgen(js_name = fromJson)]
     pub fn from_json(json: &str) -> Result<SyllabusEngine, JsError> {
         let inner = Engine::from_json(json).map_err(|e| JsError::new(&e.to_string()))?;
@@ -120,8 +137,8 @@ impl SyllabusEngine {
     }
 
     /// Load the companion `search.idx` (fetched separately from `data.json`),
-    /// enabling ranked [`SyllabusEngine::query`]. Until this is called, `query`
-    /// falls back to an unranked substring scan.
+    /// enabling ranked [`SyllabusEngine::query`]. Until this is called, a
+    /// non-empty query fails explicitly; no incomplete fallback is exposed.
     ///
     /// # Errors
     /// Rejects a blob that is not a valid `search.idx`.
@@ -132,8 +149,9 @@ impl SyllabusEngine {
             .map_err(|e| JsError::new(&e.to_string()))
     }
 
-    /// Filter, rank, and lay out in one hop: returns `{ cells, countUnique,
-    /// highlights }`, cells already ordered best-first within each timetable
+    /// Filter, rank, and lay out in one hop: returns scheduled cells,
+    /// unscheduled matches, totals, and highlights. Cells are ordered best-first
+    /// within each timetable
     /// slot. `highlights` carries per-course match spans (empty for an empty
     /// query). Scores never cross the boundary — the ordering already encodes
     /// them.
@@ -148,12 +166,15 @@ impl SyllabusEngine {
         campus: &str,
         query: &str,
     ) -> Result<JsValue, JsError> {
-        let hits = self.inner.search(&Filters {
-            semester: selector(semester),
-            department: selector(department),
-            campus: selector(campus),
-            query,
-        });
+        let hits = self
+            .inner
+            .search(&Filters {
+                semester: selector(semester),
+                department: selector(department),
+                campus: selector(campus),
+                query,
+            })
+            .map_err(|error| JsError::new(&error.to_string()))?;
         let grid = self.inner.search_grid(&hits, selector(semester));
 
         let cells = grid
@@ -165,7 +186,7 @@ impl SyllabusEngine {
             })
             .collect();
 
-        let highlights = hits
+        let matches = hits
             .iter()
             .filter(|h| !h.spans.is_empty())
             .map(|h| Highlight {
@@ -182,33 +203,63 @@ impl SyllabusEngine {
             })
             .collect();
 
+        let unscheduled: Vec<u32> = self
+            .inner
+            .unscheduled(&hits, selector(semester))
+            .into_iter()
+            .map(|value| value.get() as u32)
+            .collect();
         to_js(&QueryResult {
+            total: hits.len() as u32,
+            scheduled_count: grid.count_unique() as u32,
+            unscheduled_count: unscheduled.len() as u32,
             cells,
-            count_unique: grid.count_unique() as u32,
-            highlights,
+            unscheduled,
+            matches,
         })
     }
 
-    /// Resolve a shared plan's stable course codes to course indices (unknown
-    /// codes dropped, ascending, de-duplicated).
-    #[wasm_bindgen(js_name = resolvePlan)]
-    pub fn resolve_plan(&self, cds: Vec<String>) -> Vec<u32> {
-        self.inner
-            .resolve_cds(&cds)
-            .into_iter()
-            .map(|i| i.get() as u32)
-            .collect()
-    }
-
-    /// Summarize the given registered course indices: `{ conflicts, credits }`.
+    /// Resolve, validate, lay out, and summarize a plan in one atomic call.
+    /// Unknown or retired course codes are returned explicitly.
     ///
     /// # Errors
     /// Fails only if the result cannot be serialized to a JS value.
-    #[wasm_bindgen(js_name = planSummary)]
-    pub fn plan_summary(&self, course_indices: Vec<u32>) -> Result<JsValue, JsError> {
-        let indices: Vec<CourseIndex> = course_indices
+    #[wasm_bindgen]
+    pub fn plan(&self, cds: Vec<String>, semester: &str) -> Result<JsValue, JsError> {
+        let mut requested = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        for code in cds {
+            if seen.insert(code.clone()) {
+                requested.push(code);
+            }
+        }
+        let indices = self.inner.resolve_cds(&requested);
+        let valid_codes: Vec<String> = indices
+            .iter()
+            .filter_map(|index| self.inner.courses().get(index.get()))
+            .map(|course| course.cd.clone())
+            .collect();
+        let valid: std::collections::HashSet<&str> =
+            valid_codes.iter().map(String::as_str).collect();
+        let unknown_codes = requested
             .into_iter()
-            .map(|i| CourseIndex::new(i as usize))
+            .filter(|code| !valid.contains(code.as_str()))
+            .collect();
+
+        let grid = self.inner.grid(&indices, selector(semester));
+        let cells = grid
+            .cells()
+            .map(|(day, period, courses)| GridCell {
+                day: day.get(),
+                period: period.get(),
+                courses: courses.iter().map(|&i| i.get() as u32).collect(),
+            })
+            .collect();
+        let unscheduled = self
+            .inner
+            .unscheduled_indices(&indices, selector(semester))
+            .into_iter()
+            .map(|index| index.get() as u32)
             .collect();
         let summary = self.inner.plan_summary(&indices);
 
@@ -221,7 +272,11 @@ impl SyllabusEngine {
                 })
                 .collect()
         };
-        let view = PlanSummaryView {
+        let view = PlanResultView {
+            valid_codes,
+            unknown_codes,
+            cells,
+            unscheduled,
             conflicts: summary
                 .conflicts
                 .iter()
@@ -243,88 +298,28 @@ impl SyllabusEngine {
         to_js(&view)
     }
 
-    /// Indices of courses matching the filters (`"all"` = no filter), ascending.
-    #[wasm_bindgen]
-    pub fn filter(&self, semester: &str, department: &str, campus: &str, query: &str) -> Vec<u32> {
-        self.inner
-            .filter(&Filters {
-                semester: selector(semester),
-                department: selector(department),
-                campus: selector(campus),
-                query,
-            })
-            .into_iter()
-            .map(|i| i.get() as u32)
-            .collect()
-    }
-
-    /// Lay the given (already-filtered) indices onto the timetable, returning
-    /// `{ cells, countUnique }`.
+    /// Return courses, dictionaries, and dataset metadata as one consistent
+    /// initialization snapshot.
     ///
     /// # Errors
-    /// Fails only if the result cannot be serialized to a JS value.
-    #[wasm_bindgen]
-    pub fn grid(&self, course_indices: Vec<u32>, semester: &str) -> Result<JsValue, JsError> {
-        let indices: Vec<CourseIndex> = course_indices
-            .into_iter()
-            .map(|i| CourseIndex::new(i as usize))
-            .collect();
-        let grid = self.inner.grid(&indices, selector(semester));
-
-        let cells = grid
-            .cells()
-            .map(|(day, period, courses)| GridCell {
-                day: day.get(),
-                period: period.get(),
-                courses: courses.iter().map(|&i| i.get() as u32).collect(),
-            })
-            .collect();
-
-        to_js(&GridResult {
-            cells,
-            count_unique: grid.count_unique() as u32,
+    /// Fails only if the validated snapshot cannot be serialized to JS.
+    #[wasm_bindgen(js_name = initSnapshot)]
+    pub fn init_snapshot(&self) -> Result<JsValue, JsError> {
+        to_js(&InitSnapshot {
+            courses: self.inner.courses(),
+            dicts: self.inner.dicts(),
+            generated_at: self.inner.generated_at(),
+            year: self.inner.year(),
+            dataset_id: self.inner.dataset_id(),
+            day_count: self.inner.day_count(),
+            max_period: self.inner.max_period(),
         })
-    }
-
-    /// All course view-models, in index order — fetched once to seed the JS
-    /// read-only cache.
-    ///
-    /// # Errors
-    /// Fails only if the courses cannot be serialized to a JS value.
-    #[wasm_bindgen(js_name = allCourseViews)]
-    pub fn all_course_views(&self) -> Result<JsValue, JsError> {
-        to_js(self.inner.courses())
-    }
-
-    /// The dictionaries (semesters / departments / campuses / kubun / kaikojiki).
-    ///
-    /// # Errors
-    /// Fails only if the dictionaries cannot be serialized to a JS value.
-    #[wasm_bindgen]
-    pub fn dicts(&self) -> Result<JsValue, JsError> {
-        to_js(self.inner.dicts())
-    }
-
-    /// Whether the timetable needs a Saturday column (derived from the data).
-    #[wasm_bindgen(js_name = hasSaturday)]
-    pub fn has_saturday(&self) -> bool {
-        self.inner.has_saturday()
-    }
-
-    /// When the dataset was generated (RFC 3339 string).
-    #[wasm_bindgen(js_name = generatedAt)]
-    pub fn generated_at(&self) -> String {
-        self.inner.generated_at().to_owned()
-    }
-
-    /// The dataset's academic year (`kaikoNendo`), for the official deep link.
-    #[wasm_bindgen(js_name = year)]
-    pub fn year(&self) -> String {
-        self.inner.year().to_owned()
     }
 }
 
-/// Route Rust panics to `console.error` for legible stack traces in the browser.
+/// Route Rust panics to `console.error` in development builds. The release
+/// boundary returns structured errors and omits the hook from the payload.
+#[cfg(debug_assertions)]
 #[wasm_bindgen(start)]
 pub fn start() {
     console_error_panic_hook::set_once();

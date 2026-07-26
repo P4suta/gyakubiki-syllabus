@@ -8,55 +8,80 @@ use std::collections::{BTreeSet, HashMap};
 
 use crate::bitset::BitSet;
 use crate::dict;
-use crate::model::{Course, Dictionaries, IndicesMap, ProcessedData, RawCourse, Slot};
-use crate::parser::{self, ParsedSlot};
+use crate::model::{
+    Course, CourseCode, CourseCodeError, Dictionaries, IndicesMap, Offering, ProcessedData,
+    RawCourse, Slot,
+};
+use crate::parser::{self, ParsedSlot, ParsedUnscheduled, UnscheduledKind};
 
-/// The v3 payload plus any warnings raised while converting (empty course codes,
-/// unparsable jikanwari, …). Warnings are surfaced by the CLI, never in `data.json`.
+/// The validated v4 payload.
 pub struct ConvertResult {
     pub data: ProcessedData,
-    pub warnings: Vec<String>,
+}
+
+/// A source defect that would otherwise lose or misclassify a course.
+#[derive(Debug, thiserror::Error)]
+pub enum ConvertError {
+    #[error("record {position} has an invalid course code: {source}")]
+    InvalidCourseCode {
+        position: usize,
+        #[source]
+        source: CourseCodeError,
+    },
+    #[error("duplicate course code {0:?}")]
+    DuplicateCourseCode(String),
+    #[error("course {0:?} has an empty name")]
+    EmptyCourseName(String),
+    #[error("course {course:?} has an invalid timetable: {reason}")]
+    InvalidTimetable { course: String, reason: String },
+    #[error("internal conversion invariant failed for {field} value {value:?}")]
+    Invariant { field: &'static str, value: String },
 }
 
 /// The 通年 (year-long) semester label, whose courses appear under every other
 /// semester's filter.
 const TSUUNEN_LABEL: &str = "通年";
 
-/// Convert raw KULAS courses into the v3 output, stamping `generated_at`
+/// Convert raw KULAS courses into the v4 output, stamping `generated_at`
 /// (an RFC 3339 string).
 ///
-/// Three phases: [`first_pass`] dedups courses and gathers the dictionary
-/// values, [`build_dictionaries`] sorts them into the wire dictionaries, and
-/// [`second_pass`] resolves each course's indices and builds the filter bitsets.
-#[must_use]
-pub fn convert_v3(raw: &[RawCourse], generated_at: String) -> ConvertResult {
-    let first = first_pass(raw);
+/// Three phases: `first_pass` validates courses and gathers dictionary values,
+/// `build_dictionaries` sorts them into the wire dictionaries, and
+/// `second_pass` resolves each course's indices and builds the filter bitsets.
+pub fn convert_v4(
+    raw: &[RawCourse],
+    generated_at: String,
+    dataset_id: String,
+) -> Result<ConvertResult, ConvertError> {
+    let first = first_pass(raw)?;
     let dicts = build_dictionaries(&first.dict_sets);
     let dict_index = DictIndex::from(&dicts);
-    let (courses, indices) = second_pass(
+    let (courses, offerings, indices) = second_pass(
         raw,
         first.courses,
         &first.slots_per_course,
+        &first.unscheduled_per_course,
         &dict_index,
         &dicts,
-    );
+    )?;
 
-    ConvertResult {
+    Ok(ConvertResult {
         data: ProcessedData {
-            version: 3,
+            version: 4,
+            dataset_id,
             generated_at,
             year: dataset_year(raw),
             total_raw: raw.len() as u32,
             dicts,
             indices,
             courses,
+            offerings,
         },
-        warnings: first.warnings,
-    }
+    })
 }
 
-/// The dictionary value sets gathered in the first pass (before dedup chooses a
-/// canonical course), one [`BTreeSet`] per dimension for stable ordering.
+/// The dictionary value sets gathered in the first pass, one [`BTreeSet`] per
+/// dimension for stable ordering.
 #[derive(Default)]
 struct DictSets {
     semester: BTreeSet<String>,
@@ -66,68 +91,76 @@ struct DictSets {
     kaikojiki: BTreeSet<String>,
 }
 
-/// The first pass output: deduped courses (index fields still 0, slots still
-/// empty), their parsed slots (parallel to `courses`), the gathered dictionary
-/// value sets, and any warnings.
+/// The first pass output: validated courses (index fields still 0, slots still
+/// empty), their parsed slots (parallel to `courses`), and the gathered
+/// dictionary value sets.
 struct FirstPass {
     courses: Vec<Course>,
     slots_per_course: Vec<Vec<ParsedSlot>>,
+    unscheduled_per_course: Vec<Vec<ParsedUnscheduled>>,
     dict_sets: DictSets,
-    warnings: Vec<String>,
 }
 
-/// First pass: dedup by trimmed `kogiCd` (first wins, later occurrences merge
-/// their slots), gather the five dictionary value sets, and collect warnings.
+/// First pass: validate unique codes/timetables and gather dictionary values.
 /// Index fields stay 0 and slots empty until [`second_pass`] fills them.
-fn first_pass(raw: &[RawCourse]) -> FirstPass {
-    let mut warnings = Vec::new();
+fn first_pass(raw: &[RawCourse]) -> Result<FirstPass, ConvertError> {
     let mut dict_sets = DictSets::default();
-    let mut seen: HashMap<String, usize> = HashMap::new();
+    let mut seen = std::collections::HashSet::new();
     let mut courses: Vec<Course> = Vec::new();
     let mut slots_per_course: Vec<Vec<ParsedSlot>> = Vec::new();
+    let mut unscheduled_per_course: Vec<Vec<ParsedUnscheduled>> = Vec::new();
 
     for (i, r) in raw.iter().enumerate() {
         let cd = r.kogi_cd.trim();
-        if cd.is_empty() {
-            warnings.push(format!(
-                "  [item {}] course code (kogiCd) is empty; skipping",
-                i + 1
-            ));
-            continue;
+        CourseCode::parse(cd).map_err(|source| ConvertError::InvalidCourseCode {
+            position: i + 1,
+            source,
+        })?;
+        if !seen.insert(cd.to_owned()) {
+            return Err(ConvertError::DuplicateCourseCode(cd.to_owned()));
         }
         let nm = r.kogi_nm.trim();
         if nm.is_empty() {
-            warnings.push(format!("  [{}] course name (kogiNm) is empty", r.kogi_cd));
+            return Err(ConvertError::EmptyCourseName(cd.to_owned()));
         }
 
-        let parsed = parser::parse_jikanwari(&r.jikanwari);
-        for w in &parsed.warnings {
-            warnings.push(format!("  [{}] {}: {}", r.kogi_cd, r.kogi_nm, w));
+        let mut parsed = parser::parse_jikanwari(&r.jikanwari);
+        if r.jikanwari.trim().is_empty() {
+            parsed.unscheduled.push(ParsedUnscheduled {
+                semester: if r.kogi_kaikojiki_nm.trim().is_empty() {
+                    "未定".to_owned()
+                } else {
+                    r.kogi_kaikojiki_nm.trim().to_owned()
+                },
+                kind: UnscheduledKind::Tba,
+                label: "時間未定".to_owned(),
+            });
         }
-        if !r.jikanwari.is_empty() && parsed.slots.is_empty() {
-            warnings.push(format!(
-                "  [{}] {}: has jikanwari but it could not be parsed: {:?}",
-                r.kogi_cd, r.kogi_nm, r.jikanwari
-            ));
+        if !parsed.warnings.is_empty() {
+            return Err(ConvertError::InvalidTimetable {
+                course: cd.to_owned(),
+                reason: parsed.warnings.join("; "),
+            });
+        }
+        if !r.jikanwari.is_empty() && parsed.slots.is_empty() && parsed.unscheduled.is_empty() {
+            return Err(ConvertError::InvalidTimetable {
+                course: cd.to_owned(),
+                reason: format!("no offering parsed from {:?}", r.jikanwari),
+            });
         }
 
-        // Slots merge across duplicates, so every occurrence's semesters count.
+        // Every explicitly parsed offering contributes its semester.
         for s in &parsed.slots {
             if !s.semester.is_empty() {
                 dict_sets.semester.insert(s.semester.clone());
             }
         }
-
-        // Duplicate code: merge its slots into the first occurrence. Its other
-        // fields are discarded, so they must NOT be gathered into the
-        // dictionaries — otherwise a dropped record's department leaves a filter
-        // entry that selects no course.
-        if let Some(&idx) = seen.get(cd) {
-            merge_slots(&mut slots_per_course[idx], &parsed.slots);
-            continue;
+        for offering in &parsed.unscheduled {
+            if !offering.semester.is_empty() {
+                dict_sets.semester.insert(offering.semester.clone());
+            }
         }
 
-        // First occurrence is canonical: gather its dimension values.
         let dept = r.sekinin_busho_nm.trim();
         dict_sets.department.insert(or_sonota(dept).to_owned());
         dict_sets.campus.insert(campus_of(r).to_owned());
@@ -138,7 +171,6 @@ fn first_pass(raw: &[RawCourse]) -> FirstPass {
             .kaikojiki
             .insert(or_sonota(r.kogi_kaikojiki_nm.trim()).to_owned());
 
-        seen.insert(cd.to_owned(), courses.len());
         let prof = r.tanto_kyoin.trim();
         let sub = trim_opt(&r.fukudai);
         let gakusoku = r.gakusoku_kamoku_nm.trim();
@@ -165,14 +197,15 @@ fn first_pass(raw: &[RawCourse]) -> FirstPass {
             ev: None,
         });
         slots_per_course.push(parsed.slots);
+        unscheduled_per_course.push(parsed.unscheduled);
     }
 
-    FirstPass {
+    Ok(FirstPass {
         courses,
         slots_per_course,
+        unscheduled_per_course,
         dict_sets,
-        warnings,
-    }
+    })
 }
 
 /// Sort the gathered value sets into the wire dictionaries (each dimension has
@@ -209,6 +242,8 @@ impl From<&Dictionaries> for DictIndex {
     }
 }
 
+type SecondPassOutput = (Vec<Course>, Vec<Vec<Offering>>, IndicesMap);
+
 /// Second pass: resolve each course's `dept`/`campus`/`kbn`/`ki` and its slots,
 /// then build the per-dimension filter bitsets. 通年 courses are propagated into
 /// every other semester's bitset, the way the filter UI expects.
@@ -216,9 +251,10 @@ fn second_pass(
     raw: &[RawCourse],
     mut courses: Vec<Course>,
     slots_per_course: &[Vec<ParsedSlot>],
+    unscheduled_per_course: &[Vec<ParsedUnscheduled>],
     dict_index: &DictIndex,
     dicts: &Dictionaries,
-) -> (Vec<Course>, IndicesMap) {
+) -> Result<SecondPassOutput, ConvertError> {
     let num_words = courses.len().div_ceil(64);
 
     // kogiCd → first raw index, so each course re-reads its canonical record.
@@ -230,32 +266,67 @@ fn second_pass(
     // One bitset per semester dictionary index (positional, dense).
     let mut sem_bits = vec![BitSet::with_words(num_words); dicts.semesters.len()];
     let mut tsuunen_courses: Vec<usize> = Vec::new();
+    let mut all_offerings = Vec::with_capacity(courses.len());
 
     for i in 0..courses.len() {
         let r = &raw[raw_first[courses[i].cd.as_str()]];
-        courses[i].dept = lookup(&dict_index.department, or_sonota(r.sekinin_busho_nm.trim()));
-        courses[i].campus = lookup(&dict_index.campus, campus_of(r));
-        courses[i].kbn = lookup(&dict_index.kubun, or_sonota(r.kogi_kubun_nm.trim()));
-        courses[i].ki = lookup(&dict_index.kaikojiki, or_sonota(r.kogi_kaikojiki_nm.trim()));
+        courses[i].dept = lookup(
+            &dict_index.department,
+            or_sonota(r.sekinin_busho_nm.trim()),
+            "department",
+        )?;
+        courses[i].campus = lookup(&dict_index.campus, campus_of(r), "campus")?;
+        courses[i].kbn = lookup(
+            &dict_index.kubun,
+            or_sonota(r.kogi_kubun_nm.trim()),
+            "kubun",
+        )?;
+        courses[i].ki = lookup(
+            &dict_index.kaikojiki,
+            or_sonota(r.kogi_kaikojiki_nm.trim()),
+            "kaikojiki",
+        )?;
 
         let mut slots = Vec::new();
+        let mut offerings = Vec::new();
         let mut has_tsuunen = false;
         for s in &slots_per_course[i] {
-            let (Some(&si), Some(di)) = (dict_index.semester.get(&s.semester), day_index(&s.day))
-            else {
-                continue;
-            };
+            let si = lookup_usize(&dict_index.semester, &s.semester, "semester")?;
+            let di = day_index(&s.day).ok_or_else(|| ConvertError::Invariant {
+                field: "day",
+                value: s.day.clone(),
+            })?;
             slots.push(Slot {
                 s: si as u32,
                 d: di,
                 p: s.period,
+            });
+            offerings.push(Offering::Scheduled {
+                s: si as u32,
+                d: di as u8,
+                p: s.period as u8,
             });
             sem_bits[si].set(i);
             if s.semester == TSUUNEN_LABEL {
                 has_tsuunen = true;
             }
         }
+        for offering in &unscheduled_per_course[i] {
+            let si = lookup_usize(&dict_index.semester, &offering.semester, "semester")?;
+            offerings.push(match offering.kind {
+                UnscheduledKind::Intensive => Offering::Intensive { s: si as u32 },
+                UnscheduledKind::Tba => Offering::Tba {
+                    s: si as u32,
+                    label: offering.label.clone(),
+                },
+            });
+            sem_bits[si].set(i);
+            if offering.semester == TSUUNEN_LABEL {
+                has_tsuunen = true;
+            }
+        }
         courses[i].slots = slots;
+        all_offerings.push(offerings);
         if has_tsuunen {
             tsuunen_courses.push(i);
         }
@@ -286,7 +357,7 @@ fn second_pass(
         department: encode(&dept_bits),
         campus: encode(&campus_bits),
     };
-    (courses, indices)
+    Ok((courses, all_offerings, indices))
 }
 
 /// The dataset's academic year: the first non-empty `kaikoNendo` across the raw
@@ -331,15 +402,6 @@ fn trim_opt(value: &Option<String>) -> Option<String> {
         .map(str::to_owned)
 }
 
-/// Append `new` slots not already present, deduplicating by value.
-fn merge_slots(existing: &mut Vec<ParsedSlot>, new: &[ParsedSlot]) {
-    for slot in new {
-        if !existing.contains(slot) {
-            existing.push(slot.clone());
-        }
-    }
-}
-
 /// Map each dictionary label to its index.
 fn index_map(labels: &[String]) -> HashMap<String, usize> {
     labels
@@ -349,12 +411,26 @@ fn index_map(labels: &[String]) -> HashMap<String, usize> {
         .collect()
 }
 
-/// Resolve a label to its dictionary index. Callers normalize empty values to
-/// `その他` (see [`or_sonota`]) before calling, so every real value is present;
-/// the `0` fallback is only a defensive net for a genuinely unknown key (e.g. an
-/// empty dictionary).
-fn lookup(idx: &HashMap<String, usize>, key: &str) -> u32 {
-    idx.get(key).copied().unwrap_or(0) as u32
+fn lookup(
+    index: &HashMap<String, usize>,
+    value: &str,
+    field: &'static str,
+) -> Result<u32, ConvertError> {
+    lookup_usize(index, value, field).map(|position| position as u32)
+}
+
+fn lookup_usize(
+    index: &HashMap<String, usize>,
+    value: &str,
+    field: &'static str,
+) -> Result<usize, ConvertError> {
+    index
+        .get(value)
+        .copied()
+        .ok_or_else(|| ConvertError::Invariant {
+            field,
+            value: value.to_owned(),
+        })
 }
 
 /// Day label → column index (0=月 … 6=日).
@@ -373,8 +449,6 @@ fn day_index(day: &str) -> Option<i32> {
 
 /// Build a dimension's positional bitsets from already-resolved courses: each
 /// course sets its bit in the bucket its `project`ed dictionary index names.
-/// An index outside `dict_len` — reachable only when the dictionary is empty and
-/// `lookup` fell back to 0 — is skipped rather than panicking.
 fn dimension_bitsets(
     courses: &[Course],
     dict_len: usize,
@@ -383,9 +457,7 @@ fn dimension_bitsets(
 ) -> Vec<BitSet> {
     let mut bitsets = vec![BitSet::with_words(num_words); dict_len];
     for (course, c) in courses.iter().enumerate() {
-        if let Some(bucket) = bitsets.get_mut(project(c)) {
-            bucket.set(course);
-        }
+        bitsets[project(c)].set(course);
     }
     bitsets
 }
@@ -398,7 +470,7 @@ fn encode(bitsets: &[BitSet]) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::convert_v3;
+    use super::convert_v4;
     use crate::bitset::BitSet;
     use crate::model::{ProcessedData, RawCourse};
 
@@ -412,7 +484,13 @@ mod tests {
     }
 
     fn convert(raw: &[RawCourse]) -> ProcessedData {
-        convert_v3(raw, "2026-05-31T00:00:00Z".to_owned()).data
+        convert_v4(
+            raw,
+            "2026-05-31T00:00:00Z".to_owned(),
+            "test-dataset".to_owned(),
+        )
+        .expect("valid fixture converts")
+        .data
     }
 
     /// Position of `label` in a dictionary.
@@ -437,7 +515,7 @@ mod tests {
                 ..raw("002", "政治学概論")
             },
         ]);
-        assert_eq!(data.version, 3);
+        assert_eq!(data.version, 4);
         assert_eq!(data.total_raw, 2);
         assert_eq!(data.courses.len(), 2);
     }
@@ -550,21 +628,36 @@ mod tests {
     // `text`), and engine filter tests cover the end-to-end search.
 
     #[test]
-    fn dedups_by_code_and_merges_slots() {
-        let data = convert(&[
-            RawCourse {
-                jikanwari: "1学期: 月曜日１時限".into(),
-                ..raw("001", "A")
-            },
-            RawCourse {
-                jikanwari: "1学期: 月曜日１時限, 1学期: 水曜日３時限".into(),
-                ..raw("001", "A")
-            },
-        ]);
+    fn duplicate_code_is_fatal() {
+        let result = convert_v4(
+            &[
+                RawCourse {
+                    jikanwari: "1学期: 月曜日１時限".into(),
+                    ..raw("001", "A")
+                },
+                RawCourse {
+                    jikanwari: "1学期: 水曜日３時限".into(),
+                    ..raw("001", "A")
+                },
+            ],
+            "t".into(),
+            "test".into(),
+        );
+        assert!(matches!(
+            result,
+            Err(super::ConvertError::DuplicateCourseCode(code)) if code == "001"
+        ));
+    }
+
+    #[test]
+    fn a_course_may_have_multiple_slots_in_one_record() {
+        let data = convert(&[RawCourse {
+            jikanwari: "1学期: 月曜日１時限, 1学期: 水曜日３時限".into(),
+            ..raw("001", "A")
+        }]);
         assert_eq!(data.courses.len(), 1);
-        // The merge must add the *new* slot, not re-push the shared one.
         let slots: Vec<(i32, i32)> = data.courses[0].slots.iter().map(|s| (s.d, s.p)).collect();
-        assert_eq!(slots, [(0, 1), (2, 3)]); // 月1 then the merged 水3
+        assert_eq!(slots, [(0, 1), (2, 3)]);
     }
 
     #[test]
@@ -581,37 +674,23 @@ mod tests {
     }
 
     #[test]
-    fn dedup_does_not_leave_dead_dictionary_entries() {
-        // Two records share a code; the second (discarded) has a different
-        // department. That department must NOT become a filter entry, since no
-        // surviving course belongs to it.
-        let data = convert(&[
-            RawCourse {
-                sekinin_busho_nm: "理工学部".into(),
-                ..raw("001", "A")
-            },
-            RawCourse {
-                sekinin_busho_nm: "共通教育".into(),
-                ..raw("001", "A")
-            },
-        ]);
-        assert_eq!(data.courses.len(), 1);
-        assert_eq!(data.dicts.departments, ["理工学部"]);
-        assert!(!data.dicts.departments.contains(&"共通教育".to_owned()));
+    fn rejects_empty_code() {
+        let result = convert_v4(
+            &[raw("", "空コード"), raw("001", "正常")],
+            "t".to_owned(),
+            "test".to_owned(),
+        );
+        assert!(matches!(
+            result,
+            Err(super::ConvertError::InvalidCourseCode { .. })
+        ));
     }
 
     #[test]
-    fn skips_empty_code_with_warning() {
-        let result = convert_v3(&[raw("", "空コード"), raw("001", "正常")], "t".to_owned());
-        assert_eq!(result.data.courses.len(), 1);
-        assert!(!result.warnings.is_empty());
-    }
-
-    #[test]
-    fn empty_input_is_valid_v3() {
+    fn empty_input_is_valid_v4() {
         let data = convert(&[]);
         assert_eq!(data.courses.len(), 0);
-        assert_eq!(data.version, 3);
+        assert_eq!(data.version, 4);
     }
 
     #[test]
@@ -778,23 +857,46 @@ mod tests {
     }
 
     #[test]
-    fn warns_on_unparsable_jikanwari_but_keeps_course() {
-        let result = convert_v3(
+    fn rejects_unparsable_jikanwari() {
+        let result = convert_v4(
             &[RawCourse {
-                jikanwari: "集中".into(),
-                ..raw("001", "集中講義")
+                jikanwari: "壊れた時間割".into(),
+                ..raw("001", "不明講義")
             }],
             "t".to_owned(),
+            "test".to_owned(),
         );
-        assert_eq!(result.data.courses.len(), 1);
-        assert!(!result.warnings.is_empty());
+        assert!(matches!(
+            result,
+            Err(super::ConvertError::InvalidTimetable { .. })
+        ));
     }
 
     #[test]
-    fn empty_jikanwari_yields_no_slots_no_warning() {
-        let result = convert_v3(&[raw("001", "A")], "t".to_owned());
+    fn intensive_is_an_explicit_offering() {
+        let result = convert_v4(
+            &[RawCourse {
+                jikanwari: "1学期: 集中講義".into(),
+                ..raw("001", "集中講義")
+            }],
+            "t".to_owned(),
+            "test".to_owned(),
+        )
+        .unwrap();
+        assert!(matches!(
+            result.data.offerings[0].as_slice(),
+            [crate::model::Offering::Intensive { .. }]
+        ));
+    }
+
+    #[test]
+    fn empty_jikanwari_yields_an_explicit_tba() {
+        let result = convert_v4(&[raw("001", "A")], "t".to_owned(), "test".to_owned()).unwrap();
         assert_eq!(result.data.courses[0].slots.len(), 0);
-        assert!(result.warnings.is_empty());
+        assert!(matches!(
+            result.data.offerings[0].as_slice(),
+            [crate::model::Offering::Tba { .. }]
+        ));
     }
 
     use proptest::prelude::*;
@@ -814,8 +916,8 @@ mod tests {
 
     fn any_raw_course() -> impl Strategy<Value = RawCourse> {
         (
-            "[a-z0-9]{0,4}", // cd (may be empty → skipped with a warning)
-            "[\\p{Han}a-z]{0,8}",
+            "[a-z0-9]{1,4}",
+            "[\\p{Han}a-z]{1,8}",
             label(),
             label(),
             label(),
@@ -826,7 +928,6 @@ mod tests {
                 "1学期: 集中講義",
                 "1学期: 月曜日１時限, 2学期: 金曜日５時限",
                 "",
-                "garbage",
             ]),
         )
             .prop_map(|(cd, nm, dept, campus, kubun, kaiko, jik)| RawCourse {
@@ -842,18 +943,21 @@ mod tests {
     }
 
     proptest! {
-        /// Whatever the raw input, the v3 output is structurally sound: counts
+        /// Whatever the raw input, the v4 output is structurally sound: counts
         /// hold, every dictionary index is in range, every slot is a real cell,
         /// and codes/search text are canonical. This is the core safety net for
         /// the whole conversion.
         #[test]
         fn convert_output_is_structurally_sound(
-            raw in prop::collection::vec(any_raw_course(), 0..12)
+            mut raw in prop::collection::vec(any_raw_course(), 0..12)
         ) {
+            for (index, course) in raw.iter_mut().enumerate() {
+                course.kogi_cd = format!("C{index:03}");
+            }
             let data = convert(&raw);
 
             prop_assert_eq!(data.total_raw as usize, raw.len());
-            prop_assert!(data.courses.len() <= raw.len());
+            prop_assert_eq!(data.courses.len(), raw.len());
 
             for c in &data.courses {
                 prop_assert!(!c.cd.is_empty());

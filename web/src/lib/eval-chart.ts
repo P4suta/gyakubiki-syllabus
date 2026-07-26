@@ -41,9 +41,7 @@ export interface Typed {
 export function sumByType<T extends Typed>(segs: readonly T[]): Typed[] {
 	const map = new Map<string, number>()
 	for (const s of segs) map.set(s.type, (map.get(s.type) ?? 0) + s.pct)
-	return [...map.entries()]
-		.map(([type, pct]) => ({ type, pct }))
-		.sort((a, b) => b.pct - a.pct)
+	return [...map.entries()].map(([type, pct]) => ({ type, pct })).sort((a, b) => b.pct - a.pct)
 }
 
 export interface Arc {

@@ -1,20 +1,37 @@
-//! Library half of `syllabus-cli`, so integration tests and the thin `main`
-//! binary share one implementation:
-//! - [`convert`] — raw KULAS JSON → canonical `data.json` bytes (pure).
-//! - [`fetch`] / [`fetch_details`] — download findPage pages / detail pages.
-//! - [`detail`] — parse「シラバス参照」HTML into structured records.
-//! - [`fields`] — the display-field spec and its doc/TS generator.
-//! - [`io`] — read and parse the raw input files `convert` ingests.
+//! Private implementation library for the `syllabus-cli` binary.
+//!
+//! This crate is not published and does not expose its crawler, converter,
+//! terminal, or filesystem modules as a supported Rust API.
 
-pub mod banner;
-pub mod commit;
-pub mod convert;
-pub mod detail;
-pub mod fetch;
-pub mod fetch_details;
-pub mod fields;
-pub mod gen_sample;
-pub mod io;
-pub mod net;
-pub mod palette;
-pub mod term;
+mod banner;
+mod cli;
+mod commit;
+mod convert;
+mod dataset;
+mod detail;
+mod fetch;
+mod fetch_details;
+mod fields;
+mod gen_sample;
+mod io;
+mod net;
+mod palette;
+mod term;
+
+/// Run the command-line application.
+///
+/// This exists solely for the minimal binary shim and is not a general-purpose
+/// library API.
+#[doc(hidden)]
+pub fn run() -> std::process::ExitCode {
+    cli::run()
+}
+
+/// Narrow, unsupported surface used by this package's integration tests and
+/// out-of-workspace fuzz targets. Product callers must use the binary.
+#[doc(hidden)]
+pub mod test_support {
+    pub use crate::convert::render_data_json;
+    pub use crate::dataset::{Asset, BuildDatasetOptions, DatasetManifest, build as build_dataset};
+    pub use crate::detail::{PublicDetail, SanshoDetail, parse_sansho_html};
+}

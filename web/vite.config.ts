@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { svelte } from '@sveltejs/vite-plugin-svelte'
 import tailwindcss from '@tailwindcss/vite'
 import { svelteTesting } from '@testing-library/svelte/vite'
@@ -6,6 +8,12 @@ import Icons from 'unplugin-icons/vite'
 import type { PluginOption } from 'vite'
 import { VitePWA } from 'vite-plugin-pwa'
 import { defineConfig } from 'vitest/config'
+
+const workspaceManifest = readFileSync(resolve(__dirname, '../Cargo.toml'), 'utf8')
+const appVersion =
+	workspaceManifest.match(/\[workspace\.package\][\s\S]*?\bversion\s*=\s*"([^"]+)"/)?.[1] ??
+	'unknown'
+const appCommit = process.env.GITHUB_SHA ?? process.env.APP_COMMIT ?? 'local'
 
 // Vite minifies JS/CSS but leaves index.html untouched; minify it too on build.
 const minifyHtml = (): PluginOption => ({
@@ -31,7 +39,7 @@ const inlineCss = (): PluginOption => ({
 	enforce: 'post',
 	generateBundle(_options, bundle) {
 		const html = bundle['index.html']
-		if (!html || html.type !== 'asset') return
+		if (html?.type !== 'asset') return
 		let source = html.source.toString()
 		for (const [name, chunk] of Object.entries(bundle)) {
 			if (chunk.type !== 'asset' || !name.endsWith('.css')) continue
@@ -50,6 +58,11 @@ export default defineConfig({
 	// On GitHub Pages the app is served from a sub-path; the WASM asset URL
 	// (resolved via import.meta.url) follows this base automatically.
 	base: process.env.GITHUB_PAGES === 'true' ? '/gyakubiki-syllabus/' : '/',
+	publicDir: process.env.E2E_PUBLIC_DIR || 'public',
+	define: {
+		__APP_VERSION__: JSON.stringify(appVersion),
+		__APP_COMMIT__: JSON.stringify(appCommit),
+	},
 	// svelteTesting adds the jsdom `resolve.conditions` (browser build) and an
 	// afterEach unmount so component tests don't leak between cases.
 	// Icons are inlined from the Iconify `ic` set at build time (offline, tree-
@@ -63,26 +76,45 @@ export default defineConfig({
 		inlineCss(),
 		// GitHub Pages serves everything with max-age=600 and the headers can't
 		// be changed, so repeat visits re-fetch the hashed bundles. The SW gives
-		// them real immutable caching (precache) and offline navigation, while
-		// the daily-updated data stays NetworkFirst so it is never pinned stale.
+		// them real immutable caching (precache) and offline navigation. The sole
+		// stable dataset manifest is NetworkFirst; its content-addressed assets
+		// are immutable CacheFirst entries.
 		VitePWA({
-			registerType: 'autoUpdate',
-			injectRegister: 'inline', // a registerSW.js request would render-block
+			registerType: 'prompt',
+			injectRegister: null,
 			manifest: false, // hand-written public/manifest.webmanifest
 			workbox: {
 				// The shell precaches (index.html revisions on every deploy; the SW
-				// autoUpdates within Pages' 600s window), the data stays NetworkFirst.
+				// autoUpdates within Pages' 600s window). Runtime policy below keeps
+				// only the manifest mutable.
 				globPatterns: ['index.html', 'assets/*.{js,css,wasm}'],
+				globIgnores: ['assets/brotli_dec_wasm_bg-*.wasm'],
 				runtimeCaching: [
 					{
-						urlPattern: /\/(data\.json|search\.idx)$/,
+						urlPattern: /\/manifest\.json$/,
 						handler: 'NetworkFirst',
-						options: { cacheName: 'data' },
+						options: {
+							cacheName: 'dataset-manifest',
+							networkTimeoutSeconds: 3,
+							expiration: { maxEntries: 2, maxAgeSeconds: 14 * 24 * 60 * 60 },
+						},
 					},
 					{
-						urlPattern: /\/details\/.*\.json$/,
-						handler: 'NetworkFirst',
-						options: { cacheName: 'details' },
+						urlPattern:
+							/\/datasets\/[^/]+\/(data\.[a-f0-9]+\.json|search\.[a-f0-9]+\.idx\.br|details\.[a-f0-9]+\.json)$/,
+						handler: 'CacheFirst',
+						options: {
+							cacheName: 'dataset-assets',
+							expiration: { maxEntries: 6, maxAgeSeconds: 180 * 24 * 60 * 60 },
+						},
+					},
+					{
+						urlPattern: /\/datasets\/[^/]+\/details\/[a-f0-9.]+\.json$/,
+						handler: 'CacheFirst',
+						options: {
+							cacheName: 'dataset-details',
+							expiration: { maxEntries: 8_000, maxAgeSeconds: 180 * 24 * 60 * 60 },
+						},
 					},
 				],
 			},
@@ -127,8 +159,10 @@ export default defineConfig({
 				'src/lib/*.generated.ts',
 				'src/lib/engine.ts',
 				'src/lib/engine.worker.ts',
+				'src/lib/dataset.ts',
 				'src/lib/details.ts',
 				'src/lib/schedule.ts',
+				'src/lib/worker-protocol.ts',
 			],
 			thresholds: { lines: 90, functions: 90, branches: 85, statements: 90 },
 		},

@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { FIXTURES, counts, enter, pickSemester } from './helpers'
+import { counts, enter, FIXTURES, pickSemester } from './helpers'
 
 // Filters run on the desktop layout (segmented semester control + native
 // selects); counts come from the root's data-*-count attributes (helpers).

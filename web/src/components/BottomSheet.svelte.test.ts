@@ -8,9 +8,13 @@ import Harness from './BottomSheetHarness.svelte'
 // share one path and leave no dangling state. These specs pin that invariant;
 // the drag geometry itself stays in the E2E gesture suite.
 
-function setViewport(desktop: boolean) {
+function setViewport(desktop: boolean, reducedMotion = false) {
 	window.matchMedia = vi.fn().mockImplementation((query: string) => ({
-		matches: desktop,
+		matches: query.includes('min-width')
+			? desktop
+			: query.includes('prefers-reduced-motion')
+				? reducedMotion
+				: false,
 		media: query,
 		onchange: null,
 		addEventListener: vi.fn(),
@@ -73,11 +77,21 @@ describe('BottomSheet close routing', () => {
 		const { container } = render(Harness, { props: { onclose: vi.fn() } })
 		flushSync()
 		back.mockClear()
-		const backdrop = container.querySelector('[aria-hidden="true"]')
+		const backdrop = container.querySelector('button[aria-label="背景から時間割へ戻る"]')
 		if (!backdrop) throw new Error('backdrop not found')
 		fireEvent.click(backdrop)
 		flushSync()
 		expect(back).toHaveBeenCalledTimes(1)
+	})
+
+	it('does not add entrance animations when reduced motion is requested', () => {
+		setViewport(true, true)
+		const { container } = render(Harness, { props: { onclose: vi.fn() } })
+		flushSync()
+		expect(container.querySelector('[data-sheet]')).not.toHaveClass('animate-dialog-in')
+		expect(container.querySelector('button[aria-label="背景から時間割へ戻る"]')).not.toHaveClass(
+			'animate-fade-in',
+		)
 	})
 
 	it('pops its lingering entry when unmounted without being consumed', () => {

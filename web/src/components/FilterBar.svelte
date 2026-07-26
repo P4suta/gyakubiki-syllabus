@@ -112,6 +112,7 @@ function resetFilters() {
 						id="mobile-search"
 						type="text"
 						bind:value={searchText}
+						maxlength="256"
 						placeholder="科目名・教員・キーワードで検索"
 						class="w-full bg-overlay-subtle rounded-xl pl-10 pr-10 py-2.5 text-body text-apple-text outline-none placeholder:text-apple-text-tertiary focus:bg-surface-primary focus:ring-2 focus:ring-apple-blue/40"
 					/>
@@ -131,6 +132,7 @@ function resetFilters() {
 				<span class="text-micro font-medium text-apple-text-tertiary mb-1.5 block">学期</span>
 				<div class="flex gap-1.5 overflow-x-auto pb-1 -mx-4 px-4 snap-x hide-scrollbar">
 					<button
+						aria-pressed={semester === 'all'}
 						class="snap-start shrink-0 px-3 py-2 rounded-full text-caption font-medium min-h-tap transition-colors
 							{semester === 'all'
 								? 'bg-apple-blue text-on-accent'
@@ -139,6 +141,7 @@ function resetFilters() {
 					>全て</button>
 					{#each semesters as s}
 						<button
+							aria-pressed={semester === s}
 							class="snap-start shrink-0 px-3 py-2 rounded-full text-caption font-medium min-h-tap transition-colors
 								{semester === s
 									? 'bg-apple-blue text-on-accent'
@@ -201,20 +204,22 @@ function resetFilters() {
 	<div class="flex items-center gap-4 flex-wrap">
 		<div class="flex bg-overlay-muted rounded-full p-0.5">
 			<button
+				aria-pressed={semester === 'all'}
 				class="px-4 py-1.5 text-caption font-medium rounded-full transition-all duration-200
 					{semester === 'all'
 						? 'bg-surface-primary text-apple-text font-semibold shadow-sm'
-						: 'text-apple-text-tertiary hover:text-apple-text-secondary'}"
+						: 'text-apple-text-secondary hover:text-apple-text'}"
 				onclick={() => { semester = 'all' }}
 			>
 				全て
 			</button>
 			{#each semesters as s}
 				<button
+					aria-pressed={semester === s}
 					class="px-4 py-1.5 text-caption font-medium rounded-full transition-all duration-200
 						{semester === s
 							? 'bg-surface-primary text-apple-text font-semibold shadow-sm'
-							: 'text-apple-text-tertiary hover:text-apple-text-secondary'}"
+							: 'text-apple-text-secondary hover:text-apple-text'}"
 					onclick={() => { semester = s }}
 				>
 					{s}

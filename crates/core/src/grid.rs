@@ -8,30 +8,28 @@
 use std::collections::{BTreeMap, HashSet};
 
 use crate::index::{CourseIndex, Day, Period, SemesterIndex};
+use crate::model::Offering;
+#[cfg(test)]
 use crate::model::Slot;
-
-/// Weekday columns always present (月‥金). Saturday (day 5) is added only when
-/// the dataset contains a Saturday slot — see [`build_grid`]'s `saturday`.
-const WEEKDAYS: u8 = 5;
 
 /// A built timetable: course indices bucketed into `(day, period)` cells.
 #[derive(Debug, Clone)]
 pub struct Grid {
-    saturday: bool,
+    day_count: u8,
     cells: BTreeMap<(Day, Period), Vec<CourseIndex>>,
 }
 
 impl Grid {
-    /// Number of day columns: 5 (月‥金), or 6 when Saturday is present.
+    /// Number of day columns: 5 (月‥金), widening through 日 when needed.
     #[must_use]
     pub fn day_count(&self) -> usize {
-        usize::from(WEEKDAYS) + usize::from(self.saturday)
+        usize::from(self.day_count)
     }
 
     /// Whether the grid includes a Saturday column.
     #[must_use]
     pub fn has_saturday(&self) -> bool {
-        self.saturday
+        self.day_count >= 6
     }
 
     /// Course indices in the given cell, in ascending course order; an empty
@@ -77,15 +75,13 @@ pub struct GridSlot {
 }
 
 impl GridSlot {
-    /// Validate a wire [`Slot`], or `None` if it can never appear on the grid:
-    /// a day outside the columns (only 月..土 = 0..=5 are shown; 日 and anything
-    /// out of range fall away) or a period outside 1限..6限.
+    /// Validate a legacy wire [`Slot`], or `None` when outside 月..日 / 1..8.
     #[must_use]
+    #[cfg(test)]
     pub fn from_wire(slot: &Slot) -> Option<Self> {
-        // 0..=5 = 月..土; 日 (6) is never a column, negatives fail `try_from`.
         let day = u8::try_from(slot.d)
             .ok()
-            .filter(|&d| d <= WEEKDAYS)
+            .filter(|&d| d <= 6)
             .map(Day::new)?;
         let period = u8::try_from(slot.p).ok().and_then(Period::new)?;
         Some(Self {
@@ -95,10 +91,27 @@ impl GridSlot {
         })
     }
 
+    /// Validate a v4 scheduled offering. Non-grid variants remain available to
+    /// the query result's unscheduled list instead of being coerced into cells.
+    #[must_use]
+    pub fn from_offering(offering: &Offering) -> Option<Self> {
+        let Offering::Scheduled { s, d, p } = offering else {
+            return None;
+        };
+        let day = (*d <= 6).then(|| Day::new(*d))?;
+        let period = Period::new(*p)?;
+        Some(Self {
+            semester: *s as usize,
+            day,
+            period,
+        })
+    }
+
     /// Whether this slot meets on Saturday (drives the extra grid column).
     #[must_use]
+    #[cfg(test)]
     pub fn is_saturday(self) -> bool {
-        self.day.get() == WEEKDAYS
+        self.day.get() == 5
     }
 }
 
@@ -114,7 +127,7 @@ pub fn build_grid<'a>(
     timetables: impl IntoIterator<Item = (CourseIndex, &'a [GridSlot])>,
     semester: Option<SemesterIndex>,
     tsuunen: Option<SemesterIndex>,
-    saturday: bool,
+    day_count: u8,
 ) -> Grid {
     let mut cells: BTreeMap<(Day, Period), Vec<CourseIndex>> = BTreeMap::new();
 
@@ -137,7 +150,7 @@ pub fn build_grid<'a>(
         }
     }
 
-    Grid { saturday, cells }
+    Grid { day_count, cells }
 }
 
 #[cfg(test)]
@@ -170,7 +183,7 @@ mod tests {
                 .map(|(i, t)| (CourseIndex::new(i), t.as_slice())),
             semester.map(SemesterIndex::from),
             TSUUNEN,
-            false,
+            5,
         )
     }
 
@@ -185,10 +198,10 @@ mod tests {
     #[test]
     fn day_count_and_has_saturday_track_the_saturday_flag() {
         let no_courses = || Vec::<(CourseIndex, &[GridSlot])>::new();
-        let weekdays = build_grid(no_courses(), None, TSUUNEN, false);
+        let weekdays = build_grid(no_courses(), None, TSUUNEN, 5);
         assert_eq!(weekdays.day_count(), 5);
         assert!(!weekdays.has_saturday());
-        let with_sat = build_grid(no_courses(), None, TSUUNEN, true);
+        let with_sat = build_grid(no_courses(), None, TSUUNEN, 6);
         assert_eq!(with_sat.day_count(), 6);
         assert!(with_sat.has_saturday());
     }
@@ -258,8 +271,8 @@ mod tests {
     // GridSlot::from_wire range validation.
 
     #[test]
-    fn from_wire_drops_sunday_and_beyond() {
-        assert!(GridSlot::from_wire(&Slot { s: 0, d: 6, p: 1 }).is_none()); // 日
+    fn from_wire_keeps_sunday_and_drops_beyond() {
+        assert!(GridSlot::from_wire(&Slot { s: 0, d: 6, p: 1 }).is_some()); // 日
         assert!(GridSlot::from_wire(&Slot { s: 0, d: 99, p: 1 }).is_none());
     }
 
@@ -275,8 +288,9 @@ mod tests {
     }
 
     #[test]
-    fn from_wire_drops_period_outside_1_to_6() {
+    fn from_wire_drops_period_outside_1_to_8() {
         assert!(GridSlot::from_wire(&Slot { s: 0, d: 0, p: 0 }).is_none());
-        assert!(GridSlot::from_wire(&Slot { s: 0, d: 0, p: 7 }).is_none());
+        assert!(GridSlot::from_wire(&Slot { s: 0, d: 0, p: 9 }).is_none());
+        assert!(GridSlot::from_wire(&Slot { s: 0, d: 0, p: 7 }).is_some());
     }
 }

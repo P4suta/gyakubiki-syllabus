@@ -9,4 +9,7 @@ extend-exclude = [
 	"raw-details/**",
 	"web/public/data.json",
 	"web/public/details/**",
+	"web/public/datasets/**",
+	"web/public/manifest.json",
+	"node_modules/**",
 ]

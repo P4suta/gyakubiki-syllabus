@@ -22,7 +22,7 @@ static BR_BLOCK: LazyLock<regex::Regex> =
 static LEADING_INT: LazyLock<regex::Regex> =
     LazyLock::new(|| regex::Regex::new(r"(\d+)").expect("re"));
 
-/// Fields already in `data.json` — skipped so `details/{cd}.json` carries only
+/// Fields already in `data.json` — skipped so the public detail asset carries only
 /// what is unique to the detail page.
 const REDUNDANT_LABELS: &[&str] = &[
     "年度",

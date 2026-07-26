@@ -1,4 +1,4 @@
-import { type Locator, type Page, expect } from '@playwright/test'
+import { expect, type Locator, type Page } from '@playwright/test'
 
 // Shared fixtures/selectors for the E2E suite. The dataset is deterministic
 // (gen-sample, fixed seed): the first courses below are stable regardless of
@@ -20,15 +20,15 @@ export const FIXTURES = {
 export const MOBILE = { width: 390, height: 844 }
 export const DESKTOP = { width: 1360, height: 900 }
 
-/** Dismiss the「ご利用にあたって」disclaimer and wait for it to fully leave. */
+/** Dismiss the first-visit non-blocking notice and wait for it to leave. */
 export async function dismissDisclaimer(page: Page): Promise<void> {
-	await page.getByRole('button', { name: /利用する/ }).click()
-	await expect(page.getByRole('heading', { name: 'ご利用にあたって' })).toBeHidden()
+	await page.getByRole('button', { name: '確認しました' }).click()
+	await expect(page.getByRole('heading', { name: '非公式のシラバス検索ツールです' })).toBeHidden()
 }
 
-/** Load the app, dismiss the disclaimer, and wait until the grid has rendered. */
+/** Load the app, dismiss the notice, and wait until the grid has rendered. */
 export async function enter(page: Page): Promise<void> {
-	await page.goto('/')
+	await page.goto('/', { waitUntil: 'domcontentloaded' })
 	await dismissDisclaimer(page)
 	// The grid is worker-backed and fills asynchronously; wait for real cards.
 	await expect(page.locator(CARD).first()).toBeVisible()
@@ -36,7 +36,8 @@ export async function enter(page: Page): Promise<void> {
 
 /** Pick a semester from the desktop segmented control (exact label). */
 export async function pickSemester(page: Page, label: string): Promise<void> {
-	await page.getByRole('button', { name: label, exact: true }).first().click()
+	const button = page.getByRole('button', { name: label, exact: true }).first()
+	if ((await button.getAttribute('aria-pressed')) !== 'true') await button.click()
 }
 
 /**
@@ -57,7 +58,7 @@ export async function counts(page: Page): Promise<{ shown: number; total: number
 /** Open the modal for the first card matching `name` and wait for its heading. */
 export async function openCourse(page: Page, name: string | RegExp): Promise<void> {
 	await page.getByRole('button', { name }).first().click()
-	await expect(page.getByRole('heading', { level: 2 })).toBeVisible()
+	await expect(page.getByRole('dialog').getByRole('heading', { level: 2, name })).toBeVisible()
 }
 
 /**

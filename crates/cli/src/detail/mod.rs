@@ -9,5 +9,7 @@ mod model;
 mod parse;
 
 pub use enrich::enrich;
-pub use model::{Delivery, Eval, EvalRow, Labelled, OfficeHour, PlanItem, SanshoDetail};
+pub use model::{
+    Delivery, Eval, EvalRow, Labelled, OfficeHour, PlanItem, PublicDetail, SanshoDetail,
+};
 pub use parse::parse_sansho_html;

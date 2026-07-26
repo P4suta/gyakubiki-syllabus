@@ -34,6 +34,9 @@ actionlint = "1.7.12"
 "cargo:cargo-nextest" = "0.9.140"
 # Mutation testing (weekly + PR-diff, advisory). Pinned here for local/CI parity.
 "cargo:cargo-mutants" = "27.1.0"
+"cargo:cargo-audit" = "0.22.2"
+"cargo:cargo-deny" = "0.20.2"
+"cargo:cargo-cyclonedx" = "0.5.9"
 # Conventional-Commits linter for the lefthook commit-msg hook — the local guard
 # that keeps release-please's version + CHANGELOG derivation fed with well-formed
 # commits (committed.toml). cargo backend, binstalled.

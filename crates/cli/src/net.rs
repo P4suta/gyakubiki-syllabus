@@ -20,8 +20,12 @@ pub enum FetchError {
     },
     /// Network/transport error — worth a bounded retry.
     Transient(anyhow::Error),
-    /// The response was reached but is unusable for this item (bad guid, empty
-    /// body). Skip it; not a sign of blocking.
+    /// The official service explicitly confirmed that this item has no detail.
+    /// This is the only failure that may be cached as a temporary unavailable
+    /// state.
+    Unavailable { reason: String },
+    /// The response was reached but violates the expected protocol (bad guid,
+    /// invalid JSON, empty body, changed HTML). The whole crawl must stop.
     Fatal(anyhow::Error),
 }
 
@@ -30,6 +34,7 @@ impl std::fmt::Display for FetchError {
         match self {
             FetchError::Http { status, .. } => write!(f, "HTTP {status}"),
             FetchError::Transient(e) => write!(f, "transient: {e}"),
+            FetchError::Unavailable { reason } => write!(f, "unavailable: {reason}"),
             FetchError::Fatal(e) => write!(f, "fatal: {e}"),
         }
     }
@@ -59,13 +64,6 @@ impl FetchError {
         )
     }
 
-    /// Whether this is an item-specific "no usable response" — the server
-    /// responded but there is nothing usable (bad guid, empty body). Such an item
-    /// can be tombstoned after repeated failures, unlike an HTTP/network error.
-    pub fn is_no_detail(&self) -> bool {
-        matches!(self, FetchError::Fatal(_))
-    }
-
     /// The server-requested wait (`Retry-After`), if any, to honor before retrying.
     pub fn retry_after(&self) -> Option<Duration> {
         match self {
@@ -83,7 +81,10 @@ impl FetchError {
             }
             FetchError::Http { status, .. } => format!("HTTP {status} (empty body)"),
             FetchError::Transient(e) => format!("network/transport error: {e:#}"),
-            FetchError::Fatal(e) => format!("unusable response: {e:#}"),
+            FetchError::Unavailable { reason } => {
+                format!("officially unavailable: {reason}")
+            }
+            FetchError::Fatal(e) => format!("fatal protocol/content error: {e:#}"),
         }
     }
 }
@@ -194,8 +195,7 @@ mod tests {
         };
         assert!(http(429).is_blocking() && http(429).is_retriable());
         assert!(http(503).is_retriable());
-        assert!(!http(404).is_no_detail() && !http(404).is_retriable());
-        assert!(FetchError::Fatal(anyhow::anyhow!("x")).is_no_detail());
+        assert!(!http(404).is_retriable());
         assert!(FetchError::Transient(anyhow::anyhow!("x")).is_retriable());
     }
 }

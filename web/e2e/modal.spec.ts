@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { FIXTURES, enter, openCourse, pickSemester, section } from './helpers'
+import { enter, FIXTURES, openCourse, pickSemester, section } from './helpers'
 
 test.describe('course modal', () => {
 	test.beforeEach(async ({ page }) => {
@@ -9,7 +9,9 @@ test.describe('course modal', () => {
 
 	test('shows the title, metadata chips, and the eval chart', async ({ page }) => {
 		await openCourse(page, FIXTURES.regular)
-		await expect(page.getByRole('heading', { level: 2, name: FIXTURES.regular })).toBeVisible()
+		await expect(
+			page.getByRole('dialog').getByRole('heading', { level: 2, name: FIXTURES.regular }),
+		).toBeVisible()
 		await expect(page.getByText('単位', { exact: false }).first()).toBeVisible()
 		await expect(page.getByText('成績評価')).toBeVisible()
 		// The ratio chart labels its dominant share with a percentage. Scope to the
@@ -38,17 +40,34 @@ test.describe('course modal', () => {
 	test('closes via the × button and via Escape', async ({ page }) => {
 		await openCourse(page, FIXTURES.regular)
 		await page.getByRole('button', { name: '閉じる' }).click()
-		await expect(page.getByRole('heading', { level: 2 })).toBeHidden()
+		await expect(page.getByRole('dialog').getByRole('heading', { level: 2 })).toBeHidden()
 
 		await openCourse(page, FIXTURES.regular)
 		await page.keyboard.press('Escape')
-		await expect(page.getByRole('heading', { level: 2 })).toBeHidden()
+		await expect(page.getByRole('dialog').getByRole('heading', { level: 2 })).toBeHidden()
+	})
+
+	test('opens keyboard-only, traps focus, and restores it after Escape', async ({ page }) => {
+		await page.getByPlaceholder('科目名・教員・キーワードで検索').fill('00001')
+		const card = page.locator('[data-course-card]').first()
+		await expect(card).toBeVisible()
+		await card.focus()
+		await page.keyboard.press('Enter')
+		const dialog = page.getByRole('dialog')
+		await expect(dialog).toBeVisible()
+		expect(await dialog.evaluate((element) => element.contains(document.activeElement))).toBe(true)
+
+		await page.keyboard.press('Escape')
+		await expect(dialog).toBeHidden()
+		await expect(card).toBeFocused()
 	})
 
 	test('renders an HTML-metacharacter course name as text, not markup', async ({ page }) => {
 		// cd 00004 (「理論 & 実践 <入門>」) is a 2学期前半 course.
 		await pickSemester(page, '2学期前半')
 		await openCourse(page, /理論 & 実践/)
-		await expect(page.getByRole('heading', { level: 2 })).toHaveText(FIXTURES.htmlName)
+		await expect(page.getByRole('dialog').getByRole('heading', { level: 2 })).toHaveText(
+			FIXTURES.htmlName,
+		)
 	})
 })

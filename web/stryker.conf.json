@@ -1,6 +1,6 @@
 {
   "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
-  "_comment": "Mutation testing for the pure lib/ modules — measures whether the unit/property tests actually kill injected bugs. Runs weekly (non-blocking), like fuzz. See docs/testing.md.",
+  "_comment": "Mutation testing for the pure lib/ modules — measures whether the unit/property tests actually kill injected bugs. Weekly runs are advisory; full runs gate release-please PRs. See docs/testing.md.",
   "packageManager": "npm",
   "testRunner": "vitest",
   "reporters": ["progress", "clear-text", "html"],

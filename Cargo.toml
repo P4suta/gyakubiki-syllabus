@@ -6,10 +6,20 @@ members = ["crates/core", "crates/wasm", "crates/cli"]
 exclude = ["crates/cli/fuzz"]
 
 [workspace.package]
+version = "0.1.0"
 edition = "2024"
 license = "AGPL-3.0-or-later"
 repository = "https://github.com/P4suta/gyakubiki-syllabus"
 
 [profile.release]
-opt-level = "s"  # WASM: favour small binary over raw speed (speed is not a goal here)
+opt-level = 3
 lto = true
+codegen-units = 1
+panic = "abort"
+strip = "symbols"
+
+[profile.release.package.syllabus-wasm]
+opt-level = "z"
+
+[profile.release.package.syllabus-cli]
+opt-level = 3

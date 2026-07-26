@@ -27,8 +27,7 @@ on:
         default: '3000'
 
 permissions:
-  contents: write
-  actions: write
+  contents: read
 
 concurrency:
   group: fetch-details
@@ -39,11 +38,33 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - name: Require and mint data bot token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ secrets.DATA_BOT_CLIENT_ID }}
+          private-key: ${{ secrets.DATA_BOT_PRIVATE_KEY }}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+      - uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1
+
+      - name: Check out update branch
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          UPDATE_BRANCH: data-refresh/details
+        run: |
+          if git ls-remote --exit-code origin "refs/heads/$UPDATE_BRANCH" >/dev/null 2>&1; then
+            git fetch origin "$UPDATE_BRANCH"
+            git switch -C "$UPDATE_BRANCH" FETCH_HEAD
+          else
+            gh api "repos/$GITHUB_REPOSITORY/git/refs" \
+              -f ref="refs/heads/$UPDATE_BRANCH" -f sha="$GITHUB_SHA"
+            git switch -c "$UPDATE_BRANCH"
+          fi
 
       - name: Build syllabus-cli
-        run: cargo build --release -p syllabus-cli
+        run: cargo build --locked --release -p syllabus-cli
 
       - name: Fetch details
         env:
@@ -67,27 +88,35 @@ jobs:
         # always(): on a failure/abort the CLI writes diagnostics/ with the failed
         # responses — grab it so the run can be root-caused without a re-run.
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: fetch-details-diagnostics
           path: diagnostics/
           if-no-files-found: ignore
           retention-days: 30
 
-      - name: Commit progress
-        # always(): land what was fetched even if the crawl aborted or timed out.
-        # Signed commit straight to main via the GitHub API (main no longer requires
-        # status checks, so a direct data commit is allowed).
+      - name: Commit progress to update branch
+        # Partial crawl output is working-cache state on a dedicated branch. It
+        # can only reach main through the normal required PR gate.
         if: always()
         id: commit
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          GITHUB_REF_NAME: data-refresh/details
         run: |
           ./target/release/syllabus-cli commit --path raw-details \
             --message "chore(raw-details): syllabus detail crawl ($(date -u +%Y-%m-%d))"
 
-      - name: Trigger deploy
+      - name: Open or update data pull request
         if: steps.commit.outputs.changed == 'true'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh workflow run deploy.yml --ref main
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          UPDATE_BRANCH: data-refresh/details
+        run: |
+          if gh pr view "$UPDATE_BRANCH" --json number >/dev/null 2>&1; then
+            gh pr edit "$UPDATE_BRANCH" --title "chore(raw-details): refresh syllabus details"
+          else
+            gh pr create --base main --head "$UPDATE_BRANCH" \
+              --title "chore(raw-details): refresh syllabus details" \
+              --body "Automated incremental detail crawl. Merge only after the required release gate validates complete detail coverage and the production artifact."
+          fi

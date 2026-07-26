@@ -194,11 +194,16 @@ describe('linkifyText', () => {
 			'「なぜ食べるのか」を問う。',
 		]
 		for (const s of samples) {
-			expect(linkifyText(s).every((p) => !p.href), s).toBe(true)
+			expect(
+				linkifyText(s).every((p) => !p.href),
+				s,
+			).toBe(true)
 		}
 	})
 	it('linkifies a URL and stops before trailing Japanese punctuation', () => {
-		const parts = linkifyText('詳細は https://www.ipa.go.jp/security/vuln/websecurity.html を参照。')
+		const parts = linkifyText(
+			'詳細は https://www.ipa.go.jp/security/vuln/websecurity.html を参照。',
+		)
 		const url = parts.find((p) => p.kind === 'url')
 		expect(url?.href).toBe('https://www.ipa.go.jp/security/vuln/websecurity.html')
 		// The trailing「。」is not swallowed into the link.

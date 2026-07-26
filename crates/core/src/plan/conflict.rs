@@ -52,7 +52,7 @@ mod tests {
                 .map(|(i, t)| (CourseIndex::new(i), t.as_slice())),
             None,
             None,
-            false,
+            5,
         )
     }
 

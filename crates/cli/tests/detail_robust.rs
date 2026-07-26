@@ -5,7 +5,7 @@
 //! minimal `<table>` exercises each branch) plus a fuzz-lite property test.
 
 use proptest::prelude::*;
-use syllabus_cli::detail::parse_sansho_html;
+use syllabus_cli::test_support::parse_sansho_html;
 
 #[test]
 fn malformed_html_never_panics_and_extracts_what_it_can() {
@@ -83,7 +83,7 @@ fn round_trips_through_json() {
                 <table class='tbl_status_jugyo'><tr><td>第1回</td><td>導入</td></tr></table>";
     let d = parse_sansho_html("77", html);
     let json = serde_json::to_string(&d).unwrap();
-    let back: syllabus_cli::detail::SanshoDetail = serde_json::from_str(&json).unwrap();
+    let back: syllabus_cli::test_support::SanshoDetail = serde_json::from_str(&json).unwrap();
     assert_eq!(d, back);
 }
 

@@ -3,28 +3,30 @@
 //! Downloads every findPage page from KULAS, validates the pagination, and
 //! writes each page's raw JSON to `raw/` verbatim (no re-serialization). The
 //! HTTP layer is behind [`PageFetcher`] so the orchestration is unit-testable
-//! offline; the live client lives in [`client`].
+//! offline; the live client lives in the private `client` module.
 
 mod client;
 pub(crate) mod token;
 
 pub(crate) use client::{USER_AGENT, browser_entry_context, build_http_client};
 
+use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use anyhow::{Context, Result, anyhow, bail};
-use chrono::Datelike;
+use anyhow::{Context, Result, anyhow, bail, ensure};
+use chrono::{DateTime, Datelike, FixedOffset, Utc};
 use clap::Args;
-use serde::Deserialize;
+use syllabus_core::CourseCode;
 
+use crate::io;
 use crate::net::{FetchError, Politeness, backoff};
 use client::Client;
 
 const TOKEN_ENV: &str = "KULAS_API_TOKEN";
 
-/// Abstracts the HTTP layer so [`fetch_all`] can run against a fake in tests.
+/// Abstracts the HTTP layer so the fetch orchestration can run against a fake in tests.
 /// Returns a classified [`FetchError`] so the orchestration can back off on
 /// 429/5xx instead of bailing on the first hiccup (symmetric with the detail
 /// crawler).
@@ -82,6 +84,7 @@ pub fn run(args: FetchArgs) -> Result<()> {
     let result = fetch_all(
         &Options {
             out_dir: args.out_dir,
+            expected_year: kaiko_nendo,
             min_total: args.min_total,
             dry_run: args.dry_run,
             politeness: Politeness::from_ms(args.sleep_ms, args.jitter_ms),
@@ -95,34 +98,13 @@ pub fn run(args: FetchArgs) -> Result<()> {
 
 struct Options {
     out_dir: PathBuf,
+    expected_year: String,
     min_total: i32,
     dry_run: bool,
     /// Sleep between pages (jittered), so the burst never looks like an attack.
     politeness: Politeness,
     /// Bounded per-page retries on a retriable error.
     retries: u32,
-}
-
-/// Per-page metadata; only used for validation — the bytes written are the raw
-/// response, never a re-serialization of this.
-#[derive(Deserialize)]
-struct PageMeta {
-    #[serde(rename = "pageNo", default)]
-    page_no: i32,
-    #[serde(rename = "maxPageNo", default)]
-    max_page_no: i32,
-    #[serde(default)]
-    total: i32,
-    #[serde(rename = "pageSize", default)]
-    page_size: i32,
-    #[serde(rename = "selectKogiDtoList", default)]
-    select_kogi_dto_list: Vec<serde_json::Value>,
-}
-
-impl PageMeta {
-    fn list_len(&self) -> i32 {
-        self.select_kogi_dto_list.len() as i32
-    }
 }
 
 /// One page in the final report.
@@ -212,8 +194,7 @@ fn fetch_all(opts: &Options, fetcher: &impl PageFetcher) -> Result<FetchResult> 
         );
         return Ok(FetchResult::report_only(&fetched));
     }
-    let writes = write_pages(&opts.out_dir, &fetched)?;
-    let cleaned = cleanup_stale_pages(&opts.out_dir, fetched.max_page_no)?;
+    let (writes, cleaned) = write_pages_atomically(&opts.out_dir, &fetched)?;
     Ok(FetchResult::written(&fetched, &writes, cleaned))
 }
 
@@ -221,10 +202,8 @@ fn fetch_all(opts: &Options, fetcher: &impl PageFetcher) -> Result<FetchResult> 
 /// Touches no filesystem, so it is unit-testable with a fake fetcher.
 fn fetch_and_validate(opts: &Options, fetcher: &impl PageFetcher) -> Result<FetchedPages> {
     let first_bytes = fetch_page_resilient(fetcher, 1, opts)?;
-    let first = parse_meta(&first_bytes).context("cannot parse page 1 response as JSON")?;
-    if first.max_page_no < 1 {
-        bail!("page 1 has an invalid maxPageNo (= {})", first.max_page_no);
-    }
+    let first = io::parse_page(&first_bytes).context("cannot parse page 1 response as JSON")?;
+    validate_first_page(&first, opts)?;
     if first.total < opts.min_total {
         bail!(
             "page 1 total is below the threshold ({} < {}) — the API may be unhealthy",
@@ -233,24 +212,40 @@ fn fetch_and_validate(opts: &Options, fetcher: &impl PageFetcher) -> Result<Fetc
         );
     }
 
+    let mut seen_codes = HashSet::with_capacity(first.total as usize);
+    validate_courses(&first, &opts.expected_year, &mut seen_codes)?;
+    let first_list_len = first.courses.len() as i32;
     let mut pages = vec![RawPage {
         page_no: 1,
-        list_len: first.list_len(),
+        list_len: first_list_len,
         bytes: first_bytes,
     }];
     for page_no in 2..=first.max_page_no {
         opts.politeness.wait(); // stay polite between pages
         eprintln!("fetching page {page_no} of {}", first.max_page_no);
         let bytes = fetch_page_resilient(fetcher, page_no, opts)?;
-        let meta = parse_meta(&bytes)
+        let page = io::parse_page(&bytes)
             .with_context(|| format!("cannot parse page {page_no} response as JSON"))?;
-        validate_page(&meta, page_no, first.max_page_no)?;
+        validate_page(&page, page_no, &first)?;
+        validate_courses(&page, &opts.expected_year, &mut seen_codes)?;
         pages.push(RawPage {
             page_no,
-            list_len: meta.list_len(),
+            list_len: page.courses.len() as i32,
             bytes,
         });
     }
+    let fetched_total: i32 = pages.iter().map(|page| page.list_len).sum();
+    ensure!(
+        fetched_total == first.total,
+        "sum of page item counts ({fetched_total}) does not equal total ({})",
+        first.total
+    );
+    ensure!(
+        seen_codes.len() == first.total as usize,
+        "unique course count ({}) does not equal total ({})",
+        seen_codes.len(),
+        first.total
+    );
 
     Ok(FetchedPages {
         total: first.total,
@@ -299,53 +294,203 @@ fn fetch_page_resilient(
 /// Validate one non-first page's metadata against what was requested: the page
 /// number echoes back, `maxPageNo` is stable, and every page before the last is
 /// full (`listLen == pageSize`).
-fn validate_page(meta: &PageMeta, expected_page: i32, first_max: i32) -> Result<()> {
-    if meta.page_no != expected_page {
+fn validate_first_page(page: &io::PageEnvelope, opts: &Options) -> Result<()> {
+    ensure!(
+        page.page_no == 1,
+        "requested page 1 but got pageNo={}",
+        page.page_no
+    );
+    ensure!(
+        page.max_page_no >= 1,
+        "page 1 has invalid maxPageNo={}",
+        page.max_page_no
+    );
+    ensure!(
+        page.page_size > 0,
+        "page 1 has invalid pageSize={}",
+        page.page_size
+    );
+    ensure!(page.total >= 0, "page 1 has invalid total={}", page.total);
+    ensure!(
+        page.courses.len() <= page.page_size as usize,
+        "page 1 item count exceeds pageSize"
+    );
+    let expected_max = if page.total == 0 {
+        1
+    } else {
+        (page.total + page.page_size - 1) / page.page_size
+    };
+    ensure!(
+        page.max_page_no == expected_max,
+        "maxPageNo={} is inconsistent with total={} and pageSize={}",
+        page.max_page_no,
+        page.total,
+        page.page_size
+    );
+    validate_page_length(page, 1, page.max_page_no, page.total, page.page_size)?;
+    ensure!(
+        opts.expected_year.len() == 4
+            && opts
+                .expected_year
+                .chars()
+                .all(|value| value.is_ascii_digit()),
+        "requested academic year is invalid"
+    );
+    Ok(())
+}
+
+fn validate_page(
+    page: &io::PageEnvelope,
+    expected_page: i32,
+    first: &io::PageEnvelope,
+) -> Result<()> {
+    if page.page_no != expected_page {
         bail!(
             "requested page {expected_page} but got pageNo={}",
-            meta.page_no
+            page.page_no
         );
     }
-    if meta.max_page_no != first_max {
+    if page.max_page_no != first.max_page_no {
         bail!(
             "maxPageNo changed on page {expected_page} ({} → {})",
-            first_max,
-            meta.max_page_no
+            first.max_page_no,
+            page.max_page_no
         );
     }
-    let list_len = meta.list_len();
-    if expected_page < first_max && list_len != meta.page_size {
-        bail!(
-            "middle page {expected_page} is short (listLen={list_len}, pageSize={})",
-            meta.page_size
+    ensure!(
+        page.page_size == first.page_size,
+        "pageSize changed on page {expected_page} ({} → {})",
+        first.page_size,
+        page.page_size
+    );
+    ensure!(
+        page.total == first.total,
+        "total changed on page {expected_page} ({} → {})",
+        first.total,
+        page.total
+    );
+    validate_page_length(
+        page,
+        expected_page,
+        first.max_page_no,
+        first.total,
+        first.page_size,
+    )
+}
+
+fn validate_page_length(
+    page: &io::PageEnvelope,
+    page_no: i32,
+    max_page_no: i32,
+    total: i32,
+    page_size: i32,
+) -> Result<()> {
+    let expected = if page_no < max_page_no {
+        page_size
+    } else {
+        total - page_size * (max_page_no - 1)
+    };
+    ensure!(
+        page.courses.len() as i32 == expected,
+        "page {page_no} has {} items; expected {expected}",
+        page.courses.len()
+    );
+    Ok(())
+}
+
+fn validate_courses(
+    page: &io::PageEnvelope,
+    expected_year: &str,
+    seen_codes: &mut HashSet<String>,
+) -> Result<()> {
+    for (position, course) in page.courses.iter().enumerate() {
+        let code = CourseCode::parse(&course.kogi_cd).with_context(|| {
+            format!(
+                "page {} item {} has an invalid course code",
+                page.page_no,
+                position + 1
+            )
+        })?;
+        ensure!(
+            seen_codes.insert(code.as_str().to_owned()),
+            "duplicate course code {:?} across fetched pages",
+            code.as_str()
+        );
+        let year = course.kaiko_nendo.as_deref().unwrap_or("").trim();
+        ensure!(
+            year == expected_year,
+            "course {:?} belongs to academic year {:?}, expected {:?}",
+            code.as_str(),
+            year,
+            expected_year
         );
     }
     Ok(())
 }
 
-/// Write each validated page to `out_dir` verbatim, reporting which differed
-/// from what was already on disk.
-fn write_pages(out_dir: &Path, fetched: &FetchedPages) -> Result<Vec<PageWrite>> {
-    fs::create_dir_all(out_dir)
-        .with_context(|| format!("failed to create output directory {}", out_dir.display()))?;
-    fetched
-        .pages
-        .iter()
-        .map(|p| {
-            let path = out_dir.join(raw_file_name(p.page_no));
-            let changed = file_changed(&path, &p.bytes);
-            fs::write(&path, &p.bytes)
-                .with_context(|| format!("failed to write file {}", path.display()))?;
-            Ok(PageWrite {
-                page_no: p.page_no,
-                changed,
-            })
-        })
-        .collect()
-}
+/// Write every validated page to a sibling staging directory, then swap the
+/// complete directory into place. A write/promote failure restores the previous
+/// directory, so readers can observe an old or new crawl but never a mixture.
+fn write_pages_atomically(
+    out_dir: &Path,
+    fetched: &FetchedPages,
+) -> Result<(Vec<PageWrite>, Vec<String>)> {
+    let parent = out_dir.parent().unwrap_or_else(|| Path::new("."));
+    fs::create_dir_all(parent)?;
+    let name = out_dir
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("raw");
+    let stage = parent.join(format!(".{name}.stage-{}", std::process::id()));
+    let backup = parent.join(format!(".{name}.backup-{}", std::process::id()));
+    ensure!(!stage.exists(), "fetch staging directory already exists");
+    ensure!(!backup.exists(), "fetch backup directory already exists");
+    fs::create_dir(&stage)?;
 
-fn parse_meta(bytes: &[u8]) -> Result<PageMeta> {
-    serde_json::from_slice(bytes).map_err(anyhow::Error::from)
+    let result = (|| -> Result<(Vec<PageWrite>, Vec<String>)> {
+        let writes = fetched
+            .pages
+            .iter()
+            .map(|page| {
+                let file_name = raw_file_name(page.page_no);
+                let changed = file_changed(&out_dir.join(&file_name), &page.bytes);
+                fs::write(stage.join(&file_name), &page.bytes)
+                    .with_context(|| format!("failed to stage {file_name}"))?;
+                Ok(PageWrite {
+                    page_no: page.page_no,
+                    changed,
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
+        if std::env::var("SYLLABUS_FETCH_FAIL_AT").ok().as_deref() == Some("stage") {
+            bail!("injected fetch failure after staging");
+        }
+        let cleaned = stale_page_names(out_dir, fetched.max_page_no)?;
+        let had_previous = out_dir.exists();
+        if had_previous {
+            fs::rename(out_dir, &backup).context("failed to move previous raw directory aside")?;
+        }
+        if let Err(error) = fs::rename(&stage, out_dir) {
+            if had_previous {
+                let _ = fs::rename(&backup, out_dir);
+            }
+            return Err(error).context("failed to promote complete raw directory");
+        }
+        if backup.exists()
+            && let Err(error) = fs::remove_dir_all(&backup)
+        {
+            eprintln!(
+                "warning: promoted raw data but could not remove backup {}: {error}",
+                backup.display()
+            );
+        }
+        Ok((writes, cleaned))
+    })();
+
+    if stage.exists() {
+        let _ = fs::remove_dir_all(&stage);
+    }
+    result
 }
 
 /// On-disk file name for a page: page 1 is unsuffixed; pages 2+ get a
@@ -365,9 +510,11 @@ fn file_changed(path: &Path, new_content: &[u8]) -> bool {
     }
 }
 
-/// Remove `講義データ-NN.json` files whose page number exceeds `max_page_no`
-/// (left over from a longer previous run).
-fn cleanup_stale_pages(out_dir: &Path, max_page_no: i32) -> Result<Vec<String>> {
+/// Report page files that the directory swap will remove.
+fn stale_page_names(out_dir: &Path, max_page_no: i32) -> Result<Vec<String>> {
+    if !out_dir.exists() {
+        return Ok(Vec::new());
+    }
     let pattern = regex::Regex::new(r"^講義データ-(\d{2})\.json$").expect("valid regex");
     let mut cleaned = Vec::new();
     for entry in fs::read_dir(out_dir).context("failed to read output directory")? {
@@ -381,7 +528,6 @@ fn cleanup_stale_pages(out_dir: &Path, max_page_no: i32) -> Result<Vec<String>> 
         };
         let page_no: i32 = caps[1].parse().unwrap_or(0);
         if page_no > max_page_no {
-            fs::remove_file(entry.path())?;
             cleaned.push(name);
         }
     }
@@ -389,10 +535,14 @@ fn cleanup_stale_pages(out_dir: &Path, max_page_no: i32) -> Result<Vec<String>> 
     Ok(cleaned)
 }
 
-/// Academic year for now (UTC): Japan's year starts in April, so Jan–Mar belongs
-/// to the previous year.
+/// Academic year for now in Asia/Tokyo. Japan's academic year starts in April,
+/// so Jan–Mar belongs to the previous calendar year.
 fn current_kaiko_nendo() -> i32 {
-    let now = chrono::Utc::now();
+    let jst = FixedOffset::east_opt(9 * 60 * 60).expect("valid JST offset");
+    academic_year_at(Utc::now().with_timezone(&jst))
+}
+
+fn academic_year_at(now: DateTime<FixedOffset>) -> i32 {
     if now.month() < 4 {
         now.year() - 1
     } else {
@@ -489,7 +639,13 @@ mod tests {
     /// A realistic-shaped findPage response with `list_len` courses.
     fn page(page_no: i32, max_page_no: i32, total: i32, list_len: i32) -> Vec<u8> {
         let courses: Vec<serde_json::Value> = (0..list_len)
-            .map(|i| serde_json::json!({"kogiCd": format!("{:05}", page_no * 1000 + i), "kogiNm": "テスト講義"}))
+            .map(|i| {
+                serde_json::json!({
+                    "kogiCd": format!("{:05}", page_no * 1000 + i),
+                    "kogiNm": "テスト講義",
+                    "kaikoNendo": "2026"
+                })
+            })
             .collect();
         serde_json::to_vec(&serde_json::json!({
             "pageNo": page_no,
@@ -510,6 +666,7 @@ mod tests {
     fn opts(dir: &Path, dry_run: bool) -> Options {
         Options {
             out_dir: dir.to_path_buf(),
+            expected_year: "2026".to_owned(),
             min_total: 100,
             dry_run,
             politeness: Politeness::from_ms(0, 0), // never sleep in tests
@@ -599,40 +756,77 @@ mod tests {
         assert_eq!(raw_file_name(10), "講義データ-10.json");
     }
 
-    /// A `PageMeta` with `list_len` placeholder courses, for `validate_page`.
-    fn meta(page_no: i32, max_page_no: i32, page_size: i32, list_len: i32) -> PageMeta {
-        PageMeta {
+    /// A typed page with `list_len` placeholder courses, for validation tests.
+    fn meta(
+        page_no: i32,
+        max_page_no: i32,
+        total: i32,
+        page_size: i32,
+        list_len: i32,
+    ) -> io::PageEnvelope {
+        io::PageEnvelope {
             page_no,
             max_page_no,
-            total: 0,
+            total,
             page_size,
-            select_kogi_dto_list: vec![serde_json::Value::Null; list_len as usize],
+            courses: (0..list_len)
+                .map(|index| syllabus_core::RawCourse {
+                    kogi_cd: format!("T{page_no}-{index}"),
+                    kaiko_nendo: Some("2026".into()),
+                    ..Default::default()
+                })
+                .collect(),
         }
     }
 
     #[test]
     fn validate_page_accepts_a_full_middle_page() {
-        assert!(validate_page(&meta(2, 3, 500, 500), 2, 3).is_ok());
+        let first = meta(1, 3, 1200, 500, 500);
+        assert!(validate_page(&meta(2, 3, 1200, 500, 500), 2, &first).is_ok());
     }
 
     #[test]
     fn validate_page_accepts_a_short_last_page() {
-        // The final page may be partial.
-        assert!(validate_page(&meta(3, 3, 500, 200), 3, 3).is_ok());
+        let first = meta(1, 3, 1200, 500, 500);
+        assert!(validate_page(&meta(3, 3, 1200, 500, 200), 3, &first).is_ok());
     }
 
     #[test]
     fn validate_page_rejects_wrong_page_no() {
-        assert!(validate_page(&meta(9, 3, 500, 500), 2, 3).is_err());
+        let first = meta(1, 3, 1200, 500, 500);
+        assert!(validate_page(&meta(9, 3, 1200, 500, 500), 2, &first).is_err());
     }
 
     #[test]
     fn validate_page_rejects_changed_max_page_no() {
-        assert!(validate_page(&meta(2, 5, 500, 500), 2, 3).is_err());
+        let first = meta(1, 3, 1200, 500, 500);
+        assert!(validate_page(&meta(2, 5, 1200, 500, 500), 2, &first).is_err());
     }
 
     #[test]
     fn validate_page_rejects_short_middle_page() {
-        assert!(validate_page(&meta(2, 3, 500, 300), 2, 3).is_err());
+        let first = meta(1, 3, 1200, 500, 500);
+        assert!(validate_page(&meta(2, 3, 1200, 500, 300), 2, &first).is_err());
+    }
+
+    #[test]
+    fn validate_page_rejects_changed_total_and_page_size() {
+        let first = meta(1, 3, 1200, 500, 500);
+        assert!(validate_page(&meta(2, 3, 1199, 500, 500), 2, &first).is_err());
+        assert!(validate_page(&meta(2, 3, 1200, 400, 400), 2, &first).is_err());
+    }
+
+    #[test]
+    fn academic_year_switches_at_april_first_in_tokyo() {
+        use chrono::TimeZone;
+        let jst = chrono::FixedOffset::east_opt(9 * 60 * 60).unwrap();
+        assert_eq!(
+            academic_year_at(jst.with_ymd_and_hms(2026, 3, 31, 23, 59, 59).unwrap()),
+            2025
+        );
+        assert_eq!(
+            academic_year_at(jst.with_ymd_and_hms(2026, 4, 1, 0, 0, 0).unwrap()),
+            2026
+        );
     }
 }

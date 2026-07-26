@@ -9,7 +9,7 @@ use super::classify::{delivery_mode, eval_type};
 use super::model::{PrepInfo, SanshoDetail, TextbookInfo, TextbookSection};
 
 /// Annotate a `SanshoDetail` in place with derived fields, before it is written
-/// to `web/public/details/{cd}.json`. Applied per course during `convert`.
+/// to a manifest-addressed public detail asset. Applied per course during `convert`.
 pub fn enrich(detail: &mut SanshoDetail) {
     // Normalise the display text first so the derived views inherit the folding.
     purify_in_place(detail);
