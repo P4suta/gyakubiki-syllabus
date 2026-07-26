@@ -6,7 +6,7 @@ import type { GridKey } from '../lib/engine'
 import { haptic, type SwipeDir, swipeNavigate } from '../lib/gestures'
 import { PERIOD_TIMES } from '../lib/schedule'
 import type { Course } from '../types/course'
-import CourseCard from './CourseCard.svelte'
+import ProgressiveCourseList from './ProgressiveCourseList.svelte'
 import TimetableCell from './TimetableCell.svelte'
 
 interface Props {
@@ -214,9 +214,13 @@ let headerH = $state(0)
 							</span>
 						{/if}
 					</div>
-					{#each courses as course (course.cd)}
-						<CourseCard {course} onclick={() => onselect(course)} />
-					{/each}
+					<ProgressiveCourseList
+						{courses}
+						{onselect}
+						initialSize={3}
+						pageSize={24}
+						label="{days[activeDay]}曜{period}限の科目"
+					/>
 				</div>
 			{/if}
 		{/each}
@@ -226,9 +230,13 @@ let headerH = $state(0)
 					集中講義・時間未定
 				</h2>
 				<p class="text-caption text-apple-text-secondary mb-3">{unscheduled.length}件</p>
-				{#each unscheduled as course (course.cd)}
-					<CourseCard {course} onclick={() => onselect(course)} />
-				{/each}
+				<ProgressiveCourseList
+					courses={unscheduled}
+					{onselect}
+					initialSize={8}
+					pageSize={48}
+					label="集中講義・時間未定"
+				/>
 			</section>
 		{/if}
 	</div>
@@ -291,11 +299,14 @@ let headerH = $state(0)
 				</h2>
 				<span class="text-caption text-apple-text-secondary">{unscheduled.length}件</span>
 			</div>
-			<div class="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2">
-				{#each unscheduled as course (course.cd)}
-					<CourseCard {course} onclick={() => onselect(course)} />
-				{/each}
-			</div>
+			<ProgressiveCourseList
+				courses={unscheduled}
+				{onselect}
+				initialSize={24}
+				pageSize={96}
+				className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2"
+				label="集中講義・時間未定"
+			/>
 		</section>
 	{/if}
 </div>
