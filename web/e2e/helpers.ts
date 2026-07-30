@@ -11,6 +11,7 @@ export const CARD = '[data-course-card]'
 export const FIXTURES = {
 	/** cd 00001 — 微分積分学Ⅰ, 1学期 月1限, has a full detail. */
 	regular: /微分積分学/,
+	regularCode: '00001',
 	/** cd 00010 — 心理学概論, 通年 (shows under every semester), NO detail file. */
 	noDetail: /心理学概論/,
 	/** cd 00004 — name with HTML metacharacters, must render escaped. */
@@ -56,8 +57,15 @@ export async function counts(page: Page): Promise<{ shown: number; total: number
 }
 
 /** Open the modal for the first card matching `name` and wait for its stable rendered state. */
-export async function openCourse(page: Page, name: string | RegExp): Promise<void> {
-	await page.getByRole('button', { name }).first().click()
+export async function openCourse(
+	page: Page,
+	name: string | RegExp,
+	courseCode?: string,
+): Promise<void> {
+	const card = courseCode
+		? page.locator(`${CARD}[data-course-code="${courseCode}"]`)
+		: page.getByRole('button', { name })
+	await card.first().click()
 	const dialog = page.getByRole('dialog')
 	await expect(dialog.getByRole('heading', { level: 2, name })).toBeVisible()
 	// The desktop sheet fades from opacity 0 to 1. Waiting only for visibility can
