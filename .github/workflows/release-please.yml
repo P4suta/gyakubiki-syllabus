@@ -13,7 +13,33 @@ permissions:
   contents: read
 
 jobs:
+  release-policy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      enabled: ${{ steps.policy.outputs.enabled }}
+    env:
+      AUTOMATION_ENABLED: ${{ vars.RELEASE_AUTOMATION_ENABLED }}
+      HAS_APP: ${{ secrets.RELEASE_PLEASE_CLIENT_ID != '' && secrets.RELEASE_PLEASE_PRIVATE_KEY != '' }}
+    steps:
+      - name: Validate release automation policy
+        id: policy
+        shell: bash
+        run: |
+          if [[ "$AUTOMATION_ENABLED" != "true" ]]; then
+            echo "::notice::Release automation is disabled. Set RELEASE_AUTOMATION_ENABLED=true only after the release GitHub App credentials are configured."
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [[ "$HAS_APP" != "true" ]]; then
+            echo "::error::RELEASE_PLEASE_CLIENT_ID and RELEASE_PLEASE_PRIVATE_KEY are required"
+            exit 1
+          fi
+          echo "enabled=true" >> "$GITHUB_OUTPUT"
+
   release-please:
+    needs: release-policy
+    if: needs.release-policy.outputs.enabled == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment: release-please
@@ -21,30 +47,15 @@ jobs:
       actions: write
       contents: write
       pull-requests: write
-    env:
-      AUTOMATION_ENABLED: ${{ vars.RELEASE_AUTOMATION_ENABLED }}
-      HAS_APP: ${{ secrets.RELEASE_PLEASE_CLIENT_ID != '' && secrets.RELEASE_PLEASE_PRIVATE_KEY != '' }}
     steps:
-      - name: Report disabled automation
-        if: env.AUTOMATION_ENABLED != 'true'
-        run: >-
-          echo "::notice::Release automation is disabled. Set RELEASE_AUTOMATION_ENABLED=true
-          only after the release GitHub App credentials are configured."
-      - name: Validate enabled automation
-        if: env.AUTOMATION_ENABLED == 'true' && env.HAS_APP != 'true'
-        run: |
-          echo "::error::RELEASE_PLEASE_CLIENT_ID and RELEASE_PLEASE_PRIVATE_KEY are required"
-          exit 1
       - name: Mint GitHub App token
         id: app-token
-        if: env.AUTOMATION_ENABLED == 'true' && env.HAS_APP == 'true'
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
           client-id: ${{ secrets.RELEASE_PLEASE_CLIENT_ID }}
           private-key: ${{ secrets.RELEASE_PLEASE_PRIVATE_KEY }}
       - name: Update release pull request
         id: release
-        if: env.AUTOMATION_ENABLED == 'true' && env.HAS_APP == 'true'
         uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
         with:
           token: ${{ steps.app-token.outputs.token }}

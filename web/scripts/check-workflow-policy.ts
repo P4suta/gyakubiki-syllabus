@@ -22,6 +22,9 @@ const release = read('release-please.yml')
 requireText(syllabus, 'vars.DATA_AUTOMATION_ENABLED', 'syllabus automation switch')
 requireText(details, 'vars.DATA_AUTOMATION_ENABLED', 'details automation switch')
 requireText(release, 'vars.RELEASE_AUTOMATION_ENABLED', 'release automation switch')
+requireText(release, 'release-policy:', 'release automation preflight')
+requireText(release, "needs.release-policy.outputs.enabled == 'true'", 'release approval guard')
+requireText(release, 'environment: release-please', 'release approval environment')
 for (const step of ['steps.app-token.outcome', 'steps.checkout.outcome', 'steps.build.outcome']) {
 	requireText(details, step, 'detail post-processing guard')
 }

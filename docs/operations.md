@@ -33,7 +33,7 @@ Create and install a dedicated GitHub App with access only to this repository:
 - Pull requests: read and write
 - Metadata: read (implicit)
 
-Configure these Actions secrets:
+Configure these repository-level Actions secrets:
 
 - `DATA_BOT_CLIENT_ID`: GitHub App client ID
 - `DATA_BOT_PRIVATE_KEY`: complete PEM private key
@@ -56,7 +56,7 @@ Create and install a separate GitHub App with access only to this repository:
 - Pull requests: read and write
 - Metadata: read (implicit)
 
-Configure these Actions secrets:
+Configure these repository-level Actions secrets so the approval-free policy job can fail closed before the release environment is entered:
 
 - `RELEASE_PLEASE_CLIENT_ID`: GitHub App client ID
 - `RELEASE_PLEASE_PRIVATE_KEY`: complete PEM private key
