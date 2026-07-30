@@ -23,8 +23,19 @@ use windows_sys::Win32::Storage::FileSystem::{
     MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH, MoveFileExW,
 };
 
+#[cfg(any(windows, test))]
+const fn combine_move_file_flags(replace_existing: u32, write_through: u32) -> u32 {
+    replace_existing | write_through
+}
+
+#[cfg(any(windows, test))]
+const fn move_file_ex_failed(result: i32) -> bool {
+    result == 0
+}
+
 #[cfg(windows)]
-const ATOMIC_REPLACE_FLAGS: u32 = MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH;
+const ATOMIC_REPLACE_FLAGS: u32 =
+    combine_move_file_flags(MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH);
 const BROTLI_BUFFER_BYTES: usize = 32 * 1024;
 const MAX_DECODED_INDEX_BYTES: usize = 128 * 1024 * 1024;
 const MAX_COMPRESSED_INDEX_BYTES: usize = 32 * 1024 * 1024;
@@ -335,7 +346,7 @@ fn replace_file_atomic(source: &Path, destination: &Path) -> std::io::Result<()>
         // MoveFileExW with REPLACE_EXISTING is Windows' atomic same-volume replace.
         let result =
             unsafe { MoveFileExW(source.as_ptr(), destination.as_ptr(), ATOMIC_REPLACE_FLAGS) };
-        if result == 0 {
+        if move_file_ex_failed(result) {
             Err(std::io::Error::last_os_error())
         } else {
             Ok(())
@@ -890,6 +901,13 @@ mod tests {
         .unwrap();
         assert_eq!(detail_index.keys().collect::<Vec<_>>(), vec!["A0001"]);
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn move_file_helpers_preserve_overlapping_flags_and_bool_semantics() {
+        assert_eq!(combine_move_file_flags(0b0011, 0b0101), 0b0111);
+        assert!(move_file_ex_failed(0));
+        assert!(!move_file_ex_failed(1));
     }
 
     #[test]

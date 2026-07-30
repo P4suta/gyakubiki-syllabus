@@ -331,6 +331,120 @@ mod tests {
     use super::*;
 
     #[test]
+    fn every_public_field_independently_counts_as_content() {
+        let cases = [
+            SanshoDetail {
+                unit: Some("1".into()),
+                ..Default::default()
+            },
+            SanshoDetail {
+                delivery: Some(Delivery::default()),
+                ..Default::default()
+            },
+            SanshoDetail {
+                eval: Some(Eval::default()),
+                ..Default::default()
+            },
+            SanshoDetail {
+                summary: Some("summary".into()),
+                ..Default::default()
+            },
+            SanshoDetail {
+                aims: Some("aims".into()),
+                ..Default::default()
+            },
+            SanshoDetail {
+                goals: vec!["goal".into()],
+                ..Default::default()
+            },
+            SanshoDetail {
+                plan: vec![PlanItem::default()],
+                ..Default::default()
+            },
+            SanshoDetail {
+                textbooks: Some("textbook".into()),
+                ..Default::default()
+            },
+            SanshoDetail {
+                prereq: Some("prerequisite".into()),
+                ..Default::default()
+            },
+            SanshoDetail {
+                prep: Some("preparation".into()),
+                ..Default::default()
+            },
+            SanshoDetail {
+                office_hour: vec![OfficeHour::default()],
+                ..Default::default()
+            },
+            SanshoDetail {
+                keywords: vec!["keyword".into()],
+                ..Default::default()
+            },
+            SanshoDetail {
+                teachers: vec!["teacher".into()],
+                ..Default::default()
+            },
+            SanshoDetail {
+                numbering: vec!["numbering".into()],
+                ..Default::default()
+            },
+            SanshoDetail {
+                sdgs: vec!["sdg".into()],
+                ..Default::default()
+            },
+            SanshoDetail {
+                extra: vec![Labelled::default()],
+                ..Default::default()
+            },
+        ];
+
+        for (index, detail) in cases.into_iter().enumerate() {
+            assert!(
+                detail.has_public_content(),
+                "public field case {index} must count as content"
+            );
+        }
+    }
+
+    #[test]
+    fn empty_optional_strings_do_not_count_as_public_content() {
+        let cases = [
+            SanshoDetail {
+                unit: Some(String::new()),
+                ..Default::default()
+            },
+            SanshoDetail {
+                summary: Some(String::new()),
+                ..Default::default()
+            },
+            SanshoDetail {
+                aims: Some(String::new()),
+                ..Default::default()
+            },
+            SanshoDetail {
+                textbooks: Some(String::new()),
+                ..Default::default()
+            },
+            SanshoDetail {
+                prereq: Some(String::new()),
+                ..Default::default()
+            },
+            SanshoDetail {
+                prep: Some(String::new()),
+                ..Default::default()
+            },
+        ];
+
+        for (index, detail) in cases.into_iter().enumerate() {
+            assert!(
+                !detail.has_public_content(),
+                "empty optional string case {index} must not count as content"
+            );
+        }
+    }
+
+    #[test]
     fn public_detail_omits_crawler_state() {
         let source = SanshoDetail {
             cd: "ABC1234567".into(),
