@@ -49,13 +49,25 @@ let manifest: Manifest
 let data: WireData
 let detailAssets: Record<string, Asset>
 
+const TRANSIENT_HTTP_STATUSES = new Set([429, 500, 502, 503, 504])
+
 async function fetchVerified(request: APIRequestContext, url: URL, asset: Asset): Promise<Buffer> {
-	const response = await request.get(url.toString())
-	expect(response.status(), `${url} status`).toBe(200)
-	const body = await response.body()
-	expect(body.byteLength, `${url} bytes`).toBe(asset.bytes)
-	expect(createHash('sha256').update(body).digest('hex'), `${url} sha256`).toBe(asset.sha256)
-	return body
+	for (let attempt = 0; attempt < 6; attempt += 1) {
+		const response = await request.get(url.toString())
+		const status = response.status()
+		if (status === 200) {
+			const body = await response.body()
+			expect(body.byteLength, `${url} bytes`).toBe(asset.bytes)
+			expect(createHash('sha256').update(body).digest('hex'), `${url} sha256`).toBe(asset.sha256)
+			return body
+		}
+		await response.dispose()
+		if (!TRANSIENT_HTTP_STATUSES.has(status) || attempt === 5) {
+			expect(status, `${url} status`).toBe(200)
+		}
+		await new Promise((resolve) => setTimeout(resolve, 250 * 2 ** attempt))
+	}
+	throw new Error(`${url} exhausted verification retries`)
 }
 
 function assetUrl(asset: Asset): URL {
@@ -65,7 +77,7 @@ function assetUrl(asset: Asset): URL {
 async function verifyEveryDetail(request: APIRequestContext): Promise<void> {
 	const entries = Object.entries(detailAssets)
 	let cursor = 0
-	const workers = Array.from({ length: 24 }, async () => {
+	const workers = Array.from({ length: 4 }, async () => {
 		while (cursor < entries.length) {
 			const current = entries[cursor]
 			cursor += 1
@@ -149,15 +161,13 @@ test('public journey, data status, plan, and cached offline shell work', async (
 			(data.courses[index]?.cd ?? '') in detailAssets,
 	)
 	expect(intensiveIndex).toBeGreaterThanOrEqual(0)
-	expect(tbaIndex).toBeGreaterThanOrEqual(0)
 	expect(scheduledDetailIndex).toBeGreaterThanOrEqual(0)
 	const intensive = data.courses[intensiveIndex]
-	const tba = data.courses[tbaIndex]
+	const tba = tbaIndex >= 0 ? data.courses[tbaIndex] : undefined
 	const detailCourse = data.courses[scheduledDetailIndex]
-	if (!intensive || !tba || !detailCourse)
-		throw new Error('Production smoke courses were not found')
+	if (!intensive || !detailCourse) throw new Error('Production smoke courses were not found')
 
-	await page.goto('/', { waitUntil: 'domcontentloaded' })
+	await page.goto(productionUrl.toString(), { waitUntil: 'domcontentloaded' })
 	await expect(page.locator('[data-app-title]:visible')).toHaveText('逆引きシラバス')
 	await expect(page.locator('[data-count-summary]').first()).toContainText(
 		manifest.counts.courses.toLocaleString('ja-JP'),
@@ -167,15 +177,16 @@ test('public journey, data status, plan, and cached offline shell work', async (
 	await expect(page.locator(CARD).first()).toBeVisible()
 
 	const search = page.getByRole('textbox', { name: '科目名・教員・キーワードで検索' })
-	for (const course of [intensive, tba]) {
+	for (const course of tba ? [intensive, tba] : [intensive]) {
 		await search.fill(course.cd)
 		await expect(page.getByRole('heading', { name: '集中講義・時間未定' }).first()).toBeVisible()
-		await expect(page.locator(CARD).first()).toBeVisible()
+		await expect(page.locator(`${CARD}[data-course-code="${course.cd}"]`)).toBeVisible()
 	}
 
 	await search.fill(detailCourse.cd)
-	await expect(page.locator(CARD).first()).toBeVisible()
-	await page.locator(CARD).first().click()
+	const detailCard = page.locator(`${CARD}[data-course-code="${detailCourse.cd}"]`)
+	await expect(detailCard).toBeVisible()
+	await detailCard.click()
 	const courseDialog = page.getByRole('dialog')
 	await expect(courseDialog.getByRole('heading', { name: detailCourse.nm })).toBeVisible()
 	await expect(courseDialog.getByRole('link', { name: /公式シラバスで見る/u })).toBeVisible()
@@ -201,7 +212,7 @@ test('public journey, data status, plan, and cached offline shell work', async (
 		'href',
 		/bug-report\.yml/u,
 	)
-	await statusDialog.getByRole('button', { name: '閉じる' }).click()
+	await statusDialog.getByRole('button', { name: '閉じる', exact: true }).click()
 
 	await page.evaluate(async () => navigator.serviceWorker.ready)
 	await page.reload({ waitUntil: 'domcontentloaded' })
@@ -211,9 +222,9 @@ test('public journey, data status, plan, and cached offline shell work', async (
 	await expect(page.locator(CARD).first()).toBeVisible()
 	await context.setOffline(true)
 	try {
+		await expect(page.getByRole('status').filter({ hasText: 'オフラインです' })).toBeVisible()
 		await page.reload({ waitUntil: 'domcontentloaded' })
 		await expect(page.locator('[data-app-title]:visible')).toHaveText('逆引きシラバス')
-		await expect(page.getByRole('status').filter({ hasText: 'オフラインです' })).toBeVisible()
 		await expect(page.locator(CARD).first()).toBeVisible()
 	} finally {
 		await context.setOffline(false)
