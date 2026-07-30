@@ -15,6 +15,7 @@ interface Props {
 	campus: string
 	searchText: string
 	displayCount: number
+	totalCount: number
 	generatedAt: string
 }
 
@@ -27,6 +28,7 @@ let {
 	campus = $bindable(),
 	searchText = $bindable(),
 	displayCount,
+	totalCount,
 	generatedAt,
 }: Props = $props()
 
@@ -67,11 +69,17 @@ function resetFilters() {
 
 <!-- Page heading: visually redundant chrome, but kept for the document outline,
      screen-reader navigation, and SEO. One instance serves both layouts. -->
-<h1 class="sr-only">時間割</h1>
+<h1 class="sr-only">逆引きシラバス</h1>
 
 <!-- Mobile: compact bar -->
 <div class="glass-nav sticky top-0 z-nav border-b border-overlay-subtle px-3 py-2 sm:hidden">
-	<div class="flex items-center gap-2">
+	<div class="flex items-baseline gap-2">
+		<span data-app-title class="text-caption font-semibold tracking-tight text-apple-text">逆引きシラバス</span>
+		<span data-count-summary class="ml-auto whitespace-nowrap text-micro tabular-nums text-apple-text-secondary">
+			{displayCount.toLocaleString('ja-JP')} / {totalCount.toLocaleString('ja-JP')}件{#if generatedAtLabel} · 更新 {generatedAtLabel}{/if}
+		</span>
+	</div>
+	<div class="mt-1 flex items-center gap-2">
 		<button
 			class="flex items-center gap-1 bg-overlay-muted rounded-full pl-3 pr-2 py-1 text-caption font-medium text-apple-text whitespace-nowrap"
 			onclick={() => { mobileFilterOpen = true }}
@@ -202,6 +210,7 @@ function resetFilters() {
 <!-- Desktop: horizontal layout -->
 <div class="glass-nav sticky top-0 z-nav border-b border-overlay-subtle px-6 py-3 hidden sm:block">
 	<div class="flex items-center gap-4 flex-wrap">
+		<span data-app-title class="text-body font-semibold tracking-tight text-apple-text whitespace-nowrap">逆引きシラバス</span>
 		<div class="flex bg-overlay-muted rounded-full p-0.5">
 			<button
 				aria-pressed={semester === 'all'}
@@ -249,10 +258,8 @@ function resetFilters() {
 			{@render chevron('absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-apple-text-tertiary pointer-events-none')}
 		</div>
 
-		{#if generatedAtLabel}
-			<span class="ml-auto bg-overlay-subtle text-apple-text-secondary rounded-full px-2.5 py-0.5 text-caption whitespace-nowrap">
-				最終更新: <span class="tabular-nums">{generatedAtLabel}</span>
-			</span>
-		{/if}
+		<span data-count-summary class="ml-auto bg-overlay-subtle text-apple-text-secondary rounded-full px-2.5 py-0.5 text-caption whitespace-nowrap tabular-nums">
+			{displayCount.toLocaleString('ja-JP')} / {totalCount.toLocaleString('ja-JP')}件{#if generatedAtLabel} · 更新 {generatedAtLabel}{/if}
+		</span>
 	</div>
 </div>

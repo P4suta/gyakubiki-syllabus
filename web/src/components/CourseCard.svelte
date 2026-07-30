@@ -74,6 +74,7 @@ const creditHalf = $derived(creditsN - Math.floor(creditsN) >= 0.5)
 
 <button
 	data-course-card
+	data-course-code={course.cd}
 	class="relative w-full text-left rounded-lg p-3 sm:p-2 mb-1 sm:mb-1 cursor-pointer transition-transform active:brightness-95 sm:hover:scale-[1.02] sm:hover:shadow-card-hover min-h-tap sm:min-h-0 content-auto"
 	style="background: {color.bg};"
 	{onclick}
@@ -124,7 +125,7 @@ const creditHalf = $derived(creditsN - Math.floor(creditsN) >= 0.5)
 				{/if}
 			{/if}
 			{#if creditsN > 0}
-				<span class="ml-auto flex items-center gap-1 shrink-0" title="{course.unit}単位" aria-label="{course.unit}単位">
+				<span class="ml-auto flex items-center gap-1 shrink-0" style="color: {color.text};" title="{course.unit}単位" aria-label="{course.unit}単位">
 					<span class="flex items-center gap-0.5" aria-hidden="true">
 						{#each creditBlocks as _}
 							<span class="w-2 h-2" style="background: {color.border};"></span>

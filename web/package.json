@@ -8,7 +8,9 @@
     "dev:e2e": "vite --host 127.0.0.1 --port 4517 --strictPort",
     "build": "vite build",
     "preview": "vite preview",
-    "check": "svelte-check --tsconfig ./tsconfig.app.json && tsc -p tsconfig.node.json",
+    "check": "bun run check:version && bun run check:workflow-policy && svelte-check --tsconfig ./tsconfig.app.json && tsc -p tsconfig.node.json",
+    "check:version": "bun scripts/check-version-drift.ts",
+    "check:workflow-policy": "bun scripts/check-workflow-policy.ts",
     "lint": "biome check .",
     "mutation": "stryker run",
     "playwright:install": "playwright install",
@@ -18,6 +20,8 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "test:lighthouse": "bun scripts/run-lighthouse.ts",
+    "test:production": "playwright test --config playwright.production.config.ts",
+    "test:production-html": "bun scripts/check-production-html.ts",
     "test:perf": "bun scripts/check-search-performance.ts public"
   },
   "devDependencies": {

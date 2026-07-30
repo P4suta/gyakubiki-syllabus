@@ -381,9 +381,6 @@ onDestroy(() => {
      the same flush that renders ~5k grid elements doubled that work (the boot
      forced-reflow Lighthouse flagged). Over the skeleton it costs ~nothing, and
      the disclaimer is readable while data loads. -->
-{#if !error}
-	<Disclaimer />
-{/if}
 
 {#if loading}
 	<!-- Skeleton shaped like the app shell (faux filter bar + timetable grid), so
@@ -436,6 +433,7 @@ onDestroy(() => {
 				bind:campus
 				bind:searchText
 				{displayCount}
+				totalCount={engine.courses.length}
 				generatedAt={engine.generatedAt}
 			/>
 			<SearchBar bind:searchText />
@@ -447,9 +445,10 @@ onDestroy(() => {
 					class="shrink-0 underline underline-offset-2 cursor-pointer"
 					aria-haspopup="dialog"
 				>
-					Data {engine.generatedAt.slice(0, 10)} · {engine.datasetId.slice(0, 8)}
+					データ状態 · {engine.generatedAt.slice(0, 10)}
 				</button>
 			</div>
+			<Disclaimer />
 			{#if offline}
 				<div role="status" class="px-4 py-2 text-caption bg-overlay-subtle text-apple-text">
 					オフラインです。保存済みデータを表示しています。未取得の詳細や更新は利用できません。
@@ -457,7 +456,7 @@ onDestroy(() => {
 			{/if}
 			{#if updateAvailable}
 				<div role="alert" class="px-4 py-2 flex items-center gap-3 bg-apple-blue/10 text-caption text-apple-text">
-					<span class="grow">新しいアプリversionを利用できます。</span>
+					<span class="grow">新しいアプリ版を利用できます。</span>
 					<button onclick={applyUpdate} class="rounded-full bg-apple-blue px-3 py-1.5 text-on-accent cursor-pointer">更新</button>
 				</div>
 			{/if}
@@ -613,7 +612,7 @@ onDestroy(() => {
 	>
 		<button
 			class="fixed inset-0 bg-overlay-backdrop cursor-default"
-			aria-label="Aboutとデータ状態を閉じる"
+			aria-label="アプリとデータの状態を閉じる"
 			onclick={closeAbout}
 		></button>
 		<section
@@ -621,7 +620,7 @@ onDestroy(() => {
 		>
 			<div class="flex items-start justify-between gap-4">
 				<div>
-					<h2 id="about-title" class="text-title font-semibold text-apple-text">About / Data Status</h2>
+					<h2 id="about-title" class="text-title font-semibold text-apple-text">このアプリとデータの状態</h2>
 					<p class="mt-1 text-caption text-apple-text-secondary">非公式の高知大学シラバス検索ツールです。</p>
 				</div>
 				<button
@@ -630,28 +629,34 @@ onDestroy(() => {
 				>閉じる</button>
 			</div>
 			<dl class="mt-4 grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-caption">
-				<dt class="text-apple-text-tertiary">App</dt>
+				<dt class="text-apple-text-tertiary">アプリ版</dt>
 				<dd class="text-apple-text">v{__APP_VERSION__} · {__APP_COMMIT__.slice(0, 12)}</dd>
-				<dt class="text-apple-text-tertiary">Dataset</dt>
+				<dt class="text-apple-text-tertiary">対象年度</dt>
+				<dd class="text-apple-text tabular-nums">{engine.year}年度</dd>
+				<dt class="text-apple-text-tertiary">データセットID</dt>
 				<dd class="text-apple-text break-all">{engine.datasetId}</dd>
-				<dt class="text-apple-text-tertiary">Source commit</dt>
+				<dt class="text-apple-text-tertiary">生成元コミット</dt>
 				<dd class="text-apple-text break-all">{engine.manifest.sourceCommit}</dd>
-				<dt class="text-apple-text-tertiary">Generated</dt>
+				<dt class="text-apple-text-tertiary">データ生成日時</dt>
 				<dd class="text-apple-text">{engine.generatedAt}</dd>
-				<dt class="text-apple-text-tertiary">Courses</dt>
+				<dt class="text-apple-text-tertiary">科目数</dt>
 				<dd class="text-apple-text tabular-nums">
-					{engine.manifest.counts.courses}（時刻指定 {engine.manifest.counts.scheduledCourses} / 集中・未定 {engine.manifest.counts.unscheduledCourses}）
+					{engine.manifest.counts.courses}件（時刻指定 {engine.manifest.counts.scheduledCourses} / 集中・未定 {engine.manifest.counts.unscheduledCourses}）
 				</dd>
-				<dt class="text-apple-text-tertiary">Details</dt>
+				<dt class="text-apple-text-tertiary">詳細データ</dt>
 				<dd class="text-apple-text tabular-nums">
-					{engine.manifest.counts.details} / {engine.manifest.counts.courses}
+					{engine.manifest.counts.details} / {engine.manifest.counts.courses}件
 					({(engine.manifest.counts.detailCoverage * 100).toFixed(1)}%)
 				</dd>
 			</dl>
+			<p class="mt-4 text-micro leading-relaxed text-apple-text-secondary">
+				同じ科目に時刻指定と集中講義・時間未定の両方がある場合、上記の内訳には重複があります。
+			</p>
 			<nav aria-label="関連リンク" class="mt-5 flex flex-wrap gap-x-5 gap-y-2 text-caption">
 				<a class="text-apple-blue underline" href="https://www.kochi-u.ac.jp/education-support/courses/syllabus/" target="_blank" rel="noopener noreferrer">大学公式シラバス</a>
-				<a class="text-apple-blue underline" href="https://github.com/P4suta/gyakubiki-syllabus" target="_blank" rel="noopener noreferrer">GitHub source</a>
-				<a class="text-apple-blue underline" href="https://github.com/P4suta/gyakubiki-syllabus/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">AGPL-3.0 license</a>
+				<a class="text-apple-blue underline" href="https://github.com/P4suta/gyakubiki-syllabus" target="_blank" rel="noopener noreferrer">ソースコード</a>
+				<a class="text-apple-blue underline" href="https://github.com/P4suta/gyakubiki-syllabus/issues/new?template=bug-report.yml" target="_blank" rel="noopener noreferrer">不具合を報告</a>
+				<a class="text-apple-blue underline" href="https://github.com/P4suta/gyakubiki-syllabus/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">AGPL-3.0 ライセンス</a>
 			</nav>
 		</section>
 	</dialog>

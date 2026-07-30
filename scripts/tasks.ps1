@@ -70,13 +70,16 @@ function Invoke-Rustdoc {
 
 function Invoke-Check {
     Invoke-Checked cargo fmt --all -- --check
-    Invoke-Checked cargo clippy --locked --workspace --all-targets -- -D warnings
+    $clippyArguments = @("clippy", "--locked", "--workspace", "--all-targets", "--", "-D", "warnings")
+    Invoke-Checked cargo @clippyArguments
     Invoke-Checked cargo test --locked --workspace --all-targets
     Invoke-Checked cargo llvm-cov nextest --locked --workspace --exclude syllabus-wasm --no-report
     Invoke-Checked cargo llvm-cov report --fail-under-lines 80
     Invoke-Rustdoc
-    Invoke-Checked cargo run --locked -q -p syllabus-cli -- gen-field-docs --check
-    Invoke-Checked cargo run --locked -q -p syllabus-cli -- gen-palette --check
+    $fieldDocArguments = @("run", "--locked", "-q", "-p", "syllabus-cli", "--", "gen-field-docs", "--check")
+    Invoke-Checked cargo @fieldDocArguments
+    $paletteArguments = @("run", "--locked", "-q", "-p", "syllabus-cli", "--", "gen-palette", "--check")
+    Invoke-Checked cargo @paletteArguments
     Invoke-Checked wasm-pack test --node crates/wasm
     Invoke-Checked wasm-pack build crates/wasm --target web --out-dir ../../web/src/wasm --out-name syllabus
     Invoke-Checked cargo audit --deny warnings
@@ -152,6 +155,7 @@ switch ($Task) {
             finally {
                 $env:GITHUB_PAGES = $previous
             }
+            Invoke-Checked bun run test:production-html
             Invoke-Checked bun scripts/check-artifact-budget.ts dist
             Invoke-Checked bun scripts/check-search-performance.ts public
             Invoke-Checked bun run test:e2e

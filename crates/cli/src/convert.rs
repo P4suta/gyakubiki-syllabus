@@ -331,6 +331,7 @@ mod tests {
             kogi_cd: "001".into(),
             kogi_nm: "情報科学".into(),
             tanto_kyoin: "山田 太郎".into(),
+            sekinin_busho_nm: "固有部署検索語".into(),
             ..Default::default()
         }];
         let detail = SanshoDetail {
@@ -347,6 +348,7 @@ mod tests {
         // Name, instructor, and the detail keyword are all reachable.
         assert_eq!(index.search("科学", candidates).len(), 1);
         assert_eq!(index.search("山田", candidates).len(), 1);
+        assert_eq!(index.search("固有部署検索語", candidates).len(), 1);
         assert_eq!(index.search("アルゴリズム", candidates).len(), 1);
         assert!(index.search("存在しない語", candidates).is_empty());
     }

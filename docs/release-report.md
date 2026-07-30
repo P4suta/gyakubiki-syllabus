@@ -1,98 +1,119 @@
-# Release readiness report
+# Release readiness report template
+
+Copy this file for each production candidate. Replace every `<required>` value;
+do not delete a row or claim `GO` while a required value is unknown.
 
 ## Decision
 
-**NO-GO for production deployment.** The implementation and locally runnable
-release gates pass, but this working tree is not committed and the required
-Linux CI, protected-environment, deployment, and production-smoke evidence does
-not exist yet. Re-evaluate only after every item in
-[External release gates](#external-release-gates) passes.
+- Application: `<GO | NO-GO>`
+- Data automation: `<READY | WAITING FOR CREDENTIALS | NO-GO>`
+- Release automation: `<READY | WAITING FOR CREDENTIALS | NO-GO>`
+- Decision recorded at (UTC): `<required>`
+- Recorded by: `<required>`
+
+A deployable application may be `GO` while either automation line remains
+`WAITING FOR CREDENTIALS`. Keep the automation issues and parent project open
+until credentials are installed and a normal automatic run succeeds.
 
 ## Candidate identity
 
-- Version: `0.1.0` (workspace package version)
-- Source commit recorded by the dataset:
-  `4146d3fa0cfdef4f128e3269a7ffebf82ecee903`
-- Working tree: uncommitted release-hardening changes
-- Dataset ID:
-  `3879a9790e28eedc3094b02eb85f6d25a84d762d920c327bad1702372249053b`
-- Dataset generated: `2026-07-26T09:54:04+09:00`
-- Academic year: `2026`
-
-## Dataset evidence
-
-- Courses: 3,928
-- Details: 3,928 (100% coverage)
-- Courses with scheduled offerings: 2,155
-- Courses with intensive/TBA offerings: 1,775
-- Unscheduled-only courses: 1,773
-- Period-7 courses: 19
-- Published range: Monday–Friday, periods 1–7
-- Published generations: current and previous only
-- Staging or legacy stable-name assets: none
-
-Scheduled and unscheduled classifications may overlap when a course has both
-offering types. Their distinct union is all 3,928 courses.
-
-## Asset identity
-
-| Asset | Bytes | SHA-256 |
-| --- | ---: | --- |
-| `data.2e688fe79087f3f5.json` | 1,193,421 | `2e688fe79087f3f527f8834872c68ba578625f203d533e20ccf27b5500d7b926` |
-| `search.8d5c711b08f5cb20.idx.br` | 2,932,890 | `8d5c711b08f5cb20d74ee938382555b19090db3fe67b3b9fd62f55d5a9ad513f` |
-| Decoded search index | 20,814,675 | `bf2eff3521da806722730617dc6d1dd34a7f791bf132766b507292fc8e75f7b1` |
-| `details.1d2002f6d5d008d5.json` | 609,123 | `1d2002f6d5d008d5ec0e7dfc3bc6251ba9ff2ce5a5cfd6a69fd5226ecb191f54` |
-
-Every entry in the 3,928-item detail index has its own verified size and
-SHA-256 in the generated index.
-
-## Local verification
-
-| Gate | Result |
+| Field | Evidence |
 | --- | --- |
-| Rust fmt and clippy `-D warnings` | Pass |
-| Rust workspace/coverage tests | 330 passed; line coverage 87.51% |
-| WASM Node boundary | 12 passed |
-| Svelte and TypeScript check | 0 errors, 0 warnings |
-| Biome | Pass |
-| Web unit/component tests | 244 passed |
-| Web coverage | Statements 95.73%, branches 89.44%, functions 92.85%, lines 97.09% |
-| Browser E2E | 52 passed across Chromium, Firefox, and WebKit |
-| Windows visual tests | 10 intentionally skipped; Linux CI owns the baselines |
-| Dataset atomic failure injection | Pass |
-| Generated-file drift | Pass |
-| Actionlint, typos, markdownlint | Pass |
-| Cargo audit/deny and Bun audit | Pass; no known vulnerability |
+| Version | `<Cargo.toml and web/package.json value>` |
+| Source commit | `<full main SHA>` |
+| Dataset source commit | `<manifest sourceCommit>` |
+| Dataset ID | `<manifest datasetId>` |
+| Academic year | `<manifest year>` |
+| Generated at | `<manifest generatedAt>` |
+| Working tree | `<clean>` |
+
+## Dataset and asset identity
+
+| Asset | Bytes | SHA-256 | Verification |
+| --- | ---: | --- | --- |
+| Data | `<required>` | `<required>` | `<pass/fail>` |
+| Search index (transport) | `<required>` | `<required>` | `<pass/fail>` |
+| Search index (decoded) | `<required>` | `<required>` | `<pass/fail>` |
+| Detail index | `<required>` | `<required>` | `<pass/fail>` |
+| Every detail asset | `<count>` | `manifest-bound` | `<pass/fail>` |
+
+- Courses: `<required>`
+- Details and coverage: `<required>`
+- Courses with scheduled offerings: `<required>`
+- Courses with intensive/TBA offerings: `<required>`
+- Distinct scheduled/unscheduled union: `<required; must equal courses>`
+- Published range: `<required>`
+
+Scheduled and unscheduled counts may overlap when one course has both offering
+types. Record both counts and the distinct union.
+
+## Reproducible verification
+
+Run from a clean checkout of the candidate SHA:
+
+```text
+just check
+just release-check
+cargo mutants --timeout 60 -j 2
+cd web && bun run mutation
+cd ../crates/cli/fuzz && cargo +nightly fuzz run fuzz_parse_jikanwari -- -max_total_time=120
+cargo +nightly fuzz run fuzz_parse_sansho_html -- -max_total_time=120
+```
+
+| Gate | Result | Evidence URL or artifact |
+| --- | --- | --- |
+| `just check` | `<pass/fail>` | `<required>` |
+| `just release-check` | `<pass/fail>` | `<required>` |
+| Rust full mutation | `<pass/fail>` | `<required>` |
+| Stryker full mutation | `<pass/fail>` | `<required>` |
+| Timetable fuzz | `<pass/fail>` | `<required>` |
+| Detail HTML fuzz | `<pass/fail>` | `<required>` |
+| Required gate | `<pass/fail>` | `<required>` |
+| Linux visual regression | `<pass/fail>` | `<required>` |
+| Lighthouse 3-run median | `<P/A/BP/SEO>` | `<required>` |
+| Security, audit, CodeQL | `<pass/fail>` | `<required>` |
+
+## Deployment and production evidence
+
+| Field | Evidence |
+| --- | --- |
+| Merged `main` commit | `<full SHA>` |
+| CI run | `<URL>` |
+| Pages deploy job | `<URL and success>` |
+| Deployment commit | `<full SHA; must equal merged main>` |
+| Deployment URL | `<URL>` |
+| Immediate production smoke | `<URL and success>` |
+| Full detail-asset verification | `<URL and count>` |
+| Latest scheduled smoke | `<URL and success>` |
+
+Confirm directly:
+
+- `manifest.json` returned HTTP 200.
+- Manifest-selected root assets matched declared byte sizes and SHA-256 values.
+- Every detail asset matched its declared byte size and SHA-256 value.
+- UI search, intensive/TBA, detail, plan, data status, and cached offline reload
+  passed against `PRODUCTION_URL`.
 
 ## Performance evidence
 
 | Metric | Result | Budget |
 | --- | ---: | ---: |
-| Initial interactive payload, gzip | 176,684 B | 307,200 B |
-| App JavaScript, gzip | 49,508 B | 56,320 B |
-| Core WASM, gzip | 117,459 B | 117,760 B |
-| Search index transport | 2,933,669 B | 3,145,728 B |
-| Search query p95 | 25.09 ms | 50 ms |
-| Worker heap | 58,982,400 B | 67,108,864 B |
+| Lighthouse performance median | `<required>` | `>= 90` |
+| Lighthouse accessibility median | `<required>` | `100` |
+| Lighthouse best practices median | `<required>` | `100` |
+| Lighthouse SEO median | `<required>` | `100` |
+| Initial interactive payload, gzip | `<required>` | `<= 307,200 B` |
+| App JavaScript, gzip | `<required>` | `<= 56,320 B` |
+| Core WASM, gzip | `<required>` | `<= 117,760 B` |
+| Search index transport | `<required>` | `<= 3,145,728 B` |
+| Search query p95 | `<required>` | `<= 50 ms` |
+| Worker heap | `<required>` | `<= 67,108,864 B` |
 
-The stable manifest itself is included in the initial-payload measurement.
-The content-addressed detail index is lazy and is verified before use.
+## Known issues and follow-up
 
-## External release gates
-
-- [ ] Commit these changes, open a PR, and record the exact
-  [required-check URL](https://github.com/P4suta/gyakubiki-syllabus/actions).
-- [ ] Pass Linux visual regression and the required three-run mobile Lighthouse
-  median: Performance 90+, Accessibility 100, Best Practices 100, SEO 100.
-  Windows Chrome/Edge launchers returned `NO_FCP`, so no local score is claimed.
-- [ ] Add the single required CI gate to the `main` ruleset, configure the
-  code-release approval, and install the data-update GitHub App credentials.
-  The Pages environment is already restricted to `main`; the App secrets are
-  currently absent, and the fetch/release workflows fail closed as designed.
-- [ ] Deploy the attested Pages artifact and pass production smoke at
-  <https://p4suta.github.io/gyakubiki-syllabus/>.
-
-Tracking and acceptance criteria are recorded in the
-[Linear project](https://linear.app/yasunobu/project/gyakubiki-syllabus-next-shippable-milestone-d312af1defb8).
-Known release-blocking external gates: **4**. The final report may state zero
-known issues only after all four are closed.
+- Application issues: `<none | list with owner and issue URL>`
+- Credential/automation blockers: `<none | list>`
+- GitHub Pages CSP header limitation acknowledged: `<yes/no>`
+- Linear evidence document: `<URL>`
+- Issues closed with this evidence: `<IDs>`
+- Issues intentionally left In Progress: `<IDs and reason>`

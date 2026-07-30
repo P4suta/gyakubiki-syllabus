@@ -43,7 +43,7 @@ for (const theme of ['light', 'dark'] as const) {
 		test('course modal — desktop', async ({ page }) => {
 			await page.setViewportSize(DESKTOP)
 			await enter(page)
-			await openCourse(page, FIXTURES.regular)
+			await openCourse(page, FIXTURES.regular, FIXTURES.regularCode)
 			// The dialog is the full-viewport shell; shoot the sheet itself.
 			await expect(page.locator('[data-sheet]')).toHaveScreenshot(`modal-desktop${s}.png`)
 		})
@@ -51,7 +51,7 @@ for (const theme of ['light', 'dark'] as const) {
 		test('course modal — mobile', async ({ page }) => {
 			await page.setViewportSize(MOBILE)
 			await enter(page)
-			await openCourse(page, FIXTURES.regular)
+			await openCourse(page, FIXTURES.regular, FIXTURES.regularCode)
 			await expect(page.locator('[data-sheet]')).toHaveScreenshot(`modal-mobile${s}.png`)
 		})
 

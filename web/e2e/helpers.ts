@@ -11,6 +11,7 @@ export const CARD = '[data-course-card]'
 export const FIXTURES = {
 	/** cd 00001 — 微分積分学Ⅰ, 1学期 月1限, has a full detail. */
 	regular: /微分積分学/,
+	regularCode: '00001',
 	/** cd 00010 — 心理学概論, 通年 (shows under every semester), NO detail file. */
 	noDetail: /心理学概論/,
 	/** cd 00004 — name with HTML metacharacters, must render escaped. */
@@ -42,7 +43,7 @@ export async function pickSemester(page: Page, label: string): Promise<void> {
 
 /**
  * Read the result counters from the app root's `data-shown-count` /
- * `data-total-count` attributes (the header shows no visible counter).
+ * `data-total-count` attributes (the same values are also shown in the compact header).
  */
 export async function counts(page: Page): Promise<{ shown: number; total: number }> {
 	const root = page.locator('[data-shown-count]')
@@ -55,10 +56,26 @@ export async function counts(page: Page): Promise<{ shown: number; total: number
 	return { shown: await read('data-shown-count'), total: await read('data-total-count') }
 }
 
-/** Open the modal for the first card matching `name` and wait for its heading. */
-export async function openCourse(page: Page, name: string | RegExp): Promise<void> {
-	await page.getByRole('button', { name }).first().click()
-	await expect(page.getByRole('dialog').getByRole('heading', { level: 2, name })).toBeVisible()
+/** Open the modal for the first card matching `name` and wait for its stable rendered state. */
+export async function openCourse(
+	page: Page,
+	name: string | RegExp,
+	courseCode?: string,
+): Promise<void> {
+	const card = courseCode
+		? page.locator(`${CARD}[data-course-code="${courseCode}"]`)
+		: page.getByRole('button', { name })
+	await card.first().click()
+	const dialog = page.getByRole('dialog')
+	await expect(dialog.getByRole('heading', { level: 2, name })).toBeVisible()
+	// The desktop sheet fades from opacity 0 to 1. Waiting only for visibility can
+	// let accessibility checks sample that transient blend and report false
+	// contrast failures, so wait for the animations that existed when it opened.
+	await dialog.locator('[data-sheet]').evaluate(async (element) => {
+		await Promise.allSettled(
+			element.getAnimations({ subtree: true }).map((animation) => animation.finished),
+		)
+	})
 }
 
 /**

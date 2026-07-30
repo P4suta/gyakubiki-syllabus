@@ -23,6 +23,7 @@ prepareE2ePublic(e2ePublicDir, path.resolve(process.cwd(), '..'))
 // suite exercises the real load and no test ever contacts KULAS.
 export default defineConfig({
 	testDir: './e2e',
+	testIgnore: 'production/**',
 	fullyParallel: true,
 	// Each page initializes WASM and a production-scale dataset. Bound parallelism
 	// so browser engines do not compete for enough memory to create false timeouts.

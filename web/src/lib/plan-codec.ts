@@ -35,7 +35,7 @@ export function decodePlan(token: string): string[] {
 	const dot = token.indexOf('.')
 	if (dot < 1) throw new PlanDecodeError('履修プランtokenの形式が不正です')
 	if (token.slice(0, dot) !== String(PLAN_SCHEMA_VERSION)) {
-		throw new PlanDecodeError('この履修プランは対応していないversionです')
+		throw new PlanDecodeError('この履修プランは対応していないバージョンです')
 	}
 	const payload = token.slice(dot + 1)
 	if (!payload) throw new PlanDecodeError('履修プランに科目がありません')

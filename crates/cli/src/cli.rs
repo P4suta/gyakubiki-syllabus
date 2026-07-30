@@ -114,9 +114,13 @@ fn dispatch() -> Result<()> {
     }
 }
 
+fn jst_offset() -> chrono::FixedOffset {
+    chrono::FixedOffset::east_opt(9 * 60 * 60).expect("valid JST offset")
+}
+
 fn build_dataset(args: BuildDatasetArgs) -> Result<()> {
     let generated_at = args.generated_at.unwrap_or_else(|| {
-        let jst = chrono::FixedOffset::east_opt(9 * 60 * 60).expect("valid JST offset");
+        let jst = jst_offset();
         chrono::Utc::now()
             .with_timezone(&jst)
             .to_rfc3339_opts(SecondsFormat::Secs, true)
@@ -157,8 +161,13 @@ fn gen_palette(args: &GenPaletteArgs) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Cli, Command};
+    use super::{Cli, Command, jst_offset};
     use clap::{CommandFactory, Parser};
+
+    #[test]
+    fn generated_timestamps_use_exact_jst_offset() {
+        assert_eq!(jst_offset().local_minus_utc(), 9 * 60 * 60);
+    }
 
     #[test]
     fn cli_definition_is_valid() {

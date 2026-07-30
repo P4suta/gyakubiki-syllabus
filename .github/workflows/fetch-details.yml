@@ -37,19 +37,44 @@ jobs:
   fetch:
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    env:
+      AUTOMATION_ENABLED: ${{ vars.DATA_AUTOMATION_ENABLED }}
+      HAS_APP: ${{ secrets.DATA_BOT_CLIENT_ID != '' && secrets.DATA_BOT_PRIVATE_KEY != '' }}
+      HAS_KULAS_TOKEN: ${{ secrets.KULAS_API_TOKEN != '' }}
     steps:
-      - name: Require and mint data bot token
+      - name: Report disabled automation
+        if: env.AUTOMATION_ENABLED != 'true'
+        run: >-
+          echo "::notice::Data automation is disabled. Set DATA_AUTOMATION_ENABLED=true
+          only after the data GitHub App and KULAS secrets are configured."
+      - name: Validate enabled automation
+        if: env.AUTOMATION_ENABLED == 'true'
+        run: |
+          if [[ "$HAS_APP" != "true" ]]; then
+            echo "::error::DATA_BOT_CLIENT_ID and DATA_BOT_PRIVATE_KEY are required"
+            exit 1
+          fi
+          if [[ "$HAS_KULAS_TOKEN" != "true" ]]; then
+            echo "::error::KULAS_API_TOKEN is required"
+            exit 1
+          fi
+      - name: Mint data bot token
         id: app-token
+        if: env.AUTOMATION_ENABLED == 'true'
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
           client-id: ${{ secrets.DATA_BOT_CLIENT_ID }}
           private-key: ${{ secrets.DATA_BOT_PRIVATE_KEY }}
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        id: checkout
+        if: env.AUTOMATION_ENABLED == 'true'
         with:
           token: ${{ steps.app-token.outputs.token }}
       - uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1
+        if: env.AUTOMATION_ENABLED == 'true'
 
       - name: Check out update branch
+        if: env.AUTOMATION_ENABLED == 'true'
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           UPDATE_BRANCH: data-refresh/details
@@ -64,9 +89,13 @@ jobs:
           fi
 
       - name: Build syllabus-cli
+        id: build
+        if: env.AUTOMATION_ENABLED == 'true'
         run: cargo build --locked --release -p syllabus-cli
 
       - name: Fetch details
+        id: fetch
+        if: env.AUTOMATION_ENABLED == 'true'
         env:
           KULAS_API_TOKEN: ${{ secrets.KULAS_API_TOKEN }}
         run: |
@@ -87,8 +116,13 @@ jobs:
       - name: Upload diagnostics
         # always(): on a failure/abort the CLI writes diagnostics/ with the failed
         # responses — grab it so the run can be root-caused without a re-run.
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: >-
+          always() &&
+          env.AUTOMATION_ENABLED == 'true' &&
+          steps.app-token.outcome == 'success' &&
+          steps.checkout.outcome == 'success' &&
+          steps.build.outcome == 'success'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: fetch-details-diagnostics
           path: diagnostics/
@@ -98,7 +132,12 @@ jobs:
       - name: Commit progress to update branch
         # Partial crawl output is working-cache state on a dedicated branch. It
         # can only reach main through the normal required PR gate.
-        if: always()
+        if: >-
+          always() &&
+          env.AUTOMATION_ENABLED == 'true' &&
+          steps.app-token.outcome == 'success' &&
+          steps.checkout.outcome == 'success' &&
+          steps.build.outcome == 'success'
         id: commit
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
@@ -108,7 +147,7 @@ jobs:
             --message "chore(raw-details): syllabus detail crawl ($(date -u +%Y-%m-%d))"
 
       - name: Open or update data pull request
-        if: steps.commit.outputs.changed == 'true'
+        if: env.AUTOMATION_ENABLED == 'true' && steps.commit.outputs.changed == 'true'
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           UPDATE_BRANCH: data-refresh/details

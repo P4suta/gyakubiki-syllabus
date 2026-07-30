@@ -33,19 +33,43 @@ jobs:
   fetch:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      AUTOMATION_ENABLED: ${{ vars.DATA_AUTOMATION_ENABLED }}
+      HAS_APP: ${{ secrets.DATA_BOT_CLIENT_ID != '' && secrets.DATA_BOT_PRIVATE_KEY != '' }}
+      HAS_KULAS_TOKEN: ${{ secrets.KULAS_API_TOKEN != '' }}
     steps:
-      - name: Require and mint data bot token
+      - name: Report disabled automation
+        if: env.AUTOMATION_ENABLED != 'true'
+        run: >-
+          echo "::notice::Data automation is disabled. Set DATA_AUTOMATION_ENABLED=true
+          only after the data GitHub App and KULAS secrets are configured."
+      - name: Validate enabled automation
+        if: env.AUTOMATION_ENABLED == 'true'
+        run: |
+          if [[ "$HAS_APP" != "true" ]]; then
+            echo "::error::DATA_BOT_CLIENT_ID and DATA_BOT_PRIVATE_KEY are required"
+            exit 1
+          fi
+          if [[ "$HAS_KULAS_TOKEN" != "true" ]]; then
+            echo "::error::KULAS_API_TOKEN is required"
+            exit 1
+          fi
+      - name: Mint data bot token
         id: app-token
+        if: env.AUTOMATION_ENABLED == 'true'
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
           client-id: ${{ secrets.DATA_BOT_CLIENT_ID }}
           private-key: ${{ secrets.DATA_BOT_PRIVATE_KEY }}
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        if: env.AUTOMATION_ENABLED == 'true'
         with:
           token: ${{ steps.app-token.outputs.token }}
       - uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1
+        if: env.AUTOMATION_ENABLED == 'true'
 
       - name: Check out update branch
+        if: env.AUTOMATION_ENABLED == 'true'
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           UPDATE_BRANCH: data-refresh/syllabus
@@ -60,9 +84,11 @@ jobs:
           fi
 
       - name: Build syllabus-cli
+        if: env.AUTOMATION_ENABLED == 'true'
         run: cargo build --locked --release -p syllabus-cli
 
       - name: Fetch syllabus
+        if: env.AUTOMATION_ENABLED == 'true'
         env:
           # Empty (the norm) extracts entryContext from the HTML; set only to override for testing.
           KULAS_API_TOKEN: ${{ secrets.KULAS_API_TOKEN }}
@@ -78,7 +104,7 @@ jobs:
 
       - name: Commit update branch if changed
         id: commit
-        if: ${{ !inputs.dry-run }}
+        if: ${{ env.AUTOMATION_ENABLED == 'true' && !inputs.dry-run }}
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
           GITHUB_REF_NAME: data-refresh/syllabus
@@ -87,7 +113,7 @@ jobs:
             --message "chore(raw): syllabus grid refresh ($(date -u +%Y-%m-%d))"
 
       - name: Open or update data pull request
-        if: ${{ steps.commit.outputs.changed == 'true' }}
+        if: ${{ env.AUTOMATION_ENABLED == 'true' && steps.commit.outputs.changed == 'true' }}
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           UPDATE_BRANCH: data-refresh/syllabus

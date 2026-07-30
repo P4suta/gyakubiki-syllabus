@@ -25,6 +25,8 @@ is on-screen-but-mispositioned. The layers below close those gaps.
 | E2E: **visual** (screenshot diff) | Playwright `toHaveScreenshot` | CI `e2e` (Linux) | `bun run test:e2e` |
 | Real-data query p95 / Worker heap | WASM benchmark | CI `production-artifact` | `bun run test:perf` |
 | Artifact payload budgets | gzip measurement | CI `production-artifact` | `just release-check` |
+| Production HTML/CSP | generated-artifact inspection | CI `production-artifact` | `bun run test:production-html` |
+| Production smoke + offline | Playwright against deployed Pages | post-deploy + daily | `PRODUCTION_URL=... bun run test:production` |
 | Dependency/license/SBOM | cargo-audit, cargo-deny, Bun audit, CycloneDX | CI `security` | `just check` |
 | Mobile quality budgets | Lighthouse (3-run median) | CI `production-artifact` | `just release-check` |
 | Fuzzing (parsers) | `cargo-fuzz` | weekly advisory + release PR required | `just fuzz <target>` |
@@ -74,9 +76,12 @@ is on-screen-but-mispositioned. The layers below close those gaps.
 
 ## Determinism notes
 
-- E2E data is a KULAS-free, fixed-seed sample generated into a fresh OS temp
-  public directory by `e2e/global-setup.ts`. Tests never read or overwrite the
-  developer's `web/public`.
+- Local E2E data is a KULAS-free, fixed-seed sample generated into a fresh OS
+  temp public directory by `e2e/global-setup.ts`. Tests never read or overwrite
+  the developer's `web/public`.
+- Production smoke uses `playwright.production.config.ts`, has no global setup or
+  web server, and never generates fixtures. It reads only `PRODUCTION_URL` and
+  the assets selected by that deployment's manifest.
 - Playwright disables renderer background-throttling (`playwright.config.ts`) so
   scroll/animation timing is stable in headless CI. The period label uses native
   `position: sticky` (no rAF), so its geometry spec is deterministic.
