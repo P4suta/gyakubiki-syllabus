@@ -24,13 +24,13 @@ describe('plan-codec', () => {
 	it('rejects junk, old versions, and empty entries', () => {
 		expect(() => decodePlan('garbage')).toThrow()
 		expect(() => decodePlan('.abc')).toThrow()
-		expect(() => decodePlan('1.a')).toThrow(/version/)
+		expect(() => decodePlan('1.a')).toThrow(/バージョン/)
 		expect(() => decodePlan('2.')).toThrow()
 		expect(() => decodePlan('2.a~~b')).toThrow()
 	})
 
 	it('rejects unsupported future tokens instead of silently truncating', () => {
-		expect(() => decodePlan('3.a~b')).toThrow(/version/)
+		expect(() => decodePlan('3.a~b')).toThrow(/バージョン/)
 	})
 
 	it('survives reserved URL characters while rejecting path separators', () => {

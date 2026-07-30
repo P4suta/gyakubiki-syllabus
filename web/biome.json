@@ -35,6 +35,7 @@
 			"scripts/**/*.ts",
 			"*.ts",
 			"*.js",
+			"!.stryker-tmp",
 			"!src/wasm",
 			"!**/*.generated.ts"
 		]

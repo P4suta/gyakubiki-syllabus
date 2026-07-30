@@ -124,7 +124,7 @@ const creditHalf = $derived(creditsN - Math.floor(creditsN) >= 0.5)
 				{/if}
 			{/if}
 			{#if creditsN > 0}
-				<span class="ml-auto flex items-center gap-1 shrink-0" title="{course.unit}単位" aria-label="{course.unit}単位">
+				<span class="ml-auto flex items-center gap-1 shrink-0" style="color: {color.text};" title="{course.unit}単位" aria-label="{course.unit}単位">
 					<span class="flex items-center gap-0.5" aria-hidden="true">
 						{#each creditBlocks as _}
 							<span class="w-2 h-2" style="background: {color.border};"></span>

@@ -18,6 +18,18 @@ use crate::convert::render_data_json;
 use crate::detail::{PublicDetail, SanshoDetail, enrich};
 use crate::io;
 
+#[cfg(windows)]
+use windows_sys::Win32::Storage::FileSystem::{
+    MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH, MoveFileExW,
+};
+
+#[cfg(windows)]
+const ATOMIC_REPLACE_FLAGS: u32 = MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH;
+const BROTLI_BUFFER_BYTES: usize = 32 * 1024;
+const MAX_DECODED_INDEX_BYTES: usize = 128 * 1024 * 1024;
+const MAX_COMPRESSED_INDEX_BYTES: usize = 32 * 1024 * 1024;
+const MAX_DECODED_INDEX_READ_BYTES: u64 = MAX_DECODED_INDEX_BYTES as u64 + 1;
+
 #[derive(Debug)]
 pub struct BuildDatasetOptions {
     pub files: Vec<PathBuf>,
@@ -294,49 +306,42 @@ pub fn build(options: &BuildDatasetOptions) -> Result<DatasetManifest> {
         Ok(manifest)
     })();
 
-    if result.is_err() && stage.exists() {
-        let _ = fs::remove_dir_all(&stage);
-    }
     if result.is_err() {
+        if stage.exists() {
+            let _ = fs::remove_dir_all(&stage);
+        }
         let _ = fs::remove_file(options.output_dir.join("manifest.next.json"));
     }
     result
 }
 
-#[cfg(not(windows))]
 fn replace_file_atomic(source: &Path, destination: &Path) -> std::io::Result<()> {
-    fs::rename(source, destination)
-}
+    #[cfg(not(windows))]
+    {
+        fs::rename(source, destination)
+    }
 
-#[cfg(windows)]
-fn replace_file_atomic(source: &Path, destination: &Path) -> std::io::Result<()> {
-    use std::os::windows::ffi::OsStrExt;
-    use windows_sys::Win32::Storage::FileSystem::{
-        MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH, MoveFileExW,
-    };
+    #[cfg(windows)]
+    {
+        use std::os::windows::ffi::OsStrExt;
 
-    let source: Vec<u16> = source.as_os_str().encode_wide().chain(Some(0)).collect();
-    let destination: Vec<u16> = destination
-        .as_os_str()
-        .encode_wide()
-        .chain(Some(0))
-        .collect();
-    // Both paths are sibling files inside the caller-selected output directory.
-    // MoveFileExW with REPLACE_EXISTING is Windows' atomic same-volume replace.
-    let result = unsafe {
-        MoveFileExW(
-            source.as_ptr(),
-            destination.as_ptr(),
-            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
-        )
-    };
-    if result == 0 {
-        Err(std::io::Error::last_os_error())
-    } else {
-        Ok(())
+        let source: Vec<u16> = source.as_os_str().encode_wide().chain(Some(0)).collect();
+        let destination: Vec<u16> = destination
+            .as_os_str()
+            .encode_wide()
+            .chain(Some(0))
+            .collect();
+        // Both paths are sibling files inside the caller-selected output directory.
+        // MoveFileExW with REPLACE_EXISTING is Windows' atomic same-volume replace.
+        let result =
+            unsafe { MoveFileExW(source.as_ptr(), destination.as_ptr(), ATOMIC_REPLACE_FLAGS) };
+        if result == 0 {
+            Err(std::io::Error::last_os_error())
+        } else {
+            Ok(())
+        }
     }
 }
-
 fn validate_raw(raw: &[RawCourse]) -> Result<()> {
     ensure!(!raw.is_empty(), "no course data found");
     let mut codes = HashSet::new();
@@ -398,23 +403,23 @@ fn load_details(
         {
             continue;
         }
-        let mut detail: SanshoDetail = serde_json::from_slice(&fs::read(&path)?)
-            .with_context(|| format!("failed to parse {}", path.display()))?;
-        CourseCode::parse(&detail.cd)
-            .with_context(|| format!("unsafe detail code in {}", path.display()))?;
         let stem = path
             .file_stem()
             .and_then(|value| value.to_str())
             .unwrap_or("");
+        if !active.contains(stem) {
+            continue;
+        }
+        let mut detail: SanshoDetail = serde_json::from_slice(&fs::read(&path)?)
+            .with_context(|| format!("failed to parse {}", path.display()))?;
+        CourseCode::parse(&detail.cd)
+            .with_context(|| format!("unsafe detail code in {}", path.display()))?;
         ensure!(
             stem == detail.cd,
             "detail file/code mismatch: {} contains {:?}",
             path.display(),
             detail.cd
         );
-        if !active.contains(detail.cd.as_str()) {
-            continue;
-        }
         enrich(&mut detail);
         ensure!(
             details.insert(detail.cd.clone(), detail).is_none(),
@@ -450,18 +455,18 @@ fn write_asset_with_decoded(
 
 fn compress_index(bytes: &[u8]) -> Result<Vec<u8>> {
     ensure!(
-        bytes.len() <= 128 * 1024 * 1024,
+        bytes.len() <= MAX_DECODED_INDEX_BYTES,
         "search index exceeds the decoded size limit"
     );
     let mut compressed = Vec::new();
     {
-        let mut writer = brotli::CompressorWriter::new(&mut compressed, 32 * 1024, 9, 22);
+        let mut writer = brotli::CompressorWriter::new(&mut compressed, BROTLI_BUFFER_BYTES, 9, 22);
         writer
             .write_all(bytes)
             .context("failed to Brotli-compress search index")?;
     }
     ensure!(
-        compressed.len() <= 32 * 1024 * 1024,
+        compressed.len() <= MAX_COMPRESSED_INDEX_BYTES,
         "compressed search index exceeds the transport size limit"
     );
     Ok(compressed)
@@ -590,12 +595,12 @@ fn verify_staged(stage: &Path, manifest: &DatasetManifest) -> Result<()> {
 
     let encoded_index = fs::read(stage.join(&manifest.assets.index.path))?;
     let mut decoded_index = Vec::new();
-    brotli::Decompressor::new(encoded_index.as_slice(), 32 * 1024)
-        .take(128 * 1024 * 1024 + 1)
+    brotli::Decompressor::new(encoded_index.as_slice(), BROTLI_BUFFER_BYTES)
+        .take(MAX_DECODED_INDEX_READ_BYTES)
         .read_to_end(&mut decoded_index)
         .context("failed to decode staged search index")?;
     ensure!(
-        decoded_index.len() <= 128 * 1024 * 1024,
+        decoded_index.len() <= MAX_DECODED_INDEX_BYTES,
         "decoded staged search index exceeds size limit"
     );
     ensure!(
@@ -748,4 +753,299 @@ fn prune_dataset_generations(
 
 fn sha256(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    static NEXT_DIR: AtomicUsize = AtomicUsize::new(0);
+
+    fn scratch(label: &str) -> PathBuf {
+        let sequence = NEXT_DIR.fetch_add(1, Ordering::Relaxed);
+        let root = std::env::temp_dir().join(format!(
+            "gyakubiki-dataset-{label}-{}-{sequence}",
+            std::process::id()
+        ));
+        if root.exists() {
+            fs::remove_dir_all(&root).expect("remove stale scratch directory");
+        }
+        fs::create_dir_all(&root).expect("create scratch directory");
+        root
+    }
+
+    fn write_raw(root: &Path, codes: &[&str]) -> PathBuf {
+        let records: Vec<_> = codes
+            .iter()
+            .enumerate()
+            .map(|(index, code)| {
+                json!({
+                    "kogiCd": code,
+                    "kogiNm": format!("Mutation boundary {index}"),
+                    "tantoKyoin": "Test",
+                    "jikanwari": if index % 2 == 0 {
+                        "1学期: 月曜日１時限"
+                    } else {
+                        "1学期: 集中講義"
+                    },
+                    "kogiKaikojikiNm": "1学期",
+                    "kogiKubunNm": "講義",
+                    "sekininBushoNm": "Test",
+                    "kochiNm": "朝倉キャンパス",
+                    "syllabusKomokuPatternId": "4",
+                    "kaikoNendo": "2026"
+                })
+            })
+            .collect();
+        let path = root.join("raw.json");
+        fs::write(&path, serde_json::to_vec(&records).unwrap()).unwrap();
+        path
+    }
+
+    fn write_detail(directory: &Path, code: &str) {
+        fs::create_dir_all(directory).unwrap();
+        let detail = SanshoDetail {
+            cd: code.to_owned(),
+            summary: Some(format!("{code} detail")),
+            ..Default::default()
+        };
+        fs::write(
+            directory.join(format!("{code}.json")),
+            serde_json::to_vec(&detail).unwrap(),
+        )
+        .unwrap();
+    }
+
+    fn options(raw: &Path, output: &Path) -> BuildDatasetOptions {
+        BuildDatasetOptions {
+            files: vec![raw.to_owned()],
+            details_dir: None,
+            output_dir: output.to_owned(),
+            generated_at: "2026-01-01T00:00:00Z".to_owned(),
+            source_commit: "0".repeat(40),
+            compact: true,
+            allow_incomplete_details: true,
+        }
+    }
+
+    fn generation(output: &Path, manifest: &DatasetManifest) -> PathBuf {
+        output.join("datasets").join(&manifest.dataset_id)
+    }
+
+    fn dummy_asset(path: &str) -> Asset {
+        Asset {
+            path: path.to_owned(),
+            bytes: 1,
+            sha256: "a".repeat(64),
+            decoded_bytes: None,
+            decoded_sha256: None,
+        }
+    }
+
+    #[test]
+    fn index_transport_limits_are_exact() {
+        assert_eq!(BROTLI_BUFFER_BYTES, 32_768);
+        assert_eq!(MAX_DECODED_INDEX_BYTES, 134_217_728);
+        assert_eq!(MAX_COMPRESSED_INDEX_BYTES, 33_554_432);
+        assert_eq!(MAX_DECODED_INDEX_READ_BYTES, 134_217_729);
+    }
+
+    #[test]
+    fn complete_and_partial_details_preserve_coverage() {
+        let root = scratch("detail-coverage");
+        let details = root.join("details");
+        write_detail(&details, "A0001");
+        fs::write(details.join("notes.txt"), b"not json").unwrap();
+        fs::write(details.join("_crawler.json"), b"not json").unwrap();
+        fs::write(details.join("B9999.json"), b"not json").unwrap();
+
+        let strict_raw = write_raw(&root, &["A0001"]);
+        let strict_output = root.join("strict-public");
+        let mut strict = options(&strict_raw, &strict_output);
+        strict.details_dir = Some(details.clone());
+        strict.allow_incomplete_details = false;
+        let strict_manifest = build(&strict).expect("complete detail set publishes");
+        assert_eq!(strict_manifest.counts.details, 1);
+        assert_eq!(strict_manifest.counts.detail_coverage, 1.0);
+
+        let partial_root = root.join("partial");
+        fs::create_dir_all(&partial_root).unwrap();
+        let partial_raw = write_raw(&partial_root, &["A0001", "A0002"]);
+        let partial_output = partial_root.join("public");
+        let mut partial = options(&partial_raw, &partial_output);
+        partial.details_dir = Some(details);
+        let partial_manifest = build(&partial).expect("explicit incomplete fixture publishes");
+        assert_eq!(partial_manifest.counts.courses, 2);
+        assert_eq!(partial_manifest.counts.details, 1);
+        assert_eq!(partial_manifest.counts.detail_coverage, 0.5);
+
+        let detail_index: BTreeMap<String, Asset> = serde_json::from_slice(
+            &fs::read(
+                generation(&partial_output, &partial_manifest)
+                    .join(&partial_manifest.assets.details.path),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(detail_index.keys().collect::<Vec<_>>(), vec!["A0001"]);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn atomic_replace_moves_source_and_replaces_destination() {
+        let root = scratch("atomic-replace");
+        let source = root.join("manifest.next.json");
+        let destination = root.join("manifest.json");
+        fs::write(&source, b"new").unwrap();
+        fs::write(&destination, b"old").unwrap();
+
+        #[cfg(windows)]
+        {
+            assert_ne!(ATOMIC_REPLACE_FLAGS & MOVEFILE_REPLACE_EXISTING, 0);
+            assert_ne!(ATOMIC_REPLACE_FLAGS & MOVEFILE_WRITE_THROUGH, 0);
+        }
+        replace_file_atomic(&source, &destination).expect("atomic replacement succeeds");
+        assert!(!source.exists());
+        assert_eq!(fs::read(&destination).unwrap(), b"new");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn promotion_failure_rolls_back_new_generation_but_preserves_existing_one() {
+        let new_root = scratch("promotion-new");
+        let new_raw = write_raw(&new_root, &["A0001"]);
+        let new_output = new_root.join("public");
+        fs::create_dir_all(new_output.join("manifest.json")).unwrap();
+        let error =
+            build(&options(&new_raw, &new_output)).expect_err("manifest directory blocks replace");
+        assert!(error.to_string().contains("atomically promote"));
+        assert!(!new_output.join("manifest.next.json").exists());
+        assert_eq!(
+            fs::read_dir(new_output.join("datasets")).unwrap().count(),
+            0
+        );
+
+        let existing_root = scratch("promotion-existing");
+        let existing_raw = write_raw(&existing_root, &["A0001"]);
+        let existing_output = existing_root.join("public");
+        let existing_options = options(&existing_raw, &existing_output);
+        let manifest = build(&existing_options).expect("initial generation publishes");
+        let existing_generation = generation(&existing_output, &manifest);
+        fs::remove_file(existing_output.join("manifest.json")).unwrap();
+        fs::create_dir(existing_output.join("manifest.json")).unwrap();
+
+        assert!(build(&existing_options).is_err());
+        assert!(existing_generation.is_dir());
+        assert!(!existing_output.join("manifest.next.json").exists());
+        assert!(
+            fs::read_dir(existing_output.join("datasets"))
+                .unwrap()
+                .all(|entry| !entry
+                    .unwrap()
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with(".stage-"))
+        );
+        fs::remove_dir_all(new_root).unwrap();
+        fs::remove_dir_all(existing_root).unwrap();
+    }
+
+    #[test]
+    fn staged_verifier_and_asset_validators_reject_tampering() {
+        let root = scratch("verify");
+        let raw = write_raw(&root, &["A0001"]);
+        let output = root.join("public");
+        let manifest = build(&options(&raw, &output)).unwrap();
+        let mut tampered = manifest.clone();
+        tampered.counts.details = tampered.counts.courses + 1;
+        assert!(verify_staged(&generation(&output, &manifest), &tampered).is_err());
+
+        assert!(validate_asset_path("data.abcdef.json").is_ok());
+        for invalid in [
+            "",
+            "../data.json",
+            "/data.json",
+            "dir\\data.json",
+            "bad\nname",
+        ] {
+            assert!(
+                validate_asset_path(invalid).is_err(),
+                "accepted {invalid:?}"
+            );
+        }
+
+        let valid = dummy_asset("data.json");
+        assert!(validate_asset_identity(&valid).is_ok());
+        let mut bad_hash = valid.clone();
+        bad_hash.sha256 = "x".repeat(64);
+        assert!(validate_asset_identity(&bad_hash).is_err());
+        let mut empty = valid.clone();
+        empty.bytes = 0;
+        assert!(validate_asset_identity(&empty).is_err());
+        let mut incomplete_decoded = valid;
+        incomplete_decoded.decoded_bytes = Some(1);
+        assert!(validate_asset_identity(&incomplete_decoded).is_err());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn manifest_read_legacy_cleanup_and_generation_prune_are_exact() {
+        let root = scratch("cleanup");
+        let manifest_path = root.join("manifest.json");
+        let manifest = DatasetManifest {
+            schema_version: 4,
+            app_compat_version: 4,
+            dataset_id: "b".repeat(64),
+            source_commit: "0".repeat(40),
+            year: "2026".to_owned(),
+            generated_at: "2026-01-01T00:00:00Z".to_owned(),
+            base_path: format!("datasets/{}/", "b".repeat(64)),
+            counts: DatasetCounts {
+                courses: 0,
+                details: 0,
+                detail_coverage: 1.0,
+                scheduled_courses: 0,
+                unscheduled_courses: 0,
+            },
+            range: DatasetRange {
+                min_day: None,
+                max_day: None,
+                min_period: None,
+                max_period: None,
+            },
+            assets: DatasetAssets {
+                data: dummy_asset("data.json"),
+                index: dummy_asset("search.idx.br"),
+                details: dummy_asset("details.json"),
+            },
+        };
+        fs::write(&manifest_path, serde_json::to_vec(&manifest).unwrap()).unwrap();
+        assert_eq!(read_dataset_id(&manifest_path), Some("b".repeat(64)));
+        assert_eq!(read_dataset_id(&root.join("missing.json")), None);
+        fs::write(&manifest_path, b"not json").unwrap();
+        assert_eq!(read_dataset_id(&manifest_path), None);
+
+        fs::write(root.join("data.json"), b"legacy").unwrap();
+        fs::write(root.join("search.idx"), b"legacy").unwrap();
+        fs::create_dir(root.join("details")).unwrap();
+        fs::write(root.join("details/legacy.json"), b"legacy").unwrap();
+        remove_legacy_outputs(&root).unwrap();
+        assert!(!root.join("data.json").exists());
+        assert!(!root.join("search.idx").exists());
+        assert!(!root.join("details").exists());
+
+        let datasets = root.join("datasets");
+        for directory in ["current", "previous", "obsolete", ".stage-interrupted"] {
+            fs::create_dir_all(datasets.join(directory)).unwrap();
+        }
+        fs::write(datasets.join("README.txt"), b"not a generation").unwrap();
+        prune_dataset_generations(&datasets, "current", Some("previous")).unwrap();
+        assert!(datasets.join("current").is_dir());
+        assert!(datasets.join("previous").is_dir());
+        assert!(datasets.join(".stage-interrupted").is_dir());
+        assert!(datasets.join("README.txt").is_file());
+        assert!(!datasets.join("obsolete").exists());
+        fs::remove_dir_all(root).unwrap();
+    }
 }

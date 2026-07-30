@@ -42,7 +42,7 @@ export async function pickSemester(page: Page, label: string): Promise<void> {
 
 /**
  * Read the result counters from the app root's `data-shown-count` /
- * `data-total-count` attributes (the header shows no visible counter).
+ * `data-total-count` attributes (the same values are also shown in the compact header).
  */
 export async function counts(page: Page): Promise<{ shown: number; total: number }> {
 	const root = page.locator('[data-shown-count]')
@@ -55,10 +55,19 @@ export async function counts(page: Page): Promise<{ shown: number; total: number
 	return { shown: await read('data-shown-count'), total: await read('data-total-count') }
 }
 
-/** Open the modal for the first card matching `name` and wait for its heading. */
+/** Open the modal for the first card matching `name` and wait for its stable rendered state. */
 export async function openCourse(page: Page, name: string | RegExp): Promise<void> {
 	await page.getByRole('button', { name }).first().click()
-	await expect(page.getByRole('dialog').getByRole('heading', { level: 2, name })).toBeVisible()
+	const dialog = page.getByRole('dialog')
+	await expect(dialog.getByRole('heading', { level: 2, name })).toBeVisible()
+	// The desktop sheet fades from opacity 0 to 1. Waiting only for visibility can
+	// let accessibility checks sample that transient blend and report false
+	// contrast failures, so wait for the animations that existed when it opened.
+	await dialog.locator('[data-sheet]').evaluate(async (element) => {
+		await Promise.allSettled(
+			element.getAnimations({ subtree: true }).map((animation) => animation.finished),
+		)
+	})
 }
 
 /**

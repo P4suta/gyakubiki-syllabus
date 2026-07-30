@@ -48,8 +48,12 @@ try {
 		)
 	}
 
-	for (let run = 1; run <= 3; run += 1) {
+	const requiredRuns = 3
+	const maximumAttempts = 6
+	let run = 1
+	for (let attempt = 1; run <= requiredRuns && attempt <= maximumAttempts; attempt += 1) {
 		const reportPath = path.join(resultsDirectory, `report-${run}.json`)
+		rmSync(reportPath, { force: true })
 		const lighthouse = Bun.spawn(
 			[
 				process.execPath,
@@ -80,6 +84,13 @@ try {
 			throw new Error(`Lighthouse run ${run} failed with exit code ${exitCode} and no report`)
 		}
 		if (report.runtimeError) {
+			if (report.runtimeError.code === 'NO_FCP' && attempt < maximumAttempts) {
+				console.warn(
+					`Lighthouse run ${run} attempt ${attempt} did not observe first contentful paint; retrying`,
+				)
+				rmSync(reportPath, { force: true })
+				continue
+			}
 			throw new Error(
 				`Lighthouse run ${run} failed: ${report.runtimeError.code ?? 'runtime error'}: ${report.runtimeError.message ?? 'no message'}`,
 			)
@@ -95,6 +106,12 @@ try {
 			if (typeof score !== 'number') throw new Error(`Lighthouse omitted ${category}`)
 			scores.get(category)?.push(score)
 		}
+		run += 1
+	}
+	if (run <= requiredRuns) {
+		throw new Error(
+			`Lighthouse produced ${run - 1} valid reports after ${maximumAttempts} attempts; ${requiredRuns} are required`,
+		)
 	}
 
 	const metrics = Object.fromEntries(

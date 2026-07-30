@@ -1,0 +1,63 @@
+name: 不具合を報告
+description: 逆引きシラバスの表示・検索・履修プラン・データの問題を報告します
+title: "[不具合] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        報告ありがとうございます。履修判断は大学公式シラバスでも確認してください。
+        個人情報、認証情報、非公開の履修情報は記載しないでください。
+  - type: textarea
+    id: observed
+    attributes:
+      label: 発生した問題
+      description: 何をしたとき、何が起きたかを具体的に記載してください。
+      placeholder: 例）「集中講義」を検索して科目を開くと、詳細が読み込み中のままになる。
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期待する動作
+      description: 本来どのように表示・動作してほしいかを記載してください。
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: 再現手順
+      description: 検索語、選択した学期・キャンパス・部署などを順番に記載してください。
+      placeholder: |
+        1. 1学期を選ぶ
+        2. 「…」で検索する
+        3. 科目カードを開く
+    validations:
+      required: true
+  - type: input
+    id: url
+    attributes:
+      label: 発生したページのURL
+      placeholder: https://p4suta.github.io/gyakubiki-syllabus/
+    validations:
+      required: true
+  - type: textarea
+    id: data_status
+    attributes:
+      label: アプリとデータの状態
+      description: 画面の「データ状態」を開き、アプリ版、対象年度、データセットID、生成元コミットを貼り付けてください。
+      render: text
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: 利用環境
+      description: OS、ブラウザ名とバージョン、端末種別を記載してください。
+      placeholder: Windows 11 / Chrome 126 / デスクトップ
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 追加情報
+      description: スクリーンショットやエラーメッセージがあれば添付してください。個人情報は除いてください。

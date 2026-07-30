@@ -54,6 +54,9 @@ Git hooks (`lefthook`) run the same scope as CI; enable them with `just install-
 KULAS is accessed **only from GitHub Actions**, never locally, and only for openly
 published syllabus data. Access is deliberately gentle and identifiable — see
 [Politeness / responsible access](docs/kulas-api-spec.md#politeness--responsible-access).
+The scheduled workflows remain explicitly disabled until the dedicated GitHub
+App credentials are installed and `DATA_AUTOMATION_ENABLED=true`; see the
+[production operations runbook](docs/operations.md).
 
 - **`fetch-syllabus.yml`** — proposes updates to `raw/*.json` (basic info) via a
   dedicated GitHub App branch/PR. The
@@ -76,7 +79,9 @@ for the explicit public/search field allowlist.
 Every PR runs the single required gate. On `main`, `ci.yml` builds the Pages
 artifact once, validates dataset integrity, tests, audits, performance and size
 budgets, attests that artifact, and deploys those same bytes without reinstalling
-or rebuilding.
+or rebuilding. A dedicated production smoke then validates the deployed data,
+public user journey, and cached offline reload; it repeats daily against
+`PRODUCTION_URL`.
 
 ---
 

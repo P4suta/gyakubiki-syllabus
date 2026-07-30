@@ -95,6 +95,7 @@ case "$task" in
       cd web
       bun install --frozen-lockfile
       GITHUB_PAGES=true bun run build
+      bun run test:production-html
       bun scripts/check-artifact-budget.ts dist
       bun scripts/check-search-performance.ts public
       bun run test:e2e

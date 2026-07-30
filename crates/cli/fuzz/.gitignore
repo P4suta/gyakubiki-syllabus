@@ -1,5 +1,9 @@
 target/
-corpus/
+corpus/*
+!corpus/fuzz_parse_jikanwari/
+corpus/fuzz_parse_jikanwari/*
+!corpus/fuzz_parse_jikanwari/tba
+!corpus/fuzz_parse_jikanwari/intensive
 artifacts/
 coverage/
 Cargo.lock

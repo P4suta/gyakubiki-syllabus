@@ -264,11 +264,11 @@ async function copyField(label: string, value: string) {
 						{course.nm}
 					</h2>
 					{#if course.sub}
-						<p class="text-sub mt-1 tracking-tight" style="color: {tint.mutedText};">{course.sub}</p>
+						<p class="text-sub mt-1 tracking-tight" style="color: {tint.text};">{course.sub}</p>
 					{/if}
 					<!-- Meta in three registers (mirrors the card): delivery as a filled
 					     chip, credits as blocks, taxonomy as a quiet middle-dot line. -->
-					<div class="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 mt-2.5" style="color: {tint.mutedText};">
+					<div class="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 mt-2.5" style="color: {tint.text};">
 						{#if delivery}
 							{@const DIcon = delivery.icon}
 							<!-- On bg-overlay-medium (tile + slate) mutedText drops below AA;
@@ -288,7 +288,7 @@ async function copyField(label: string, value: string) {
 							</span>
 						{/if}
 						{#if creditsN > 0}
-							<span class="inline-flex items-center gap-1.5 text-micro" aria-label="{detail?.unit}単位">
+							<span class="inline-flex items-center gap-1.5 text-micro" style="color: {tint.text};" aria-label="{detail?.unit}単位">
 								<span class="flex items-center gap-0.5" aria-hidden="true">
 									{#each creditBlocks as _}
 										<span class="w-2 h-2" style="background: {tint.border};"></span>
@@ -302,7 +302,7 @@ async function copyField(label: string, value: string) {
 						{/if}
 					</div>
 					{#if facets}
-						<div class="mt-1.5 text-caption tracking-tight" style="color: {tint.mutedText};">{facets}</div>
+						<div class="mt-1.5 text-caption tracking-tight" style="color: {tint.text};">{facets}</div>
 					{/if}
 				</div>
 				<div class="flex items-center gap-1.5 shrink-0">

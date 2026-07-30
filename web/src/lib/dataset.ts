@@ -186,7 +186,7 @@ function validateManifest(value: unknown): DatasetManifest {
 		'assets',
 	])
 	if (value.schemaVersion !== 4 || value.appCompatVersion !== 4) {
-		throw new Error('このアプリとデータの互換versionが一致しません')
+		throw new Error('このアプリとデータの互換バージョンが一致しません')
 	}
 	for (const key of ['datasetId', 'sourceCommit', 'year', 'generatedAt', 'basePath'] as const) {
 		if (typeof value[key] !== 'string' || value[key].length === 0) {

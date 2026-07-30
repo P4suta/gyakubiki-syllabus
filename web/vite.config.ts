@@ -1,5 +1,5 @@
+import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
 import { svelte } from '@sveltejs/vite-plugin-svelte'
 import tailwindcss from '@tailwindcss/vite'
 import { svelteTesting } from '@testing-library/svelte/vite'
@@ -9,10 +9,10 @@ import type { PluginOption } from 'vite'
 import { VitePWA } from 'vite-plugin-pwa'
 import { defineConfig } from 'vitest/config'
 
-const workspaceManifest = readFileSync(resolve(__dirname, '../Cargo.toml'), 'utf8')
-const appVersion =
-	workspaceManifest.match(/\[workspace\.package\][\s\S]*?\bversion\s*=\s*"([^"]+)"/)?.[1] ??
-	'unknown'
+const appPackage = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')) as {
+	version?: unknown
+}
+const appVersion = typeof appPackage.version === 'string' ? appPackage.version : 'unknown'
 const appCommit = process.env.GITHUB_SHA ?? process.env.APP_COMMIT ?? 'local'
 
 // Vite minifies JS/CSS but leaves index.html untouched; minify it too on build.
@@ -28,6 +28,46 @@ const minifyHtml = (): PluginOption => ({
 				minifyCSS: true,
 				minifyJS: true,
 			}),
+	},
+})
+
+// GitHub Pages cannot set response headers, so the production artifact carries
+// the strictest CSP that a meta element can enforce. Inline structured-data
+// scripts are individually hashed after HTML minification; executable code,
+// workers, WASM, and data may otherwise load only from this deployment.
+const injectContentSecurityPolicy = (): PluginOption => ({
+	name: 'inject-content-security-policy',
+	apply: 'build',
+	transformIndexHtml: {
+		order: 'post',
+		handler(html: string) {
+			const inlineScriptHashes = Array.from(
+				html.matchAll(/<script\b(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/giu),
+				(match) =>
+					`'sha256-${createHash('sha256')
+						.update(match[1] ?? '')
+						.digest('base64')}'`,
+			)
+			const policy = [
+				"default-src 'self'",
+				"base-uri 'self'",
+				"object-src 'none'",
+				"frame-src 'none'",
+				"form-action 'none'",
+				`script-src 'self' 'wasm-unsafe-eval' ${inlineScriptHashes.join(' ')}`.trim(),
+				"style-src 'self' 'unsafe-inline'",
+				"img-src 'self' data:",
+				"font-src 'self'",
+				"connect-src 'self'",
+				"worker-src 'self'",
+				"manifest-src 'self'",
+			].join('; ')
+			return html.replace(
+				/<head([^>]*)>/iu,
+				(_match, attributes: string) =>
+					`<head${attributes}><meta http-equiv="Content-Security-Policy" content="${policy}">`,
+			)
+		},
 	},
 })
 
@@ -73,6 +113,7 @@ export default defineConfig({
 		svelteTesting(),
 		Icons({ compiler: 'svelte' }),
 		minifyHtml(),
+		injectContentSecurityPolicy(),
 		inlineCss(),
 		// GitHub Pages serves everything with max-age=600 and the headers can't
 		// be changed, so repeat visits re-fetch the hashed bundles. The SW gives
