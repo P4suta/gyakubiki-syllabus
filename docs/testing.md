@@ -79,6 +79,9 @@ is on-screen-but-mispositioned. The layers below close those gaps.
 - Local E2E data is a KULAS-free, fixed-seed sample generated into a fresh OS
   temp public directory by `e2e/global-setup.ts`. Tests never read or overwrite
   the developer's `web/public`.
+- Local E2E pages run at a pinned instant, `E2E_NOW` in `e2e/helpers.ts`, which `openApp` and `enter` set through Playwright's clock.
+  The default semester follows the wall-clock month (`src/lib/semester.ts`), so an unpinned clock would change the grid, the day view, and the visual baselines with the calendar.
+  Load the app through those helpers rather than `page.goto`.
 - Production smoke uses `playwright.production.config.ts`, has no global setup or
   web server, and never generates fixtures. It reads only `PRODUCTION_URL` and
   the assets selected by that deployment's manifest.

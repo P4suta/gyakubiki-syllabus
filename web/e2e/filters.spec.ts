@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { counts, enter, FIXTURES, pickSemester } from './helpers'
+import { counts, enter, FIXTURES, pickSemester, showAllSemesters } from './helpers'
 
 // Filters run on the desktop layout (segmented semester control + native
 // selects); counts come from the root's data-*-count attributes (helpers).
@@ -12,7 +12,7 @@ const campusSelect = (page: import('@playwright/test').Page) =>
 test.describe('filters', () => {
 	test('semester narrows the set while the total stays fixed', async ({ page }) => {
 		await enter(page)
-		await pickSemester(page, '全て')
+		await showAllSemesters(page)
 		const all = await counts(page)
 		await pickSemester(page, '1学期')
 		await expect(async () => {
@@ -24,7 +24,7 @@ test.describe('filters', () => {
 
 	test('department filter narrows results', async ({ page }) => {
 		await enter(page)
-		await pickSemester(page, '全て')
+		await showAllSemesters(page)
 		const before = await counts(page)
 		await deptSelect(page).selectOption({ label: '理工学部' })
 		await expect(async () => {
@@ -36,7 +36,7 @@ test.describe('filters', () => {
 
 	test('campus and department filters compose', async ({ page }) => {
 		await enter(page)
-		await pickSemester(page, '全て')
+		await showAllSemesters(page)
 		await deptSelect(page).selectOption({ label: '理工学部' })
 		const afterDept = await counts(page)
 		await campusSelect(page).selectOption({ label: '朝倉キャンパス' })

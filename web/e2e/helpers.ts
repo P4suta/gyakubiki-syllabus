@@ -27,9 +27,22 @@ export async function dismissDisclaimer(page: Page): Promise<void> {
 	await expect(page.getByRole('heading', { name: '非公式のシラバス検索ツールです' })).toBeHidden()
 }
 
+/**
+ * The instant every E2E page runs at.
+ * The default semester follows the wall-clock month (`src/lib/semester.ts`), so an unpinned clock makes the grid, the day view, and the visual baselines change with the calendar.
+ * Mid-June keeps 1学期 as the default in every timezone, the state the committed baselines were recorded in.
+ */
+export const E2E_NOW = new Date('2026-06-15T12:00:00+09:00')
+
+/** Pin the page clock to `E2E_NOW` and load the app. */
+export async function openApp(page: Page): Promise<void> {
+	await page.clock.setFixedTime(E2E_NOW)
+	await page.goto('/', { waitUntil: 'domcontentloaded' })
+}
+
 /** Load the app, dismiss the notice, and wait until the grid has rendered. */
 export async function enter(page: Page): Promise<void> {
-	await page.goto('/', { waitUntil: 'domcontentloaded' })
+	await openApp(page)
 	await dismissDisclaimer(page)
 	// The grid is worker-backed and fills asynchronously; wait for real cards.
 	await expect(page.locator(CARD).first()).toBeVisible()
@@ -39,6 +52,19 @@ export async function enter(page: Page): Promise<void> {
 export async function pickSemester(page: Page, label: string): Promise<void> {
 	const button = page.getByRole('button', { name: label, exact: true }).first()
 	if ((await button.getAttribute('aria-pressed')) !== 'true') await button.click()
+}
+
+/**
+ * Switch the semester filter to「全て」and wait until the worker has laid out every course.
+ * The pinned clock opens on 1学期, and the button flips before the grid does, so a test that measures right after the click would see the 1学期 grid.
+ * Call it only while no other filter is active: it waits for the shown count to reach the total.
+ */
+export async function showAllSemesters(page: Page): Promise<void> {
+	await pickSemester(page, '全て')
+	await expect(async () => {
+		const { shown, total } = await counts(page)
+		expect(shown).toBe(total)
+	}).toPass()
 }
 
 /**
