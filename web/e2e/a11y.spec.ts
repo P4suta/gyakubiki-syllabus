@@ -1,6 +1,6 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, type Page, test } from '@playwright/test'
-import { enter, FIXTURES, MOBILE, openCourse, pickSemester } from './helpers'
+import { enter, FIXTURES, MOBILE, openApp, openCourse, pickSemester } from './helpers'
 
 // Automated WCAG 2 A/AA audit (axe-core) over the key states. This is the
 // end-to-end guard for landmark/state semantics plus a representative rendered
@@ -39,7 +39,7 @@ async function showRepresentativeCard(page: Page, mobile = false): Promise<void>
 }
 
 test('first-visit notice has no WCAG A/AA violations', async ({ page }) => {
-	await page.goto('/', { waitUntil: 'domcontentloaded' })
+	await openApp(page)
 	await expect(page.getByRole('heading', { name: '非公式のシラバス検索ツールです' })).toBeVisible()
 	await showRepresentativeCard(page)
 	await auditEmpty(page)

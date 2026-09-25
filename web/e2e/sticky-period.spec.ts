@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { type Box, box, boxesOverlap, enter, expectWithinBand } from './helpers'
+import { type Box, box, boxesOverlap, enter, expectWithinBand, showAllSemesters } from './helpers'
 
 // Regression guard for the sticky period label. These are geometry assertions,
 // not `toBeVisible()`: they catch the three bugs that shipped — an off-screen
@@ -11,7 +11,7 @@ test.describe('sticky period label (desktop grid)', () => {
 	test.beforeEach(async ({ page }) => {
 		await enter(page)
 		// 全て = the busiest grid, so several period cells are far taller than the viewport.
-		await page.getByRole('button', { name: '全て', exact: true }).first().click()
+		await showAllSemesters(page)
 	})
 
 	test('current period always on screen; off-screen periods never appear', async ({ page }) => {
