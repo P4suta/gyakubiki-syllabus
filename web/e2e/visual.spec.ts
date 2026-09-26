@@ -1,5 +1,5 @@
 import { expect, type Page, test } from '@playwright/test'
-import { DESKTOP, enter, FIXTURES, MOBILE, openCourse } from './helpers'
+import { DESKTOP, enter, FIXTURES, MOBILE, openCourse, showAllSemesters } from './helpers'
 
 // Visual regression: screenshot the major layouts and diff against baselines
 // rendered on the CI OS (Linux). `toBeVisible()` passes for an element that is
@@ -29,7 +29,7 @@ for (const theme of ['light', 'dark'] as const) {
 			await page.setViewportSize(DESKTOP)
 			await enter(page)
 			// 全て = the busiest grid, so the shot exercises tall rows and sticky rails.
-			await page.getByRole('button', { name: '全て', exact: true }).first().click()
+			await showAllSemesters(page)
 			await expect(page.locator('.overflow-auto.flex-1')).toBeVisible()
 			await expect(page).toHaveScreenshot(`grid-desktop-top${s}.png`, { mask: dateMask(page) })
 

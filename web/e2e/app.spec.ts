@@ -7,6 +7,7 @@ import {
 	expectNoOverlap,
 	FIXTURES,
 	MOBILE,
+	openApp,
 	openCourse,
 	pickSemester,
 	section,
@@ -16,7 +17,7 @@ import {
 // rich detail modal. Broader coverage lives in the sibling specs.
 
 test('shows an in-flow first-visit notice and compact public status', async ({ page }) => {
-	await page.goto('/', { waitUntil: 'domcontentloaded' })
+	await openApp(page)
 	const notice = page.locator('[data-unofficial-banner]')
 	await expect(page.getByRole('heading', { name: '非公式のシラバス検索ツールです' })).toBeVisible()
 	await expect(page.getByRole('main')).toBeVisible()
@@ -32,7 +33,7 @@ test('shows an in-flow first-visit notice and compact public status', async ({ p
 
 test('shows the compact public status without overlap on mobile', async ({ page }) => {
 	await page.setViewportSize(MOBILE)
-	await page.goto('/', { waitUntil: 'domcontentloaded' })
+	await openApp(page)
 	const notice = page.locator('[data-unofficial-banner]')
 	await expect(page.locator('[data-app-title]:visible')).toHaveText('逆引きシラバス')
 	await expect(page.locator('[data-count-summary]:visible')).toContainText(/件.*更新/u)
