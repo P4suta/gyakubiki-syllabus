@@ -41,4 +41,4 @@ actionlint = "1.7.12"
 # Conventional-Commits linter for the lefthook commit-msg hook — the local guard
 # that keeps release-please's version + CHANGELOG derivation fed with well-formed
 # commits (committed.toml). cargo backend, binstalled.
-"cargo:committed" = "1"
+"cargo:committed" = "1.1.11"
