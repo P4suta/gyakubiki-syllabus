@@ -17,7 +17,6 @@ Closes DEV-___
 
 - [ ] `just lint` passes (fmt, clippy `-D warnings`, typos, actionlint, markdownlint)
 - [ ] `just test` passes (Rust, WASM boundary, web)
-- [ ] New or changed product code is covered by a test that pins its behavior
-      (the `mutants` CI gate mutation-tests the diff)
+- [ ] Tests cover new or changed product behavior.
 - [ ] Generated artifacts were regenerated with `just gen-field-docs`, not hand-edited
 - [ ] Docs / CHANGELOG updated if user-facing
