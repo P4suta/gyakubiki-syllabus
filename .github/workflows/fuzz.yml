@@ -1,11 +1,8 @@
 name: Fuzz
 
 # Continuous fuzzing of the two parsers that face messy real-world input.
-# Weekly/on-demand runs are advisory; CI repeats both as required release-PR
-# checks before release-please may merge.
+# Manual fuzz runs are advisory; release-candidate CI requires both targets.
 on:
-  schedule:
-    - cron: "0 4 * * 1" # Mondays 04:00 UTC
   workflow_dispatch:
 
 permissions:
@@ -25,6 +22,8 @@ jobs:
         target: [fuzz_parse_jikanwari, fuzz_parse_sansho_html]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1
         with:
           toolchain: nightly
@@ -42,8 +41,10 @@ jobs:
       # host triple instead.
       - name: fuzz
         working-directory: crates/cli/fuzz
+        env:
+          FUZZ_TARGET: ${{ matrix.target }}
         run: |
-          cargo +nightly fuzz run ${{ matrix.target }} \
+          cargo +nightly fuzz run "$FUZZ_TARGET" \
             --target x86_64-unknown-linux-gnu -- -max_total_time=120
       - name: upload crashes
         if: failure()
@@ -51,3 +52,4 @@ jobs:
         with:
           name: fuzz-artifacts-${{ matrix.target }}
           path: crates/cli/fuzz/artifacts/
+          retention-days: 7
