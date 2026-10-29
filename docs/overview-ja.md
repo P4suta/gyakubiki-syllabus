@@ -77,10 +77,11 @@ DOMジオメトリテスト、ビジュアル回帰、アクセシビリティ�
 ## 立ち位置
 
 - **非公式**。高知大学とは一切の関係がなく、同大学の承認または推奨を受けたものではない
-- **公開情報のみ**に基づく。非公開情報は使用していない
+- **公開情報のみ**に基づく。
+  非公開情報は使用していない
 - **AGPL-3.0**。ソースは公開されており、改変版をネットワーク越しに提供する場合も同ライセンスでのソース公開を要する（囲い込みを防ぐため）
-- 履修登録その他の判断は、必ず大学公式の情報に基づいて行うこと。詳細は
-  [README の Disclaimer](../README.md#disclaimer)
+- Base course registration and other decisions on the university's official information.
+  Read the [disclaimer](README.md#disclaimer) for details.
 
 ### 既知の論点
 
