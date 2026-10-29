@@ -1,0 +1,12 @@
+name = "Gyakubiki syllabus"
+summary = "Unofficial timetable browser for Kochi University courses"
+install = "# Open https://p4suta.github.io/gyakubiki-syllabus/ in a web browser"
+usage = "Choose a term, then filter by department or search for a course by name, instructor, or course code."
+usage_language = "text"
+documentation_index = true
+license = "AGPL-3.0-or-later"
+
+[preserved_licenses]
+[[preserved_licenses.assets]]
+path = "LICENSE"
+sha256 = "8d56b405468aad11f87ab5763f901e276e08d9646ff5c8481b1762b6b789e9ed"
